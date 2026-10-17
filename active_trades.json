@@ -1,0 +1,149 @@
+[
+    {
+        "symbol": "LPT/USDT",
+        "type": "LONG",
+        "entry": 1.438,
+        "sl": 1.38204,
+        "tp1": 1.5219399999999998
+    },
+    {
+        "symbol": "ZKC/USDT",
+        "type": "LONG",
+        "entry": 0.0487,
+        "sl": 0.047124000000000006,
+        "tp1": 0.05106399999999999
+    },
+    {
+        "symbol": "MORPHO/USDT",
+        "type": "LONG",
+        "entry": 2.514,
+        "sl": 2.4057,
+        "tp1": 2.6764499999999996
+    },
+    {
+        "symbol": "ASTER/USDT",
+        "type": "LONG",
+        "entry": 0.734,
+        "sl": 0.7128,
+        "tp1": 0.7658
+    },
+    {
+        "symbol": "CHIP/USDT",
+        "type": "LONG",
+        "entry": 0.05485,
+        "sl": 0.0508761,
+        "tp1": 0.06081085000000001
+    },
+    {
+        "symbol": "SOL/USDT",
+        "type": "SHORT",
+        "entry": 101.53,
+        "sl": 105.8379,
+        "tp1": 95.06815
+    },
+    {
+        "symbol": "PEPE/USDT",
+        "type": "SHORT",
+        "entry": 3.53e-06,
+        "sl": 3.7572e-06,
+        "tp1": 3.1892000000000007e-06
+    },
+    {
+        "symbol": "PENGU/USDT",
+        "type": "SHORT",
+        "entry": 0.008243,
+        "sl": 0.009039499999999999,
+        "tp1": 0.007048250000000002
+    },
+    {
+        "symbol": "HEMI/USDT",
+        "type": "SHORT",
+        "entry": 0.01458,
+        "sl": 0.016038,
+        "tp1": 0.012392999999999998
+    },
+    {
+        "symbol": "TSLAB/USDT",
+        "type": "SHORT",
+        "entry": 352.48,
+        "sl": 375.31600000000003,
+        "tp1": 318.226
+    },
+    {
+        "symbol": "BCH/USDT",
+        "type": "SHORT",
+        "entry": 246.4,
+        "sl": 256.641,
+        "tp1": 231.0385
+    },
+    {
+        "symbol": "ZRO/USDT",
+        "type": "SHORT",
+        "entry": 1.04,
+        "sl": 1.08575,
+        "tp1": 0.9713750000000001
+    },
+    {
+        "symbol": "ZKP/USDT",
+        "type": "LONG",
+        "entry": 0.0487,
+        "sl": 0.04653,
+        "tp1": 0.051955
+    },
+    {
+        "symbol": "AKE/USDT:USDT",
+        "type": "LONG",
+        "entry": 0.017209,
+        "sl": 0.0154881,
+        "tp1": 0.019790349999999998
+    },
+    {
+        "symbol": "STRK/USDT:USDT",
+        "type": "LONG",
+        "entry": 0.02713,
+        "sl": 0.0256212,
+        "tp1": 0.0293932
+    },
+    {
+        "symbol": "GALA/USDT:USDT",
+        "type": "LONG",
+        "entry": 0.001797,
+        "sl": 0.00172953,
+        "tp1": 0.001898205
+    },
+    {
+        "symbol": "EGLD/USDT:USDT",
+        "type": "SHORT",
+        "entry": 4.668,
+        "sl": 4.86315,
+        "tp1": 4.375275
+    },
+    {
+        "symbol": "LTC/USDT:USDT",
+        "type": "LONG",
+        "entry": 51.43,
+        "sl": 50.1237,
+        "tp1": 53.38945
+    },
+    {
+        "symbol": "JTO/USDT:USDT",
+        "type": "LONG",
+        "entry": 0.4211,
+        "sl": 0.401544,
+        "tp1": 0.4504339999999999
+    },
+    {
+        "symbol": "BOME/USDT:USDT",
+        "type": "LONG",
+        "entry": 0.0008675,
+        "sl": 0.000827244,
+        "tp1": 0.000927884
+    },
+    {
+        "symbol": "XMR/USDT:USDT",
+        "type": "LONG",
+        "entry": 537.97,
+        "sl": 518.9778,
+        "tp1": 566.4583
+    }
+]
