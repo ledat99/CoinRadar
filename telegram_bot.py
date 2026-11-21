@@ -16,6 +16,7 @@ CONFIG = {
     'RISK_PER_TRADE': 2.0,
 }
 
+TZ_VN = datetime.timezone(datetime.timedelta(hours=7))
 HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
 
 # Cache lưu trữ các mức cản H4 để cố định điểm vào lệnh trong phiên H4
@@ -80,7 +81,7 @@ def find_smc_swings_and_ob(klines_desc):
             prev_highs = [float(chrono[k][2]) for k in range(max(0, i - 4), i)]
             if prev_highs and c_h >= max(prev_highs):
                 valid_sh = {
-                    'time': datetime.datetime.fromtimestamp(int(c[0])/1000 + 7*3600).strftime('%H:%M %d/%m'),
+                    'time': datetime.datetime.fromtimestamp(int(c[0])/1000, tz=TZ_VN).strftime('%H:%M %d/%m'),
                     'high': c_h,
                     'low': float(c[3]),
                     'open': float(c[1]),
@@ -106,7 +107,7 @@ def find_smc_swings_and_ob(klines_desc):
             prev_lows = [float(chrono[k][3]) for k in range(max(0, i - 4), i)]
             if prev_lows and c_l <= min(prev_lows):
                 valid_sl = {
-                    'time': datetime.datetime.fromtimestamp(int(c[0])/1000 + 7*3600).strftime('%H:%M %d/%m'),
+                    'time': datetime.datetime.fromtimestamp(int(c[0])/1000, tz=TZ_VN).strftime('%H:%M %d/%m'),
                     'high': float(c[2]),
                     'low': c_l,
                     'open': float(c[1]),
