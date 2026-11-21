@@ -843,7 +843,7 @@ def handle_btc():
 ━━━━━━━━━━━━━━━━━━
 🔴 <b>1. VÙNG CANH SELL (Kháng Cự H1):</b>
 • <b>Vùng giá:</b> <code>[${plan['b_ob_bot']:,.1f} - ${plan['b_ob_top']:,.1f}]</code>
-• <b>Kích hoạt khi:</b> M15 thủng đáy <code>${plan['m15_choch_bear']:,.1f}</code> + M5 rút râu kích Vol
+• <b>Cách đánh:</b> Chờ giá hồi lên chạm vùng này ──> Nến M5 rút râu từ chối + Kích Volume thì SELL!
 👉 <b>Entry Sell:</b> <code>${plan['sell_entry']:,.1f}</code>
 🛡️ <b>Stop Loss:</b> <code>${plan['sell_sl']:,.1f}</code> (~{plan['sell_risk']:,.1f} USD)
 🎯 <b>TP1 (Ăn {plan['sell_risk']*1.2:,.1f} USD | Chốt 50% & Dời Hoà):</b> <code>${plan['sell_tp1']:,.1f}</code>
@@ -852,22 +852,24 @@ def handle_btc():
 ━━━━━━━━━━━━━━━━━━
 🟢 <b>2. VÙNG CANH BUY (Hỗ Trợ H1):</b>
 • <b>Vùng giá:</b> <code>[${plan['bull_ob_bot']:,.1f} - ${plan['bull_ob_top']:,.1f}]</code>
-• <b>Kích hoạt khi:</b> M15 vượt đỉnh <code>${plan['m15_choch_bull']:,.1f}</code> + M5 rút chân kích Vol
+• <b>Cách đánh:</b> Chờ giá đạp về chạm vùng này ──> Nến M5 rút chân đẩy lên + Kích Volume thì BUY!
 👉 <b>Entry Buy:</b> <code>${plan['buy_entry']:,.1f}</code>
 🛡️ <b>Stop Loss:</b> <code>${plan['buy_sl']:,.1f}</code> (~{plan['buy_risk']:,.1f} USD)
 🎯 <b>TP1 (Ăn {plan['buy_risk']*1.2:,.1f} USD | Chốt 50% & Dời Hoà):</b> <code>${plan['buy_tp1']:,.1f}</code>
 🎯 <b>TP2 (Ăn {plan['buy_risk']*2.5:,.1f} USD):</b> <code>${plan['buy_tp2']:,.1f}</code>
 
 ━━━━━━━━━━━━━━━━━━
-⚡ <b>TRẠNG THÁI HIỆN TẠI & HÀNH ĐỘNG:</b>
+⚡ <b>3. KỊCH BẢN PHÁ VỠ CẤU TRÚC (ĐUA SÓNG TIẾP DIỄN):</b>
+👉 <b>Sell Stop (Phá Đáy):</b> Sập thủng <code>${plan['m15_choch_bear']:,.1f}</code> ──> Vào Sell theo đà rơi!
+👉 <b>Buy Stop (Phá Đỉnh):</b> Vượt qua <code>${plan['m15_choch_bull']:,.1f}</code> ──> Vào Buy theo đà tăng!
+
+━━━━━━━━━━━━━━━━━━
+🧠 <b>TRẠNG THÁI HIỆN TẠI:</b>
 • <b>Tín hiệu vào lệnh:</b> <b>{plan['confirm_badge']}</b>
 • <b>Cấu trúc M15:</b> {plan['m15_status']}
-• <b>Khuyến nghị:</b> {plan['action_advice']}
+• <b>Nhận định:</b> {plan['action_advice']}
 ━━━━━━━━━━━━━━━━━━
 <i>🛡️ Quản lý vốn: Rủi ro tối đa 2% ($20.0 trên tài khoản $1,000).</i>"""
-        send_telegram(text, reply_markup=get_main_keyboard())
-    except Exception as e:
-        send_telegram(f"Lỗi BTC POC: {e}", reply_markup=get_main_keyboard())
         send_telegram(text, reply_markup=get_main_keyboard())
     except Exception as e:
         send_telegram(f"Lỗi BTC POC: {e}", reply_markup=get_main_keyboard())
@@ -1155,7 +1157,7 @@ def handle_gold():
 ━━━━━━━━━━━━━━━━━━
 🔴 <b>1. VÙNG CANH SELL (Kháng Cự H1):</b>
 • <b>Vùng giá:</b> <code>[${plan['b_ob_bot']:,.2f} - ${plan['b_ob_top']:,.2f}]</code>
-• <b>Kích hoạt khi:</b> M15 thủng đáy <code>${plan['m15_choch_bear']:,.2f}</code> + M5 rút râu kích Vol
+• <b>Cách đánh:</b> Chờ giá hồi lên chạm vùng này ──> Nến M5 rút râu từ chối + Kích Volume thì SELL!
 👉 <b>Entry Sell:</b> <code>${plan['sell_entry']:,.2f}</code>
 🛡️ <b>Stop Loss:</b> <code>${plan['sell_sl']:,.2f}</code> (~{plan['sell_risk']:,.1f} Giá)
 🎯 <b>TP1 (Ăn {plan['sell_risk']*1.2:,.1f} Giá | Chốt 50% & Dời Hoà):</b> <code>${plan['sell_tp1']:,.2f}</code>
@@ -1164,22 +1166,24 @@ def handle_gold():
 ━━━━━━━━━━━━━━━━━━
 🟢 <b>2. VÙNG CANH BUY (Hỗ Trợ H1):</b>
 • <b>Vùng giá:</b> <code>[${plan['bull_ob_bot']:,.2f} - ${plan['bull_ob_top']:,.2f}]</code>
-• <b>Kích hoạt khi:</b> M15 vượt đỉnh <code>${plan['m15_choch_bull']:,.2f}</code> + M5 rút chân kích Vol
+• <b>Cách đánh:</b> Chờ giá đạp về chạm vùng này ──> Nến M5 rút chân đẩy lên + Kích Volume thì BUY!
 👉 <b>Entry Buy:</b> <code>${plan['buy_entry']:,.2f}</code>
 🛡️ <b>Stop Loss:</b> <code>${plan['buy_sl']:,.2f}</code> (~{plan['buy_risk']:,.1f} Giá)
 🎯 <b>TP1 (Ăn {plan['buy_risk']*1.2:,.1f} Giá | Chốt 50% & Dời Hoà):</b> <code>${plan['buy_tp1']:,.2f}</code>
 🎯 <b>TP2 (Ăn {plan['buy_risk']*2.5:,.1f} Giá):</b> <code>${plan['buy_tp2']:,.2f}</code>
 
 ━━━━━━━━━━━━━━━━━━
-⚡ <b>TRẠNG THÁI HIỆN TẠI & HÀNH ĐỘNG:</b>
+⚡ <b>3. KỊCH BẢN PHÁ VỠ CẤU TRÚC (ĐUA SÓNG TIẾP DIỄN):</b>
+👉 <b>Sell Stop (Phá Đáy):</b> Sập thủng <code>${plan['m15_choch_bear']:,.2f}</code> ──> Vào Sell theo đà rơi!
+👉 <b>Buy Stop (Phá Đỉnh):</b> Vượt qua <code>${plan['m15_choch_bull']:,.2f}</code> ──> Vào Buy theo đà tăng!
+
+━━━━━━━━━━━━━━━━━━
+🧠 <b>TRẠNG THÁI HIỆN TẠI:</b>
 • <b>Tín hiệu vào lệnh:</b> <b>{plan['confirm_badge']}</b>
 • <b>Cấu trúc M15:</b> {plan['m15_status']}
-• <b>Khuyến nghị:</b> {plan['action_advice']}
+• <b>Nhận định:</b> {plan['action_advice']}
 ━━━━━━━━━━━━━━━━━━
 <i>🛡️ Quản lý vốn MT5: Rủi ro tối đa 2% ($20.0 trên tài khoản $1,000 ~ 0.01-0.02 lot).</i>"""
-        send_telegram(text, reply_markup=get_main_keyboard())
-    except Exception as e:
-        send_telegram(f"Lỗi phân tích Vàng: {e}", reply_markup=get_main_keyboard())
         send_telegram(text, reply_markup=get_main_keyboard())
     except Exception as e:
         send_telegram(f"Lỗi phân tích Vàng: {e}", reply_markup=get_main_keyboard())
