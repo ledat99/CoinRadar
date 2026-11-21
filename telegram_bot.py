@@ -6,7 +6,7 @@ import urllib.parse
 from datetime import datetime
 
 # Import các công cụ phân tích
-from bias_analyzer import get_market_bias, analyze_major_asset
+from bias_analyzer import get_market_bias, analyze_major_asset, quick_scan_market
 import ccxt
 
 CONFIG = {
@@ -41,7 +41,7 @@ def get_main_keyboard():
         "keyboard": [
             [{"text": "📈 Tìm Coin TĂNG (LONG)"}, {"text": "📉 Tìm Coin GIẢM (SHORT)"}],
             [{"text": "👑 Phân Tích BTC"}, {"text": "🥇 Phân Tích VÀNG (XAU)"}],
-            [{"text": "🔍 Kiểm Tra Lệnh (SL/TP)"}, {"text": "⚙️ Menu Hỗ Trợ"}]
+            [{"text": "🔍 Kiểm Tra Lệnh & Báo Cáo Ngày"}, {"text": "⚙️ Menu Hỗ Trợ"}]
         ],
         "resize_keyboard": True
     }
@@ -117,31 +117,62 @@ def handle_gold():
     send_telegram(text, reply_markup=get_main_keyboard())
 
 def handle_check():
-    send_telegram("🔍 Đang chạy kiểm tra các lệnh cũ trong danh sách...")
-    import subprocess
+    send_telegram("🔍 Đang kiểm tra trạng thái các lệnh và tạo Báo Cáo Ngày...")
+    from check_trades import check_trades
     try:
-        output = subprocess.check_output(["py", "check_trades.py"], text=True, timeout=60)
-        # check_trades tự gửi Telegram nếu có kết quả
-        send_telegram("✅ Đã hoàn tất kiểm tra trạng thái lệnh!", reply_markup=get_main_keyboard())
+        check_trades()
     except Exception as e:
         send_telegram(f"Lỗi kiểm tra lệnh: {e}", reply_markup=get_main_keyboard())
 
 def handle_scan(mode='long'):
-    action_text = "TĂNG (LONG / Tích lũy gom hàng)" if mode == 'long' else "GIẢM (SHORT / Phân phối xả hàng)"
-    send_telegram(f"🔍 <b>Đang kích hoạt bộ lọc Coin {action_text}...</b>\nBot đang quét toàn thị trường và đối chiếu dòng tiền 4h/12h + Market Bias...")
-    import subprocess
-    try:
-        # Chạy scanner với tham số
-        subprocess.Popen(["py", "crypto_scanner.py", f"--mode={mode}"])
-        send_telegram("🚀 Scanner đang chạy ngầm, ngay khi phát hiện coin có điểm vào đẹp và dòng tiền đồng thuận sẽ báo ngay cho bạn!", reply_markup=get_main_keyboard())
-    except Exception as e:
-        send_telegram(f"Lỗi kích hoạt scanner: {e}", reply_markup=get_main_keyboard())
+    action_text = "TĂNG (LONG)" if mode == 'long' else "GIẢM (SHORT)"
+    send_telegram(f"🔍 <b>Đang quét siêu tốc các coin {action_text} có thanh khoản lớn & R:R tốt...</b>")
+    
+    results = quick_scan_market(mode=mode, limit=3)
+    if not results:
+        send_telegram("⚠️ Thị trường đang giằng co mạnh, chưa có coin nào thỏa mãn R:R 1:2 tối ưu.")
+        return
+        
+    active_trades = []
+    if os.path.exists('active_trades.json'):
+        try:
+            with open('active_trades.json', 'r', encoding='utf-8') as f:
+                active_trades = json.load(f)
+        except Exception:
+            active_trades = []
+            
+    header = "🚀 [TOP COIN TIỀM NĂNG TĂNG - LONG]" if mode == 'long' else "📉 [TOP COIN TIỀM NĂNG GIẢM - SHORT]"
+    msg = f"<b>{header}</b>\n━━━━━━━━━━━━━━━━━━"
+    
+    for i, r in enumerate(results, 1):
+        if not any(t['symbol'] == r['symbol'] for t in active_trades):
+            active_trades.append({
+                'symbol': r['symbol'],
+                'type': r['type'],
+                'entry': r['entry'],
+                'sl': r['sl'],
+                'tp1': r['tp1']
+            })
+            
+        emoji = "🟢" if mode == 'long' else "🔴"
+        msg += f"""
+{i}. <b>{r['symbol']}</b> {emoji} (Vol 24h: ${r['vol_m']:.1f}M)
+• Biến động 24h: <b>{r['change_24h']:+.2f}%</b> | RSI: <b>{r['rsi']:.1f}</b>
+• <b>Entry:</b> {r['entry']}
+• <b>Cắt lỗ (SL):</b> {r['sl']:.4f} (-{r['sl_pct']:.1f}%)
+• <b>Chốt lời (TP1 - R:R 1:2):</b> {r['tp1']:.4f}"""
+
+    msg += "\n━━━━━━━━━━━━━━━━━━\n<i>💡 Các coin này đã tự động được lưu vào danh sách kiểm tra TP/SL! Bấm 'Kiểm Tra Lệnh' bất cứ lúc nào để xem báo cáo.</i>"
+    
+    with open('active_trades.json', 'w', encoding='utf-8') as f:
+        json.dump(active_trades, f, indent=4)
+        
+    send_telegram(msg, reply_markup=get_main_keyboard())
 
 def run_bot():
-    print("🤖 Bot Telegram đang khởi động và lắng nghe lệnh...")
+    print("🤖 Bot Telegram đang lắng nghe...")
     url = f"https://api.telegram.org/bot{CONFIG['TELEGRAM_BOT_TOKEN']}/getUpdates"
     
-    # Xoá sạch toàn bộ tin nhắn tồn đọng trước khi bot khởi động để tránh lặp
     try:
         init_resp = requests.get(url, params={"offset": -1}, timeout=10).json()
         if init_resp.get("result"):
@@ -149,11 +180,11 @@ def run_bot():
             requests.get(url, params={"offset": last_update_id + 1}, timeout=10)
         else:
             last_update_id = 0
-    except Exception as e:
+    except Exception:
         last_update_id = 0
         
     send_telegram(
-        "👋 <b>Bot đã sẵn sàng!</b>\n"
+        "👋 <b>Bot Săn Kèo & Báo Cáo Ngày Đã Sẵn Sàng!</b>\n"
         "Bấm vào các nút bên dưới để nhận phân tích:",
         reply_markup=get_main_keyboard()
     )
@@ -177,19 +208,18 @@ def run_bot():
                         send_telegram("Chọn một tính năng bên dưới:", reply_markup=get_main_keyboard())
                     elif text in ["/btc", "👑 Phân Tích BTC", "btc", "BTC"]:
                         handle_btc()
-                    elif text in ["/gold", "🥇 Phân Tích VÀNG (XAU)", "🥇 Phân Tích VÀNG (PAXG)", "gold", "vang", "Vàng"]:
+                    elif text in ["/gold", "🥇 Phân Tích VÀNG (XAU)", "gold", "vang", "Vàng"]:
                         handle_gold()
-                    elif text in ["/check", "🔍 Kiểm Tra Lệnh (SL/TP)", "check"]:
+                    elif text in ["/check", "🔍 Kiểm Tra Lệnh & Báo Cáo Ngày", "check"]:
                         handle_check()
-                    elif text in ["/long", "📈 Tìm Coin TĂNG (LONG)", "/scan", "📊 Quét Coin Rác (Có Bias)", "scan", "long"]:
+                    elif text in ["/long", "📈 Tìm Coin TĂNG (LONG)", "long"]:
                         handle_scan(mode='long')
-                    elif text in ["/short", "📉 Tìm Coin GIẢM (SHORT)", "📉 Tìm Coin Xả (SHORT)", "short"]:
+                    elif text in ["/short", "📉 Tìm Coin GIẢM (SHORT)", "short"]:
                         handle_scan(mode='short')
             time.sleep(1)
         except Exception as e:
-            print(f"Lỗi vòng lặp bot: {e}")
+            print(f"Lỗi: {e}")
             time.sleep(3)
 
 if __name__ == '__main__':
     run_bot()
-

@@ -97,6 +97,79 @@ def get_market_bias():
             'desc': 'Không lấy được dữ liệu BTC Bias'
         }
 
+def quick_scan_market(mode='long', limit=5):
+    """
+    Quét siêu tốc các coin thanh khoản cao trên Binance Futures theo chiều TĂNG hoặc GIẢM.
+    Trả về ngay kết quả Top coin đẹp nhất kèm Entry, SL, TP (R:R 1:2) và Dòng tiền.
+    """
+    try:
+        tickers = binance_futures.fetch_tickers()
+        usdt_pairs = []
+        for sym, t in tickers.items():
+            if '/USDT:USDT' in sym and t.get('quoteVolume', 0) > 20000000: # Volume 24h > 20 Triệu USD
+                usdt_pairs.append({
+                    'symbol': sym.split(':')[0],
+                    'full_symbol': sym,
+                    'volume': t['quoteVolume'],
+                    'change': t.get('percentage', 0),
+                    'last': t['last']
+                })
+                
+        if mode == 'long':
+            # Tìm coin giữ giá tốt / tăng nhẹ hoặc hồi phục có volume
+            usdt_pairs.sort(key=lambda x: x['change'], reverse=True)
+        else: # short
+            # Tìm coin giảm mạnh, gãy cấu trúc
+            usdt_pairs.sort(key=lambda x: x['change'])
+            
+        candidates = usdt_pairs[:12]
+        results = []
+        
+        for c in candidates:
+            sym = c['full_symbol']
+            ohlcv = binance_futures.fetch_ohlcv(sym, '15m', limit=50)
+            if not ohlcv or len(ohlcv) < 30: continue
+            df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+            df['ema_20'] = ta.trend.EMAIndicator(close=df['close'], window=20).ema_indicator()
+            df['atr'] = ta.volatility.AverageTrueRange(high=df['high'], low=df['low'], close=df['close'], window=14).average_true_range()
+            df['rsi'] = ta.momentum.RSIIndicator(close=df['close'], window=14).rsi()
+            
+            last = df.iloc[-1]
+            atr = last['atr']
+            price = last['close']
+            
+            if mode == 'long':
+                sl = min(df['low'].tail(5).min(), price - (1.6 * atr))
+                sl_dist = price - sl
+                tp1 = price + (sl_dist * 2.0)
+                sl_pct = (sl_dist / price) * 100
+                score = (last['rsi'] - 40) + (c['change'] * 2)
+            else:
+                sl = max(df['high'].tail(5).max(), price + (1.6 * atr))
+                sl_dist = sl - price
+                tp1 = price - (sl_dist * 2.0)
+                sl_pct = (sl_dist / price) * 100
+                score = (60 - last['rsi']) + (abs(c['change']) * 2)
+                
+            results.append({
+                'symbol': c['symbol'],
+                'type': 'LONG' if mode == 'long' else 'SHORT',
+                'entry': price,
+                'sl': sl,
+                'sl_pct': sl_pct,
+                'tp1': tp1,
+                'change_24h': c['change'],
+                'rsi': last['rsi'],
+                'vol_m': c['volume'] / 1000000,
+                'score': score
+            })
+            
+        results.sort(key=lambda x: x['score'], reverse=True)
+        return results[:limit]
+    except Exception as e:
+        print(f"Lỗi quick scan: {e}")
+        return []
+
 def analyze_major_asset(symbol='BTC/USDT', risk_capital_percent=2.0, account_balance=1000.0, timeframe='15m'):
     """
     Phân tích chuyên sâu cho các tài sản lớn (BTC/USDT hoặc XAU/USDT - Vàng thế giới).
