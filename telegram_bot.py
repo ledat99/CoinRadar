@@ -1,6 +1,7 @@
 import os
 import json
 import time
+import datetime
 import requests
 import urllib.request
 import threading
@@ -58,6 +59,31 @@ def get_main_keyboard():
 # ==========================================
 # 1. KẾ HOẠCH BITCOIN: ĐỒNG PHA BIAS TUẦN/NGÀY + ENTRY POC M15 & STOP ĐUA SÓNG
 # ==========================================
+def find_fractal_swings(klines_desc, n=2):
+    """
+    Xác định đỉnh/đáy cấu trúc uy tín (Fractal Swing High / Swing Low) chuẩn SMC.
+    Một đỉnh là Swing High khi cao hơn n nến trước đó và n nến sau đó.
+    Một đáy là Swing Low khi thấp hơn n nến trước đó và n nến sau đó.
+    """
+    chrono = list(reversed(klines_desc))
+    swings_h = []
+    swings_l = []
+    for i in range(n, len(chrono) - n):
+        c_time = datetime.datetime.fromtimestamp(int(chrono[i][0])/1000 + 7*3600).strftime('%H:%M %d/%m')
+        h = float(chrono[i][2])
+        l = float(chrono[i][3])
+        is_sh = all(h > float(chrono[j][2]) for j in range(i-n, i)) and all(h >= float(chrono[j][2]) for j in range(i+1, i+n+1))
+        is_sl = all(l < float(chrono[j][3]) for j in range(i-n, i)) and all(l <= float(chrono[j][3]) for j in range(i+1, i+n+1))
+        if is_sh:
+            swings_h.append({'time': c_time, 'price': h})
+        if is_sl:
+            swings_l.append({'time': c_time, 'price': l})
+    latest_sh = swings_h[-1] if swings_h else {'time': 'N/A', 'price': float(klines_desc[0][2])}
+    latest_sl = swings_l[-1] if swings_l else {'time': 'N/A', 'price': float(klines_desc[0][3])}
+    major_sh = max(swings_h, key=lambda x: x['price']) if swings_h else latest_sh
+    major_sl = min(swings_l, key=lambda x: x['price']) if swings_l else latest_sl
+    return latest_sh, latest_sl, major_sh, major_sl
+
 def calculate_btc_h4_plan():
     now = time.time()
     # Cache giữ nguyên trong 1 tiếng để đảm bảo không bị nhảy giá liên tục
@@ -73,6 +99,7 @@ def calculate_btc_h4_plan():
 
         w_klines = get_kline('W', 25)
         d_klines = get_kline('D', 25)
+        h1_klines = get_kline('60', 60)
         m15_klines = get_kline('15', 30)
 
         current_price = float(m15_klines[0][4])
@@ -88,7 +115,14 @@ def calculate_btc_h4_plan():
         d1_bear = current_price < d_ema20
         d1_bias = "🔴 GIẢM (BEARISH)" if d1_bear else "🟢 TĂNG (BULLISH)"
 
-        # 2. Tính POC M15 (Volume profile phiên gần nhất)
+        # 2. Cản Cấu Trúc Uy Tín (Fractal Swing High / Swing Low H1)
+        latest_sh, latest_sl, major_sh, major_sl = find_fractal_swings(h1_klines, n=2)
+        swing_high = round(latest_sh['price'], 1)
+        sh_time = latest_sh['time']
+        swing_low = round(latest_sl['price'], 1)
+        sl_time = latest_sl['time']
+
+        # 3. Tính POC M15 (Volume profile phiên gần nhất)
         prices = []
         weights = []
         for k in m15_klines:
@@ -101,12 +135,6 @@ def calculate_btc_h4_plan():
                 
         hist, bin_edges = np.histogram(prices, bins=25, weights=weights)
         poc_m15 = round((bin_edges[np.argmax(hist)] + bin_edges[np.argmax(hist)+1]) / 2, 1)
-
-        # 3. Cản râu nến M15/H1/H4 - TÌM CẢN TO THẬT SỰ, KHÔNG BÁN/MUA LƯNG CHỪNG
-        highs = [float(k[2]) for k in m15_klines]
-        lows = [float(k[3]) for k in m15_klines]
-        swing_high = round(max(highs), 1)
-        swing_low = round(min(lows), 1)
 
         # Phát hiện Bẫy Quét Râu (Sweep) / Mô hình 2 Đáy / 2 Đỉnh trên M15
         sweep_bull = None
@@ -123,35 +151,34 @@ def calculate_btc_h4_plan():
                     sweep_bear = {'high': c_high, 'close': c_close, 'wick': upper_wick}
 
         # Kiểm tra mô hình 2 Đáy (Double Bottom) trên M15:
-        # Nếu nến gần nhất tạo đáy cao hơn hoặc bằng đáy quét trước đó và đóng nến tăng
         is_double_bottom = (current_price > swing_low + 200.0) and (sweep_bull is not None)
 
         # XÁC ĐỊNH HƯỚNG ĐÁNH (KHÔNG ÉP THEO TREND NGÀY NẾU M15 CÓ ĐẢO CHIỀU UY TÍN)
         if sweep_bull or is_double_bottom:
             signal = "LONG"
-            setup_desc = f"Mô Hình 2 Đáy / Quét Râu Đáy tại ${swing_low:,.1f} + Bullish CHoCH"
+            setup_desc = f"Mô Hình 2 Đáy / Quét Râu Đáy tại ${swing_low:,.1f} ({sl_time}) + Bullish CHoCH"
             diamond_note = "⭐ ĐẢO CHIỀU UY TÍN: Có 2 Đáy & Quét Râu Đáy rõ ràng, không bắt đáy vô cớ!"
         elif sweep_bear:
             signal = "SHORT"
-            setup_desc = f"Quét Râu Đỉnh / 2 Đỉnh tại Cản To ${swing_high:,.1f} + Bearish CHoCH"
+            setup_desc = f"Quét Râu Đỉnh / 2 Đỉnh tại Cản Đỉnh ${swing_high:,.1f} ({sh_time}) + Bearish CHoCH"
             diamond_note = "⭐ CẢN TO THẬT SỰ: Chạm đỉnh râu bị từ chối mạnh, thuận lực xả vĩ mô!"
         elif w1_bear and d1_bear:
             signal = "SHORT"
-            setup_desc = f"Đồng Pha Giảm Tuần/Ngày - Kiên nhẫn chờ hồi về Cản To ${swing_high:,.1f}"
+            setup_desc = f"Đồng Pha Giảm Tuần/Ngày - Kiên nhẫn chờ hồi về Cản Đỉnh ${swing_high:,.1f}"
             diamond_note = "⭐ ĐỒNG PHA TUẦN + NGÀY (CẢN TO): Chờ hồi test cản to, tuyệt đối không bán lưng chừng!"
         else:
             signal = "SHORT" if d1_bear else "LONG"
-            setup_desc = f"Cấu Trúc SMC M15 tại Cản ${swing_high:,.1f}"
+            setup_desc = f"Cấu Trúc SMC H1 tại Cản Đỉnh ${swing_high:,.1f}"
             diamond_note = "⚡ Quản lý vốn theo từng mốc cản."
 
         if signal == "SHORT":
-            # ENTRY LIMIT: Neo chặt tại CẢN TO THẬT SỰ (đỉnh swing_high hoặc POC), không bán lưng chừng
+            # ENTRY LIMIT: Neo chặt tại CẢN ĐỈNH UY TÍN H1 (swing_high) hoặc POC M15, TUYỆT ĐỐI KHÔNG BÁN LƯNG CHỪNG
             c_to = swing_high
-            entry_limit = round(max(poc_m15, c_to - 100.0), 1)
+            entry_limit = round(max(poc_m15, c_to - 120.0), 1)
             # SELL STOP: Đặt phá vỡ đáy để ăn trọn sóng xả đâm 1 mạch nếu không hồi
             entry_stop = round(swing_low * 0.998, 1)
             
-            # SL: Đặt trên chóp cản to thật sự + đệm an toàn
+            # SL: Đặt trên chóp cản đỉnh uy tín + đệm an toàn
             sl = round(c_to + 180.0, 1)
             risk = sl - entry_limit
             if risk < 300.0:
@@ -161,11 +188,11 @@ def calculate_btc_h4_plan():
             tp2 = round(entry_limit - (risk * 3.5), 1)
             
             advice = (
-                f"⚠️ <b>KHÔNG BÁN LƯNG CHỪNG:</b> Chỉ vào lệnh Limit khi giá hồi lên đúng <b>Cản To ${c_to:,.1f}</b> hoặc POC M15!\n"
+                f"⚠️ <b>KHÔNG BÁN LƯNG CHỪNG:</b> Giá hiện tại ${current_price:,.1f} ở lưng chừng range, chỉ vào Limit khi giá hồi lên <b>Cản Đỉnh Uy Tín ${c_to:,.1f}</b> hoặc POC M15!\n"
                 f"💎 <b>ĐUA SÓNG ĐÂM 1 MẠCH:</b> Nếu BTC lao thẳng không test phá đáy <b>${entry_stop:,.1f}</b>, Lệnh 2 Sell Stop sẽ tự kích hoạt để không bị lỡ tàu!"
             )
         else: # LONG
-            # ENTRY LIMIT: Neo chặt tại HỖ TRỢ TO / ĐÁY 2 (không bắt đáy vô cớ)
+            # ENTRY LIMIT: Neo chặt tại HỖ TRỢ ĐÁY UY TÍN H1 / ĐÁY 2 (không bắt đáy vô cớ)
             h_to = swing_low
             entry_limit = round(min(poc_m15, h_to + 250.0), 1)
             if entry_limit < h_to + 50.0:
@@ -183,7 +210,7 @@ def calculate_btc_h4_plan():
             tp2 = round(entry_limit + (risk * 3.5), 1)
             
             advice = (
-                f"⚠️ <b>ĐẢO CHIỀU CÓ CHoCH:</b> Có xác nhận mô hình 2 Đáy / Quét râu đáy, không bắt đáy lung tung! SL dưới đáy ${h_to:,.1f}.\n"
+                f"⚠️ <b>ĐẢO CHIỀU CÓ CHoCH:</b> Có xác nhận mô hình 2 Đáy tại Hỗ Trợ Uy Tín ${h_to:,.1f}, không bắt đáy lung tung!\n"
                 f"💎 <b>ĐUA SÓNG BỨT TỐC:</b> Nếu BTC tăng thốc 1 mạch qua đỉnh <b>${entry_stop:,.1f}</b> (như nhịp 3k giá), Lệnh 2 Buy Stop sẽ tự khớp bắt trọn con sóng!"
             )
 
@@ -199,7 +226,9 @@ def calculate_btc_h4_plan():
             'setup_desc': setup_desc,
             'poc': poc_m15,
             'swing_high': swing_high,
+            'sh_time': sh_time,
             'swing_low': swing_low,
+            'sl_time': sl_time,
             'entry_limit': entry_limit,
             'entry_stop': entry_stop,
             'dist_to_entry': dist_to_entry,
@@ -220,19 +249,23 @@ def handle_btc():
     try:
         plan = calculate_btc_h4_plan()
         s_emoji = "🟢 LONG (MUA)" if plan['signal'] == 'LONG' else "🔴 SHORT (BÁN)"
-        action_l = "LỆNH 1: Bán Limit Đón Râu Hồi Retest POC M15" if plan['signal'] == 'SHORT' else "LỆNH 1: Mua Limit Đón Râu Hồi Retest POC M15"
+        action_l = "LỆNH 1: Bán Limit Đón Râu Hồi Retest Cản Uy Tín / POC" if plan['signal'] == 'SHORT' else "LỆNH 1: Mua Limit Đón Râu Hồi Retest Hỗ Trợ Uy Tín / POC"
         action_s = "LỆNH 2: Bán Stop Phá Đáy - Bắt Trọn Cú Xả Đâm 1 Mạch" if plan['signal'] == 'SHORT' else "LỆNH 2: Mua Stop Phá Đỉnh - Bắt Trọn Cú Bơm Đâm 1 Mạch"
+        sh_time_str = f" ({plan.get('sh_time', '')})" if plan.get('sh_time') else ""
+        sl_time_str = f" ({plan.get('sl_time', '')})" if plan.get('sl_time') else ""
         
         text = f"""👑 <b>[CHIẾN LƯỢC BITCOIN: ĐỒNG PHA BIAS TUẦN/NGÀY & SMC]</b> 👑
 ━━━━━━━━━━━━━━━━━━
 💰 Giá BTC hiện tại: <b>${plan['current_price']:,.1f}</b>
 🎯 <b>Vùng POC M15 (Volume cốt lõi):</b> <code>${plan['poc']:,.1f}</code> (Cách ${plan['dist_to_entry']:,.1f} giá)
-📊 Cản râu đỉnh M15: <b>${plan['swing_high']:,.1f}</b> | Đáy râu M15: <b>${plan['swing_low']:,.1f}</b>
+📊 <b>CẢN CẤU TRÚC UY TÍN (FRACTAL SMC H1):</b>
+📈 <b>Cản Đỉnh Uy Tín (Swing High):</b> <code>${plan['swing_high']:,.1f}</code>{sh_time_str}
+📉 <b>Hỗ Trợ Đáy Uy Tín (Swing Low):</b> <code>${plan['swing_low']:,.1f}</code>{sl_time_str}
 ━━━━━━━━━━━━━━━━━━
 💎 <b>ĐỒNG PHA BIAS ĐA KHUNG (WINRATE CAO):</b>
 • <b>Bias Tuần (W1):</b> {plan['w1_bias']}
 • <b>Bias Ngày (D1):</b> {plan['d1_bias']}
-⚡ <b>Cấu trúc M15:</b> <b>{plan['setup_desc']}</b>
+⚡ <b>Cấu trúc SMC:</b> <b>{plan['setup_desc']}</b>
 <i>{plan['diamond_note']}</i>
 ━━━━━━━━━━━━━━━━━━
 🚀 <b>CHIẾN LƯỢC: {s_emoji}</b>
@@ -241,7 +274,7 @@ def handle_btc():
 👉 <b>{action_s}:</b>
    <code>${plan['entry_stop']:,.1f}</code>
 
-🛡️ <b>Cắt lỗ (SL Ngoài Cản Râu M15/H4):</b> <code>${plan['sl']:,.1f}</code> (-{plan['sl_pct']}%)
+🛡️ <b>Cắt lỗ (SL Ngoài Cản Đỉnh/Đáy H1):</b> <code>${plan['sl']:,.1f}</code> (-{plan['sl_pct']}%)
 🎯 <b>Chốt lời 1 (TP1 - R:R 1:2):</b> <code>${plan['tp1']:,.1f}</code>
 🎯 <b>Chốt lời 2 (TP2 - R:R 1:3.5):</b> <code>${plan['tp2']:,.1f}</code>
 
@@ -294,95 +327,94 @@ def calculate_gold_h4_plan():
         w1_bias = "🔴 GIẢM (BEARISH)" if w1_bear else "🟢 TĂNG (BULLISH)"
         d1_bias = "🔴 GIẢM (BEARISH)" if d1_bear else "🟢 TĂNG (BULLISH)"
         
-        # 2. Các mốc cấu trúc nến M5, M15, H1, H4 trên OANDA
+        # 2. Lấy dữ liệu H1 klines từ Bybit XAUUSDT và tính Fractal Swing High / Low SMC
+        url_gold_kline = 'https://api.bybit.com/v5/market/kline?category=linear&symbol=XAUUSDT&interval=60&limit=60'
+        req_g = urllib.request.Request(url_gold_kline, headers=HEADERS)
+        with urllib.request.urlopen(req_g, timeout=8) as r:
+            gold_h1_klines = json.loads(r.read().decode())['result']['list']
+
+        sh_raw, sl_raw, m_sh_raw, m_sl_raw = find_fractal_swings(gold_h1_klines, n=2)
+        delta = current_gold - float(gold_h1_klines[0][4])
+        major_res = round(sh_raw['price'] + delta, 2)
+        major_sup = round(sl_raw['price'] + delta, 2)
+        sh_time = sh_raw['time']
+        sl_time = sl_raw['time']
+
         m5_high = round(data['high|5'], 2)
-        m5_low = round(data['low|5'], 2)
-        prev_m5_high = round(data['high[1]|5'], 2) if data.get('high[1]|5') else m5_high
-        
         m15_high = round(data['high|15'], 2)
         m15_low = round(data['low|15'], 2)
         m15_ema20 = round(data['EMA20|15'], 2)
-        
-        h1_high = round(data['high|60'], 2)
-        h1_low = round(data['low|60'], 2)
-        
-        h4_high = round(data['high|240'], 2)
-        h4_low = round(data['low|240'], 2)
         h4_ema20 = round(data['EMA20|240'], 2)
-        
-        # CẢN TO THẬT SỰ (TUYỆT ĐỐI KHÔNG BÁN LƯNG CHỪNG):
-        major_res = max(h1_high, h4_high)
-        major_sup = min(h1_low, h4_low)
         
         # 3. Vùng POC M15 OANDA (Volume Profile M15)
         poc_gold_m15 = round((m15_high + m15_low + m15_ema20) / 3.0, 2)
         
         # 4. Phát hiện Bẫy Quét Râu / Mô hình 2 Đáy / 2 Đỉnh trên M15
-        is_double_bottom = (current_gold > major_sup + 6.0) and (m15_low > major_sup) and (current_gold > m15_ema20)
-        is_at_major_res = (current_gold >= major_res - 4.0) or (m5_high >= major_res - 1.0)
+        is_double_bottom = (current_gold > major_sup + 4.0) and (m15_low >= major_sup - 1.0) and (current_gold > m15_ema20)
+        is_at_major_res = (current_gold >= major_res - 3.5) or (m5_high >= major_res - 0.8)
         
         # XÁC ĐỊNH HƯỚNG ĐÁNH (KHÔNG ÉP THEO TREND NGÀY NẾU M15 CÓ ĐẢO CHIỀU UY TÍN)
         if is_double_bottom and not is_at_major_res:
             signal = "LONG"
-            setup_desc = f"Mô Hình 2 Đáy M15 tại Hỗ Trợ To ${major_sup:,.2f} + Bullish CHoCH"
-            diamond_note = "⭐ ĐẢO CHIỀU UY TÍN: Có mô hình 2 Đáy từ cản to, không bắt đáy vô cớ!"
+            setup_desc = f"Mô Hình 2 Đáy M15 tại Hỗ Trợ Đáy Uy Tín ${major_sup:,.2f} ({sl_time}) + Bullish CHoCH"
+            diamond_note = "⭐ ĐẢO CHIỀU UY TÍN: Có mô hình 2 Đáy từ cản uy tín, không bắt đáy vô cớ!"
         elif is_at_major_res or (current_gold < h4_ema20):
             signal = "SHORT"
-            setup_desc = f"Cản To H4/H1 tại ${major_res:,.2f} + Quét Râu Đỉnh / CHoCH Giảm"
-            diamond_note = "⭐ CẢN TO THẬT SỰ: Chạm vùng cản cứng H4, tuyệt đối không bán lưng chừng!"
+            setup_desc = f"Cản Đỉnh Uy Tín H1 tại ${major_res:,.2f} ({sh_time}) + Quét Râu Đỉnh / CHoCH Giảm"
+            diamond_note = "⭐ CẢN TO THẬT SỰ: Chạm đỉnh râu cản H1 bị từ chối mạnh, tuyệt đối không bán lưng chừng!"
         else:
             signal = "SHORT" if d1_bear else "LONG"
-            setup_desc = f"Cấu Trúc SMC M15 tại Cản ${major_res:,.2f}"
+            setup_desc = f"Cấu Trúc SMC H1 tại Cản Đỉnh ${major_res:,.2f}"
             diamond_note = "⚡ Quản lý vốn chặt chẽ theo cản."
         
         if signal == "SHORT":
-            # ENTRY LIMIT: Neo chặt tại CẢN TO THẬT SỰ ($3,542 - $3,544), TUYỆT ĐỐI KHÔNG BÁN LƯNG CHỪNG
-            entry_limit = round(max(poc_gold_m15, major_res - 2.0), 2)
+            # ENTRY LIMIT: Neo chặt tại CẢN ĐỈNH UY TÍN (major_res) hoặc POC M15, TUYỆT ĐỐI KHÔNG BÁN LƯNG CHỪNG
+            entry_limit = round(max(poc_gold_m15, major_res - 1.8), 2)
             if entry_limit < current_gold:
-                entry_limit = round(major_res - 1.5, 2)
+                entry_limit = round(major_res - 1.0, 2)
                 
             # Entry 2: Bán Stop khi gãy đáy xác nhận sóng xả tiếp diễn
-            entry_stop = round(m15_low - 1.2, 2)
+            entry_stop = round(major_sup - 1.2, 2)
             
-            # SL ĐẶT TRÊN CẢN TO THẬT SỰ: đệm 1.8 giá ngoài đỉnh cản to
-            sl = round(major_res + 1.8, 2)
+            # SL ĐẶT TRÊN CẢN ĐỈNH UY TÍN H1: đệm 2.5 giá ngoài đỉnh cản
+            sl = round(major_res + 2.5, 2)
             sl_dist = round(sl - entry_limit, 2)
-            if sl_dist < 10.0:
-                sl = round(entry_limit + 12.0, 2)
+            if sl_dist < 8.0:
+                sl = round(entry_limit + 10.0, 2)
                 sl_dist = round(sl - entry_limit, 2)
-            elif sl_dist > 26.0:
-                sl = round(entry_limit + 22.0, 2)
+            elif sl_dist > 25.0:
+                sl = round(entry_limit + 20.0, 2)
                 sl_dist = round(sl - entry_limit, 2)
                 
             tp1 = round(entry_limit - (sl_dist * 2.0), 2)
             tp2 = round(entry_limit - (sl_dist * 3.5), 2)
             
             advice = (
-                f"⚠️ <b>KHÔNG BÁN LƯNG CHỪNG:</b> Giá hiện tại ${current_gold:,.2f} ở giữa sóng, chỉ đặt Sell Limit đón tại <b>Cản To ${major_res:,.2f}</b>!\n"
+                f"⚠️ <b>KHÔNG BÁN LƯNG CHỪNG:</b> Giá hiện tại ${current_gold:,.2f} ở giữa sóng, chỉ đặt Sell Limit đón tại <b>Cản Đỉnh Uy Tín ${major_res:,.2f}</b> ({sh_time})!\n"
                 f"💎 <b>DCA NHỒI KHI ĐẸP:</b> Khớp Lệnh 1 và giá sập thủng đáy <b>${entry_stop:,.2f}</b> (lãi > {sl_dist*0.7:.1f} giá), dời SL về Hoà Vốn (Entry) và kích hoạt Lệnh 2 (Sell Stop)!"
             )
         else: # LONG
-            # ENTRY LIMIT: Neo chặt tại HỖ TRỢ TO / ĐÁY 2 (không bắt đáy vô cớ)
-            entry_limit = round(min(poc_gold_m15, major_sup + 5.0), 2)
+            # ENTRY LIMIT: Neo chặt tại HỖ TRỢ ĐÁY UY TÍN (không bắt đáy vô cớ)
+            entry_limit = round(min(poc_gold_m15, major_sup + 2.5), 2)
             if entry_limit > current_gold:
-                entry_limit = round(current_gold - 2.5, 2)
+                entry_limit = round(major_sup + 1.0, 2)
                 
-            entry_stop = round(m15_high + 1.2, 2)
+            entry_stop = round(major_res + 1.2, 2)
             
-            sl = round(major_sup - 1.8, 2)
+            sl = round(major_sup - 2.5, 2)
             sl_dist = round(entry_limit - sl, 2)
-            if sl_dist < 10.0:
-                sl = round(entry_limit - 12.0, 2)
+            if sl_dist < 8.0:
+                sl = round(entry_limit - 10.0, 2)
                 sl_dist = round(entry_limit - sl, 2)
-            elif sl_dist > 26.0:
-                sl = round(entry_limit + 22.0, 2)
+            elif sl_dist > 25.0:
+                sl = round(entry_limit + 20.0, 2)
                 sl_dist = round(entry_limit - sl, 2)
                 
             tp1 = round(entry_limit + (sl_dist * 2.0), 2)
             tp2 = round(entry_limit + (sl_dist * 3.5), 2)
             
             advice = (
-                f"⚠️ <b>ĐẢO CHIỀU CÓ CHoCH:</b> Có xác nhận mô hình 2 Đáy tại hỗ trợ to ${major_sup:,.2f}, không bắt đáy vô cớ! SL dưới đáy hỗ trợ.\n"
+                f"⚠️ <b>ĐẢO CHIỀU CÓ CHoCH:</b> Có xác nhận mô hình 2 Đáy tại Hỗ Trợ Đáy Uy Tín ${major_sup:,.2f} ({sl_time}), không bắt đáy vô cớ! SL dưới đáy hỗ trợ.\n"
                 f"💎 <b>DCA NHỒI KHI ĐẸP:</b> Khớp Lệnh 1 và giá bứt phá qua đỉnh <b>${entry_stop:,.2f}</b> (lãi > {sl_dist*0.7:.1f} giá), dời SL về Hoà Vốn và kích hoạt Lệnh 2 (Buy Stop)!"
             )
             
@@ -395,14 +427,18 @@ def calculate_gold_h4_plan():
         d1_bias = "🔴 GIẢM (BEARISH)"
         diamond_note = "⭐ ĐỒNG PHA TUẦN + NGÀY (SETUP CAO CẤP)"
         poc_gold_m15 = 3535.0
-        entry_limit = 3541.0
-        entry_stop = 3524.0
-        sl = 3553.0
-        sl_dist = 12.0
-        tp1 = 3517.0
-        tp2 = 3499.0
+        entry_limit = 3545.0
+        entry_stop = 3505.0
+        major_res = 3547.0
+        major_sup = 3508.0
+        sh_time = "H1"
+        sl_time = "H1"
+        sl = 3550.0
+        sl_dist = 5.0
+        tp1 = 3535.0
+        tp2 = 3520.0
         signal = "SHORT"
-        setup_desc = "Râu Nến Test Đỉnh OANDA + CHoCH Giảm"
+        setup_desc = "Cản Đỉnh Uy Tín H1 + CHoCH Giảm"
         advice = "⚠️ Kiểm tra biểu đồ MT5 trước khi vào lệnh."
 
     plan = {
@@ -415,6 +451,10 @@ def calculate_gold_h4_plan():
         'd1_bias': d1_bias,
         'diamond_note': diamond_note,
         'poc_m15': poc_gold_m15,
+        'swing_high': major_res,
+        'sh_time': sh_time,
+        'swing_low': major_sup,
+        'sl_time': sl_time,
         'setup_desc': setup_desc,
         'entry_limit': entry_limit,
         'entry_stop': entry_stop,
@@ -432,19 +472,24 @@ def handle_gold():
     try:
         plan = calculate_gold_h4_plan()
         s_emoji = "🟢 LONG (MUA)" if plan['signal'] == 'LONG' else "🔴 SHORT (BÁN)"
-        action_l = "LỆNH 1: Bán Limit Đón Râu Hồi Retest POC M15" if plan['signal'] == 'SHORT' else "LỆNH 1: Mua Limit Đón Râu Hồi Retest POC M15"
+        action_l = "LỆNH 1: Bán Limit Đón Râu Hồi Retest Cản Uy Tín / POC" if plan['signal'] == 'SHORT' else "LỆNH 1: Mua Limit Đón Râu Hồi Retest Hỗ Trợ Uy Tín / POC"
         action_s = "LỆNH 2: Bán Stop Phá Đáy Tiếp Diễn Sóng Tuần" if plan['signal'] == 'SHORT' else "LỆNH 2: Mua Stop Phá Đỉnh Tiếp Diễn Sóng Tuần"
+        sh_time_str = f" ({plan.get('sh_time', '')})" if plan.get('sh_time') else ""
+        sl_time_str = f" ({plan.get('sl_time', '')})" if plan.get('sl_time') else ""
         
         text = f"""🥇 <b>[CHIẾN LƯỢC VÀNG SMC: OANDA:XAUUSD (MT5 CHUẨN)]</b> 🥇
 ━━━━━━━━━━━━━━━━━━
 📊 Nguồn biểu đồ: <b>{plan['data_source']}</b>
 💰 Giá Vàng OANDA: <b>${plan['current_price']:,.2f}</b> (Bid: ${plan['bid']:,.2f} | Ask: ${plan['ask']:,.2f})
 🎯 <b>Vùng POC M15 (Thanh khoản hội tụ):</b> <code>${plan['poc_m15']:,.2f}</code>
+📊 <b>CẢN CẤU TRÚC UY TÍN (FRACTAL SMC H1):</b>
+📈 <b>Cản Đỉnh Uy Tín (Swing High):</b> <code>${plan['swing_high']:,.2f}</code>{sh_time_str}
+📉 <b>Hỗ Trợ Đáy Uy Tín (Swing Low):</b> <code>${plan['swing_low']:,.2f}</code>{sl_time_str}
 ━━━━━━━━━━━━━━━━━━
 💎 <b>ĐỒNG PHA BIAS ĐA KHUNG (WINRATE CAO):</b>
 • <b>Bias Tuần (W1):</b> {plan['w1_bias']}
 • <b>Bias Ngày (D1):</b> {plan['d1_bias']}
-⚡ <b>Cấu trúc M15:</b> <b>{plan['setup_desc']}</b>
+⚡ <b>Cấu trúc SMC:</b> <b>{plan['setup_desc']}</b>
 <i>{plan['diamond_note']}</i>
 ━━━━━━━━━━━━━━━━━━
 🚀 <b>CHIẾN LƯỢC: {s_emoji}</b>
@@ -453,7 +498,7 @@ def handle_gold():
 👉 <b>{action_s}:</b>
    <code>${plan['entry_stop']:,.2f}</code>
 
-🛡️ <b>Cắt lỗ (SL Trên Râu Test M15 ~{plan['sl_dist']:.1f} Giá):</b>
+🛡️ <b>Cắt lỗ (SL Ngoài Cản Đỉnh/Đáy H1 ~{plan['sl_dist']:.1f} Giá):</b>
    <code>${plan['sl']:,.2f}</code>
 🎯 <b>Chốt lời 1 (TP1 - Ăn {plan['sl_dist']*2:.1f} Giá | R:R 1:2):</b> <code>${plan['tp1']:,.2f}</code>
 🎯 <b>Chốt lời 2 (TP2 - Ăn {plan['sl_dist']*3.5:.1f} Giá | R:R 1:3.5):</b> <code>${plan['tp2']:,.2f}</code>
@@ -671,8 +716,10 @@ def auto_diamond_alert_worker():
                         msg = f"""🚨 <b>[TỰ ĐỘNG BÁO KÈO: SETUP KIM CƯƠNG VÀNG XAUUSD]</b> 🚨
 ━━━━━━━━━━━━━━━━━━
 📊 Nguồn biểu đồ: <b>TradingView (OANDA:XAUUSD - Chuẩn MT5)</b>
-💰 Giá Vàng hiện tại: <b>${price_gold:,.2f}</b> (Đang trong vùng Retest POC M15!)
+💰 Giá Vàng hiện tại: <b>${price_gold:,.2f}</b> (Đang retest Cản Uy Tín / POC!)
 🎯 <b>Vùng POC M15 (Thanh khoản):</b> <code>${plan_gold['poc_m15']:,.2f}</code>
+📊 <b>Cản Đỉnh Uy Tín (Swing High):</b> <code>${plan_gold['swing_high']:,.2f}</code> ({plan_gold.get('sh_time', '')})
+📉 <b>Hỗ Trợ Đáy Uy Tín (Swing Low):</b> <code>${plan_gold['swing_low']:,.2f}</code> ({plan_gold.get('sl_time', '')})
 ⚡ <b>Cấu trúc SMC:</b> <b>{plan_gold['setup_desc']}</b>
 ━━━━━━━━━━━━━━━━━━
 💎 <b>ĐỒNG PHA BIAS ĐA KHUNG (WINRATE CAO):</b>
@@ -686,7 +733,7 @@ def auto_diamond_alert_worker():
 👉 <b>LỆNH STOP NHỒI SÓNG TIẾP DIỄN:</b>
    <code>${plan_gold['entry_stop']:,.2f}</code>
 
-🛡️ <b>Cắt lỗ (SL Trên Râu Test M15):</b>
+🛡️ <b>Cắt lỗ (SL Ngoài Cản Đỉnh H1):</b>
    <code>${plan_gold['sl']:,.2f}</code> (~{plan_gold['sl_dist']:.1f} Giá)
 🎯 <b>Chốt lời 1 (TP1 - R:R 1:2):</b> <code>${plan_gold['tp1']:,.2f}</code>
 🎯 <b>Chốt lời 2 (TP2 - R:R 1:3.5):</b> <code>${plan_gold['tp2']:,.2f}</code>
@@ -715,6 +762,8 @@ def auto_diamond_alert_worker():
 ━━━━━━━━━━━━━━━━━━
 💰 Giá BTC hiện tại: <b>${price_btc:,.1f}</b> (Đang tiếp cận điểm kích hoạt!)
 🎯 <b>Vùng POC M15 (Volume cốt lõi):</b> <code>${plan_btc['poc']:,.1f}</code>
+📊 <b>Cản Đỉnh Uy Tín (Swing High):</b> <code>${plan_btc['swing_high']:,.1f}</code> ({plan_btc.get('sh_time', '')})
+📉 <b>Hỗ Trợ Đáy Uy Tín (Swing Low):</b> <code>${plan_btc['swing_low']:,.1f}</code> ({plan_btc.get('sl_time', '')})
 ⚡ <b>Cấu trúc SMC:</b> <b>{plan_btc['setup_desc']}</b>
 ━━━━━━━━━━━━━━━━━━
 💎 <b>ĐỒNG PHA BIAS ĐA KHUNG (WINRATE CAO):</b>
@@ -728,7 +777,7 @@ def auto_diamond_alert_worker():
 👉 <b>{action_s}:</b>
    <code>${entry_s:,.1f}</code>
 
-🛡️ <b>Cắt lỗ (SL Ngoài Cản Râu M15/H4):</b> <code>${plan_btc['sl']:,.1f}</code> (-{plan_btc['sl_pct']}%)
+🛡️ <b>Cắt lỗ (SL Ngoài Cản H1):</b> <code>${plan_btc['sl']:,.1f}</code> (-{plan_btc['sl_pct']}%)
 🎯 <b>Chốt lời 1 (TP1 - R:R 1:2):</b> <code>${plan_btc['tp1']:,.1f}</code>
 🎯 <b>Chốt lời 2 (TP2 - R:R 1:3.5):</b> <code>${plan_btc['tp2']:,.1f}</code>
 
