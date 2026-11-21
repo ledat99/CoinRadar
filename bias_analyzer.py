@@ -2,6 +2,8 @@ import ccxt
 import pandas as pd
 import ta
 import time
+import os
+import json
 from flow_filter import get_flow_snapshot
 
 binance_futures = ccxt.binance({
@@ -10,28 +12,18 @@ binance_futures = ccxt.binance({
 })
 
 def get_market_bias():
-    """
-    Xác định Bias toàn thị trường dựa trên Bitcoin (BTC/USDT):
-    - Khung H4: Xu hướng dài (EMA 50 & EMA 200)
-    - Khung H1: Momentum & Vị trí giá
-    - Dòng tiền: Inflow/Outflow thực tế
-    Returns:
-        dict: {'bias': 'BULLISH'/'BEARISH'/'NEUTRAL', 'score': float, 'btc_price': float, 'details': str}
-    """
+    """Xác định Bias toàn thị trường dựa trên Bitcoin"""
     try:
-        # Lấy dữ liệu nến H4 và H1 của BTC
         ohlcv_h4 = binance_futures.fetch_ohlcv('BTC/USDT:USDT', '4h', limit=100)
         ohlcv_h1 = binance_futures.fetch_ohlcv('BTC/USDT:USDT', '1h', limit=100)
         
         df_h4 = pd.DataFrame(ohlcv_h4, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
         df_h1 = pd.DataFrame(ohlcv_h1, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
         
-        # Chỉ báo H4
         df_h4['ema_50'] = ta.trend.EMAIndicator(close=df_h4['close'], window=50).ema_indicator()
         df_h4['ema_200'] = ta.trend.EMAIndicator(close=df_h4['close'], window=200).ema_indicator()
         df_h4['rsi'] = ta.momentum.RSIIndicator(close=df_h4['close'], window=14).rsi()
         
-        # Chỉ báo H1
         df_h1['ema_20'] = ta.trend.EMAIndicator(close=df_h1['close'], window=20).ema_indicator()
         df_h1['ema_50'] = ta.trend.EMAIndicator(close=df_h1['close'], window=50).ema_indicator()
         df_h1['rsi'] = ta.momentum.RSIIndicator(close=df_h1['close'], window=14).rsi()
@@ -40,9 +32,7 @@ def get_market_bias():
         h4_last = df_h4.iloc[-1]
         h1_last = df_h1.iloc[-1]
         
-        score = 0 # -100 đến +100
-        
-        # Đánh giá H4
+        score = 0
         if h4_last['close'] > h4_last['ema_50']: score += 25
         else: score -= 25
         
@@ -50,14 +40,12 @@ def get_market_bias():
             if h4_last['close'] > h4_last['ema_200']: score += 25
             else: score -= 25
             
-        # Đánh giá H1
         if h1_last['close'] > h1_last['ema_20']: score += 15
         else: score -= 15
         
         if h1_last['rsi'] > 55: score += 15
         elif h1_last['rsi'] < 45: score -= 15
         
-        # Dòng tiền BTC
         flow = get_flow_snapshot('BTC/USDT')
         flow_summary = flow.get('summary', {}) if flow else {}
         flow_score = flow_summary.get('score', 50)
@@ -65,12 +53,11 @@ def get_market_bias():
         if flow_score >= 60: score += 20
         elif flow_score <= 40: score -= 20
         
-        # Quyết định Bias
         if score >= 35:
-            bias = "BULLISH" # Ưu tiên Long
+            bias = "BULLISH"
             desc = "Thị trường xu hướng TĂNG (Ưu tiên LONG)"
         elif score <= -35:
-            bias = "BEARISH" # Ưu tiên Short
+            bias = "BEARISH"
             desc = "Thị trường xu hướng GIẢM (Ưu tiên SHORT)"
         else:
             bias = "NEUTRAL"
@@ -86,7 +73,7 @@ def get_market_bias():
             'desc': desc
         }
     except Exception as e:
-        print(f"Lỗi phân tích BTC bias: {e}")
+        print(f"Lỗi BTC bias: {e}")
         return {
             'bias': 'NEUTRAL',
             'score': 0,
@@ -94,137 +81,91 @@ def get_market_bias():
             'h1_rsi': 50,
             'h4_rsi': 50,
             'flow_score': 50,
-            'desc': 'Không lấy được dữ liệu BTC Bias'
+            'desc': 'Không lấy được BTC Bias'
         }
 
-def check_choch_and_retest(df, mode='long'):
+def quick_scan_market(mode='long', limit=3):
     """
-    Kiểm tra cấu trúc thị trường SMC:
-    1. Có tạo CHoCH (Change of Character - Đổi cấu trúc đỉnh/đáy) gần đây không?
-    2. Đã có râu nến quay lại Test vùng cản bị phá vỡ hay chưa? (Tránh cản tàu / Breakout giả).
-    Returns:
-        dict: {'has_choch': bool, 'has_retest': bool, 'retest_level': float, 'breakout_level': float}
-    """
-    if len(df) < 20:
-        return {'has_choch': False, 'has_retest': False, 'retest_level': 0, 'breakout_level': 0}
-        
-    highs = df['high'].values
-    lows = df['low'].values
-    closes = df['close'].values
-    
-    if mode == 'long':
-        prev_swing_high = float(max(highs[-15:-5]))
-        choch_found = bool((closes[-5:] > prev_swing_high).any() or (highs[-5:] > prev_swing_high).any())
-        retest_cond = (lows[-4:] <= prev_swing_high * 1.008) & (closes[-4:] >= prev_swing_high * 0.992)
-        retest_found = bool(retest_cond.any())
-        return {
-            'has_choch': choch_found,
-            'has_retest': retest_found,
-            'retest_level': prev_swing_high,
-            'breakout_level': float(max(highs[-5:]))
-        }
-    else: # short
-        prev_swing_low = float(min(lows[-15:-5]))
-        choch_found = bool((closes[-5:] < prev_swing_low).any() or (lows[-5:] < prev_swing_low).any())
-        retest_cond = (highs[-4:] >= prev_swing_low * 0.992) & (closes[-4:] <= prev_swing_low * 1.008)
-        retest_found = bool(retest_cond.any())
-        return {
-            'has_choch': choch_found,
-            'has_retest': retest_found,
-            'retest_level': prev_swing_low,
-            'breakout_level': float(min(lows[-5:]))
-        }
-
-def quick_scan_market(mode='long', limit=5):
-    """
-    Quét siêu tốc các coin thanh khoản cao trên Binance Futures theo chiều TĂNG hoặc GIẢM.
-    Trả về ngay kết quả Top coin đẹp nhất kèm Entry, SL, TP (R:R 1:2) và Dòng tiền.
+    QUÉT THEO BIAS THỊ TRƯỜNG & VOLUME THỰC TẾ:
+    - Long: Chọn các coin giữ Trend Tăng tốt nhất + Volume > 10M USD
+    - Short: Chọn các coin gãy cấu trúc xả mạnh nhất + Volume > 10M USD
+    - Luôn trả về Top 3 coin đẹp nhất, không lọc cứng nhắc!
     """
     try:
         tickers = binance_futures.fetch_tickers()
         usdt_pairs = []
         for sym, t in tickers.items():
-            if '/USDT:USDT' in sym and t.get('quoteVolume', 0) > 20000000: # Volume 24h > 20 Triệu USD
+            vol = t.get('quoteVolume', 0)
+            if '/USDT:USDT' in sym and vol > 10000000:
                 usdt_pairs.append({
                     'symbol': sym.split(':')[0],
                     'full_symbol': sym,
-                    'volume': t['quoteVolume'],
+                    'volume': vol,
                     'change': t.get('percentage', 0),
                     'last': t['last']
                 })
                 
+        if not usdt_pairs:
+            return []
+            
         if mode == 'long':
             usdt_pairs.sort(key=lambda x: x['change'], reverse=True)
         else:
             usdt_pairs.sort(key=lambda x: x['change'])
             
-        candidates = usdt_pairs[:15]
+        candidates = usdt_pairs[:12]
         results = []
         
         for c in candidates:
             sym = c['full_symbol']
-            ohlcv = binance_futures.fetch_ohlcv(sym, '15m', limit=50)
-            if not ohlcv or len(ohlcv) < 30: continue
+            ohlcv = binance_futures.fetch_ohlcv(sym, '15m', limit=35)
+            if not ohlcv or len(ohlcv) < 20: continue
             df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
             df['ema_20'] = ta.trend.EMAIndicator(close=df['close'], window=20).ema_indicator()
             df['atr'] = ta.volatility.AverageTrueRange(high=df['high'], low=df['low'], close=df['close'], window=14).average_true_range()
             df['rsi'] = ta.momentum.RSIIndicator(close=df['close'], window=14).rsi()
             
             last = df.iloc[-1]
-            atr = last['atr']
-            price = last['close']
-            
-            # KIỂM TRA CHoCH & RETEST RÂU NẾN
-            choch_info = check_choch_and_retest(df, mode=mode)
+            atr = float(last['atr'])
+            price = float(last['close'])
+            ema = float(last['ema_20'])
+            rsi = float(last['rsi'])
             
             if mode == 'long':
-                swing_low_wick = df['low'].tail(6).min()
-                ema_support = last['ema_20']
-                entry_limit = max(swing_low_wick, ema_support * 0.998)
-                if entry_limit >= price:
-                    entry_limit = price * 0.995
-                
-                # Buy Stop chỉ kích hoạt khi đã có CHoCH và râu test lại cản
-                entry_stop = choch_info['breakout_level'] * 1.002
-                stop_status = "ĐÃ TẠO CHoCH + TEST RÂU" if (choch_info['has_choch'] and choch_info['has_retest']) else ("ĐÃ TẠO CHoCH (Chờ test)" if choch_info['has_choch'] else "CHƯA CÓ CHoCH (Hạn chế Stop)")
-                
-                sl = min(swing_low_wick, entry_limit - (1.5 * atr))
-                risk_limit = entry_limit - sl
-                tp1 = entry_limit + (risk_limit * 2.0)
-                tp2 = entry_limit + (risk_limit * 3.5)
-                sl_pct = (risk_limit / entry_limit) * 100
-                score = (last['rsi'] - 40) + (c['change'] * 2) + (30 if choch_info['has_choch'] else 0)
+                swing_low = float(df['low'].tail(5).min())
+                entry_limit = round(max(swing_low, min(price * 0.996, ema)), 6)
+                sl = round(entry_limit - (1.6 * atr), 6)
+                risk = entry_limit - sl
+                tp1 = round(entry_limit + (risk * 2.0), 6)
+                tp2 = round(entry_limit + (risk * 3.5), 6)
+                sl_pct = (risk / entry_limit) * 100
+                entry_stop = round(float(df['high'].tail(5).max()) * 1.002, 6)
+                bias_status = "🟢 BIAS TĂNG (EMA20 + Vol Lớn)" if price >= ema else "⚪ Sóng Hồi Tăng"
                 
                 order_strategy = {
-                    'limit_label': 'BUY LIMIT (Đón Râu Hồi Test Cản)',
+                    'limit_label': 'BUY LIMIT (Đón Râu Hồi EMA20)',
                     'entry_limit': entry_limit,
-                    'stop_label': 'BUY STOP (Phá Vỡ Khi Đã Test)',
+                    'stop_label': 'BUY STOP (Phá Cản Tiếp Diễn)',
                     'entry_stop': entry_stop,
-                    'stop_status': stop_status
+                    'stop_status': bias_status
                 }
             else: # short
-                swing_high_wick = df['high'].tail(6).max()
-                ema_resistance = last['ema_20']
-                entry_limit = min(swing_high_wick, ema_resistance * 1.002)
-                if entry_limit <= price:
-                    entry_limit = price * 1.005
-                    
-                entry_stop = choch_info['breakout_level'] * 0.998
-                stop_status = "ĐÃ TẠO CHoCH + TEST RÂU" if (choch_info['has_choch'] and choch_info['has_retest']) else ("ĐÃ TẠO CHoCH (Chờ test)" if choch_info['has_choch'] else "CHƯA CÓ CHoCH (Hạn chế Stop)")
-                
-                sl = max(swing_high_wick, entry_limit + (1.5 * atr))
-                risk_limit = sl - entry_limit
-                tp1 = entry_limit - (risk_limit * 2.0)
-                tp2 = entry_limit - (risk_limit * 3.5)
-                sl_pct = (risk_limit / entry_limit) * 100
-                score = (60 - last['rsi']) + (abs(c['change']) * 2) + (30 if choch_info['has_choch'] else 0)
+                swing_high = float(df['high'].tail(5).max())
+                entry_limit = round(min(swing_high, max(price * 1.004, ema)), 6)
+                sl = round(entry_limit + (1.6 * atr), 6)
+                risk = sl - entry_limit
+                tp1 = round(entry_limit - (risk * 2.0), 6)
+                tp2 = round(entry_limit - (risk * 3.5), 6)
+                sl_pct = (risk / entry_limit) * 100
+                entry_stop = round(float(df['low'].tail(5).min()) * 0.998, 6)
+                bias_status = "🔴 BIAS GIẢM (Gãy EMA20 + Xả Mạnh)" if price <= ema else "⚪ Hồi Cản Để Short"
                 
                 order_strategy = {
-                    'limit_label': 'SELL LIMIT (Đón Râu Hồi Test Cản)',
+                    'limit_label': 'SELL LIMIT (Đón Râu Cản EMA20)',
                     'entry_limit': entry_limit,
-                    'stop_label': 'SELL STOP (Phá Đáy Khi Đã Test)',
+                    'stop_label': 'SELL STOP (Phá Đáy Tiếp Diễn)',
                     'entry_stop': entry_stop,
-                    'stop_status': stop_status
+                    'stop_status': bias_status
                 }
                 
             results.append({
@@ -241,145 +182,27 @@ def quick_scan_market(mode='long', limit=5):
                 'tp1': tp1,
                 'tp2': tp2,
                 'change_24h': c['change'],
-                'rsi': last['rsi'],
+                'rsi': rsi,
                 'vol_m': c['volume'] / 1000000,
-                'score': score
+                'score': abs(c['change'])
             })
-            
-        results.sort(key=lambda x: x['score'], reverse=True)
-        return results[:limit]
-    except Exception as e:
-        print(f"Lỗi quick scan: {e}")
-        return []
-    try:
-        tickers = binance_futures.fetch_tickers()
-        usdt_pairs = []
-        for sym, t in tickers.items():
-            if '/USDT:USDT' in sym and t.get('quoteVolume', 0) > 20000000: # Volume 24h > 20 Triệu USD
-                usdt_pairs.append({
-                    'symbol': sym.split(':')[0],
-                    'full_symbol': sym,
-                    'volume': t['quoteVolume'],
-                    'change': t.get('percentage', 0),
-                    'last': t['last']
-                })
+            if len(results) >= limit:
+                break
                 
-        if mode == 'long':
-            # Tìm coin giữ giá tốt / tăng nhẹ hoặc hồi phục có volume
-            usdt_pairs.sort(key=lambda x: x['change'], reverse=True)
-        else: # short
-            # Tìm coin giảm mạnh, gãy cấu trúc
-            usdt_pairs.sort(key=lambda x: x['change'])
-            
-        candidates = usdt_pairs[:12]
-        results = []
-        
-        for c in candidates:
-            sym = c['full_symbol']
-            ohlcv = binance_futures.fetch_ohlcv(sym, '15m', limit=50)
-            if not ohlcv or len(ohlcv) < 30: continue
-            df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-            df['ema_20'] = ta.trend.EMAIndicator(close=df['close'], window=20).ema_indicator()
-            df['atr'] = ta.volatility.AverageTrueRange(high=df['high'], low=df['low'], close=df['close'], window=14).average_true_range()
-            df['rsi'] = ta.momentum.RSIIndicator(close=df['close'], window=14).rsi()
-            
-            last = df.iloc[-1]
-            atr = last['atr']
-            price = last['close']
-            
-            if mode == 'long':
-                # Xu hướng TĂNG:
-                # 1. Điểm Limit đón râu nến (Pullback Limit): Đón ở vùng râu gần cản dưới (Swing Low 5 nến hoặc EMA20)
-                swing_low_wick = df['low'].tail(6).min()
-                ema_support = last['ema_20']
-                entry_limit = max(swing_low_wick, ema_support * 0.998)
-                # Nếu giá hiện tại quá gần limit thì lấy mức râu dưới
-                if entry_limit >= price:
-                    entry_limit = price * 0.995
-                
-                # 2. Điểm Buy Stop phá vỡ (Breakout Stop): Đặt trên râu nến cao nhất gần nhất
-                swing_high_wick = df['high'].tail(6).max()
-                entry_stop = swing_high_wick * 1.002
-                
-                # Cắt lỗ SL đặt an toàn dưới râu cản cứng - 1.5 ATR
-                sl = min(swing_low_wick, entry_limit - (1.5 * atr))
-                risk_limit = entry_limit - sl
-                tp1 = entry_limit + (risk_limit * 2.0)
-                tp2 = entry_limit + (risk_limit * 3.5)
-                sl_pct = (risk_limit / entry_limit) * 100
-                score = (last['rsi'] - 40) + (c['change'] * 2)
-                
-                order_strategy = {
-                    'limit_label': 'BUY LIMIT (Đón Râu Hồi)',
-                    'entry_limit': entry_limit,
-                    'stop_label': 'BUY STOP (Phá Vỡ Cản)',
-                    'entry_stop': entry_stop,
-                }
-            else:
-                # Xu hướng GIẢM:
-                # 1. Điểm Sell Limit đón râu hồi lên cản trên (Swing High 5 nến hoặc EMA20)
-                swing_high_wick = df['high'].tail(6).max()
-                ema_resistance = last['ema_20']
-                entry_limit = min(swing_high_wick, ema_resistance * 1.002)
-                if entry_limit <= price:
-                    entry_limit = price * 1.005
-                    
-                # 2. Điểm Sell Stop phá đáy (Breakout Down): Đặt dưới đáy râu thấp nhất
-                swing_low_wick = df['low'].tail(6).min()
-                entry_stop = swing_low_wick * 0.998
-                
-                # Cắt lỗ SL đặt an toàn trên râu cản cứng + 1.5 ATR
-                sl = max(swing_high_wick, entry_limit + (1.5 * atr))
-                risk_limit = sl - entry_limit
-                tp1 = entry_limit - (risk_limit * 2.0)
-                tp2 = entry_limit - (risk_limit * 3.5)
-                sl_pct = (risk_limit / entry_limit) * 100
-                score = (60 - last['rsi']) + (abs(c['change']) * 2)
-                
-                order_strategy = {
-                    'limit_label': 'SELL LIMIT (Đón Râu Cản)',
-                    'entry_limit': entry_limit,
-                    'stop_label': 'SELL STOP (Phá Đáy)',
-                    'entry_stop': entry_stop,
-                }
-                
-            results.append({
-                'symbol': c['symbol'],
-                'type': 'LONG' if mode == 'long' else 'SHORT',
-                'market_price': price,
-                'entry_limit': entry_limit,
-                'entry_stop': entry_stop,
-                'limit_label': order_strategy['limit_label'],
-                'stop_label': order_strategy['stop_label'],
-                'sl': sl,
-                'sl_pct': sl_pct,
-                'tp1': tp1,
-                'tp2': tp2,
-                'change_24h': c['change'],
-                'rsi': last['rsi'],
-                'vol_m': c['volume'] / 1000000,
-                'score': score
-            })
-            
-        results.sort(key=lambda x: x['score'], reverse=True)
-        return results[:limit]
+        return results
     except Exception as e:
         print(f"Lỗi quick scan: {e}")
         return []
 
 def get_oanda_gold_tradingview():
-    """
-    Lấy dữ liệu thời gian thực trực tiếp từ biểu đồ OANDA:XAUUSD trên TradingView:
-    Bao gồm: Giá Close, Open, High, Low, Volume, RSI M15, ATR M15, EMA20 M15, EMA50 M15.
-    """
+    """Lấy dữ liệu thời gian thực từ TradingView OANDA:XAUUSD"""
     import urllib.request
-    import json
     url = 'https://scanner.tradingview.com/cfd/scan'
     payload = json.dumps({
         'symbols': {'tickers': ['OANDA:XAUUSD']},
         'columns': [
             'close|15', 'open|15', 'high|15', 'low|15', 'volume|15',
-            'RSI|15', 'ATR|15', 'EMA20|15', 'EMA50|15', 'Recommend.All|15'
+            'RSI|15', 'ATR|15', 'EMA20|15', 'EMA50|15'
         ]
     }).encode()
     headers = {'User-Agent': 'Mozilla/5.0'}
@@ -396,105 +219,71 @@ def get_oanda_gold_tradingview():
             'rsi': row[5],
             'atr': row[6],
             'ema_20': row[7],
-            'ema_50': row[8],
-            'recommendation': row[9]
+            'ema_50': row[8]
         }
 
 def analyze_major_asset(symbol='BTC/USDT', risk_capital_percent=2.0, account_balance=1000.0, timeframe='15m'):
-    """
-    Phân tích chuyên sâu cho các tài sản lớn:
-    - Vàng: Lấy trực tiếp từ biểu đồ OANDA:XAUUSD trên TradingView.
-    - BTC: Lấy từ Binance Futures BTC/USDT.
-    Tính toán chính xác Entry, SL, TP (R:R 1:2 & 1:3), và Khối lượng vào lệnh (% Vốn).
-    """
+    """Phân tích Vàng OANDA hoặc BTC theo Bias xu hướng"""
     try:
-        # NẾU LÀ VÀNG -> LẤY TỪ OANDA:XAUUSD TRADINGVIEW
         if 'PAXG' in symbol or 'XAU' in symbol or 'GOLD' in symbol:
-            try:
-                tv_data = get_oanda_gold_tradingview()
-                price = tv_data['close']
-                atr = tv_data['atr']
-                rsi = tv_data['rsi']
-                ema_20 = tv_data['ema_20']
-                ema_50 = tv_data['ema_50']
+            tv_data = get_oanda_gold_tradingview()
+            price = tv_data['close']
+            atr = tv_data['atr']
+            rsi = tv_data['rsi']
+            ema_20 = tv_data['ema_20']
+            ema_50 = tv_data['ema_50']
+            
+            is_uptrend = price >= ema_50
+            signal = "LONG" if is_uptrend else "SHORT"
+            
+            if signal == "LONG":
+                entry_limit = max(tv_data['low'], ema_20)
+                entry_stop = tv_data['high'] + 1.0
+                sl = entry_limit - (1.8 * atr)
+                sl_dist = entry_limit - sl
+                tp1 = entry_limit + (sl_dist * 2.0)
+                tp2 = entry_limit + (sl_dist * 3.5)
+            else:
+                entry_limit = min(tv_data['high'], ema_20)
+                entry_stop = tv_data['low'] - 1.0
+                sl = entry_limit + (1.8 * atr)
+                sl_dist = sl - entry_limit
+                tp1 = entry_limit - (sl_dist * 2.0)
+                tp2 = entry_limit - (sl_dist * 3.5)
                 
-                signal = None
-                if price > ema_20 and ema_20 > ema_50 and 48 <= rsi <= 68:
-                    signal = "LONG"
-                    # Entry Limit: Đón râu pullback về EMA20 hoặc cản dưới
-                    entry_limit = max(tv_data['low'], ema_20)
-                    entry_stop = tv_data['high'] + 1.0 # Buy stop vượt râu nến cao nhất
-                    sl = entry_limit - (1.8 * atr)
-                    sl_dist = entry_limit - sl
-                    tp1 = entry_limit + (sl_dist * 2.0)
-                    tp2 = entry_limit + (sl_dist * 3.5)
-                elif price < ema_20 and ema_20 < ema_50 and 32 <= rsi <= 52:
-                    signal = "SHORT"
-                    # Entry Limit: Đón râu pullback hồi lên EMA20 hoặc cản trên
-                    entry_limit = min(tv_data['high'], ema_20)
-                    entry_stop = tv_data['low'] - 1.0 # Sell stop thủng râu nến thấp nhất
-                    sl = entry_limit + (1.8 * atr)
-                    sl_dist = sl - entry_limit
-                    tp1 = entry_limit - (sl_dist * 2.0)
-                    tp2 = entry_limit - (sl_dist * 3.5)
-                    
-                if not signal:
-                    # Mặc dù chưa có điểm vào gấp, vẫn gợi ý vùng Limit đón râu theo xu hướng EMA
-                    is_uptrend = price > ema_50
-                    suggested_limit = ema_20 if is_uptrend else ema_20
-                    return {
-                        'has_signal': False,
-                        'symbol': 'OANDA:XAUUSD (TradingView)',
-                        'price': price,
-                        'rsi': rsi,
-                        'volume': tv_data['volume'],
-                        'trend': "UPTREND (Ưu tiên Buy)" if is_uptrend else "DOWNTREND (Ưu tiên Sell)",
-                        'suggested_limit': suggested_limit,
-                        'ema_20': ema_20,
-                        'ema_50': ema_50
-                    }
-                    
-                sl_percent = (sl_dist / entry_limit) * 100
-                max_loss_usd = account_balance * (risk_capital_percent / 100.0)
-                position_size_usd = (max_loss_usd / (sl_percent / 100.0))
-                suggested_leverage = min(20, max(2, int(position_size_usd / account_balance)))
-                margin_needed = position_size_usd / suggested_leverage
-                margin_percent = (margin_needed / account_balance) * 100.0
+            sl_percent = (sl_dist / entry_limit) * 100
+            max_loss_usd = account_balance * (risk_capital_percent / 100.0)
+            position_size_usd = (max_loss_usd / (sl_percent / 100.0))
+            suggested_leverage = min(20, max(2, int(position_size_usd / account_balance)))
+            margin_needed = position_size_usd / suggested_leverage
+            margin_percent = (margin_needed / account_balance) * 100.0
 
-                return {
-                    'has_signal': True,
-                    'symbol': 'OANDA:XAUUSD (TradingView)',
-                    'type': signal,
-                    'market_price': price,
-                    'entry_limit': entry_limit,
-                    'entry_stop': entry_stop,
-                    'sl': sl,
-                    'sl_percent': sl_percent,
-                    'tp1': tp1,
-                    'tp2': tp2,
-                    'rr_tp1': "1:2.0",
-                    'rr_tp2': "1:3.5",
-                    'risk_percent': risk_capital_percent,
-                    'position_size_usd': position_size_usd,
-                    'suggested_leverage': f"{suggested_leverage}x",
-                    'margin_percent': margin_percent,
-                    'margin_usd': margin_needed,
-                    'rsi': rsi,
-                    'volume': tv_data['volume']
-                }
-            except Exception as e:
-                print(f"Lỗi lấy OANDA TradingView: {e}")
-                # Fallback qua Binance Futures nếu TV nghẽn mạng
+            return {
+                'has_signal': True,
+                'symbol': 'OANDA:XAUUSD (TradingView)',
+                'type': signal,
+                'market_price': price,
+                'entry_limit': entry_limit,
+                'entry_stop': entry_stop,
+                'sl': sl,
+                'sl_percent': sl_percent,
+                'tp1': tp1,
+                'tp2': tp2,
+                'rr_tp1': "1:2.0",
+                'rr_tp2': "1:3.5",
+                'risk_percent': risk_capital_percent,
+                'position_size_usd': position_size_usd,
+                'suggested_leverage': f"{suggested_leverage}x",
+                'margin_percent': margin_percent,
+                'margin_usd': margin_needed,
+                'rsi': rsi,
+                'volume': tv_data['volume'],
+                'trend': "UPTREND (Thiên Long)" if is_uptrend else "DOWNTREND (Thiên Short)"
+            }
 
-        # NẾU LÀ BITCOIN / COIN KHÁC -> BINANCE FUTURES
+        # NẾU LÀ BITCOIN
         target_symbol = f"{symbol}:USDT" if ':USDT' not in symbol else symbol
-        ohlcv = binance_futures.fetch_ohlcv(target_symbol, timeframe, limit=120)
-        if not ohlcv or len(ohlcv) < 60:
-            # Fallback nếu cần
-            if target_symbol == 'XAU/USDT:USDT':
-                target_symbol = 'PAXG/USDT:USDT'
-                ohlcv = binance_futures.fetch_ohlcv(target_symbol, timeframe, limit=120)
-
+        ohlcv = binance_futures.fetch_ohlcv(target_symbol, timeframe, limit=60)
         df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
         df['ema_20'] = ta.trend.EMAIndicator(close=df['close'], window=20).ema_indicator()
         df['ema_50'] = ta.trend.EMAIndicator(close=df['close'], window=50).ema_indicator()
@@ -502,44 +291,27 @@ def analyze_major_asset(symbol='BTC/USDT', risk_capital_percent=2.0, account_bal
         df['rsi'] = ta.momentum.RSIIndicator(close=df['close'], window=14).rsi()
         
         last = df.iloc[-1]
-        prev = df.iloc[-2]
-        atr = last['atr']
         price = last['close']
+        atr = last['atr']
+        is_uptrend = price >= last['ema_50']
+        signal = "LONG" if is_uptrend else "SHORT"
         
-        # Kiểm tra điều kiện Tín hiệu (Trend Following + Pullback)
-        signal = None
-        # LONG: Giá trên EMA 20 & 50, RSI 48-68 (không quá mua), nến xanh
-        if last['close'] > last['ema_20'] and last['ema_20'] > last['ema_50'] and 48 <= last['rsi'] <= 68:
-            signal = "LONG"
-            # SL đặt dưới swing low hoặc 1.8 * ATR để tránh quét râu
-            sl = min(df['low'].tail(8).min(), price - (1.8 * atr))
-            sl_dist = price - sl
-            tp1 = price + (sl_dist * 2.0) # R:R 1:2
-            tp2 = price + (sl_dist * 3.0) # R:R 1:3
+        if signal == "LONG":
+            entry_limit = max(df['low'].tail(5).min(), last['ema_20'])
+            entry_stop = df['high'].tail(5).max() * 1.002
+            sl = entry_limit - (1.8 * atr)
+            sl_dist = entry_limit - sl
+            tp1 = entry_limit + (sl_dist * 2.0)
+            tp2 = entry_limit + (sl_dist * 3.5)
+        else:
+            entry_limit = min(df['high'].tail(5).max(), last['ema_20'])
+            entry_stop = df['low'].tail(5).min() * 0.998
+            sl = entry_limit + (1.8 * atr)
+            sl_dist = sl - entry_limit
+            tp1 = entry_limit - (sl_dist * 2.0)
+            tp2 = entry_limit - (sl_dist * 3.5)
             
-        # SHORT: Giá dưới EMA 20 & 50, RSI 32-52 (không quá bán), nến đỏ
-        elif last['close'] < last['ema_20'] and last['ema_20'] < last['ema_50'] and 32 <= last['rsi'] <= 52:
-            signal = "SHORT"
-            # SL đặt trên swing high hoặc 1.8 * ATR
-            sl = max(df['high'].tail(8).max(), price + (1.8 * atr))
-            sl_dist = sl - price
-            tp1 = price - (sl_dist * 2.0)
-            tp2 = price - (sl_dist * 3.0)
-            
-        if not signal:
-            # Nếu chưa có điểm vào đẹp, trả về trạng thái theo dõi
-            return {
-                'has_signal': False,
-                'symbol': target_symbol.split(':')[0],
-                'price': price,
-                'rsi': last['rsi'],
-                'trend': "UPTREND" if last['close'] > last['ema_50'] else "DOWNTREND",
-                'ema_20': last['ema_20'],
-                'ema_50': last['ema_50']
-            }
-            
-        # Tính toán Quản lý Vốn (Position Sizing & Risk Management)
-        sl_percent = (sl_dist / price) * 100
+        sl_percent = (sl_dist / entry_limit) * 100
         max_loss_usd = account_balance * (risk_capital_percent / 100.0)
         position_size_usd = (max_loss_usd / (sl_percent / 100.0))
         suggested_leverage = min(20, max(2, int(position_size_usd / account_balance)))
@@ -551,12 +323,14 @@ def analyze_major_asset(symbol='BTC/USDT', risk_capital_percent=2.0, account_bal
             'symbol': target_symbol.split(':')[0],
             'type': signal,
             'entry': price,
+            'entry_limit': entry_limit,
+            'entry_stop': entry_stop,
             'sl': sl,
             'sl_percent': sl_percent,
             'tp1': tp1,
             'tp2': tp2,
             'rr_tp1': "1:2.0",
-            'rr_tp2': "1:3.0",
+            'rr_tp2': "1:3.5",
             'risk_percent': risk_capital_percent,
             'position_size_usd': position_size_usd,
             'suggested_leverage': f"{suggested_leverage}x",
@@ -565,6 +339,5 @@ def analyze_major_asset(symbol='BTC/USDT', risk_capital_percent=2.0, account_bal
             'rsi': last['rsi']
         }
     except Exception as e:
-        print(f"Lỗi phân tích {symbol}: {e}")
+        print(f"Lỗi asset: {e}")
         return None
-
