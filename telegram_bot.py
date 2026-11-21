@@ -337,6 +337,20 @@ def run_bot():
             print(f"Lỗi: {e}")
             time.sleep(3)
 
+def self_ping_worker():
+    """Tự động ping chính mình mỗi 10 phút để Render Free không bao giờ rơi vào trạng thái ngủ"""
+    time.sleep(20)
+    while True:
+        try:
+            url = "https://coinradar-tele-bot.onrender.com"
+            req = urllib.request.Request(url, headers={'User-Agent': 'KeepAlive/1.0'})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                print("Keep-alive ping:", resp.status)
+        except Exception as e:
+            print("Keep-alive ping fail:", e)
+        time.sleep(600)
+
 if __name__ == '__main__':
     threading.Thread(target=start_health_server, daemon=True).start()
+    threading.Thread(target=self_ping_worker, daemon=True).start()
     run_bot()
