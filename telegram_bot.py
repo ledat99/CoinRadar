@@ -169,10 +169,11 @@ def calculate_gold_h4_plan():
         return PLAN_CACHE['GOLD']['data']
         
     try:
-        # Lấy dữ liệu thời gian thực trực tiếp từ TradingView cho OANDA:XAUUSD (Chuẩn MT5 của các sàn Forex)
+        # Lấy dữ liệu đa khung thời gian từ TradingView cho OANDA:XAUUSD
         url = 'https://scanner.tradingview.com/cfd/scan'
         cols = [
-            'close', 'open', 'high', 'low', 'bid', 'ask',
+            'close', 'open', 'high', 'low', 'bid', 'ask', 'EMA20', 'EMA50', 'Recommend.All',
+            'close|1W', 'EMA20|1W', 'EMA50|1W', 'Recommend.All|1W',
             'open|5', 'high|5', 'low|5', 'close|5', 'EMA20|5',
             'open[1]|5', 'high[1]|5', 'low[1]|5', 'close[1]|5',
             'open|15', 'high|15', 'low|15', 'close|15', 'EMA20|15',
@@ -192,7 +193,13 @@ def calculate_gold_h4_plan():
         ask = round(data.get('ask') or (current_gold + 0.35), 2)
         data_source = "TradingView (OANDA:XAUUSD - Chuẩn MT5)"
         
-        # 1. Các mốc cấu trúc nến M5, M15, H1, H4 trên OANDA
+        # 1. BIAS ĐA KHUNG (TUẦN W1 & NGÀY D1)
+        w1_bear = data['close|1W'] < data['EMA20|1W']
+        d1_bear = data['close'] < data['EMA20']
+        w1_bias = "🔴 GIẢM (BEARISH)" if w1_bear else "🟢 TĂNG (BULLISH)"
+        d1_bias = "🔴 GIẢM (BEARISH)" if d1_bear else "🟢 TĂNG (BULLISH)"
+        
+        # 2. Các mốc cấu trúc nến M5, M15, H1, H4 trên OANDA
         m5_high = round(data['high|5'], 2)
         m5_low = round(data['low|5'], 2)
         prev_m5_high = round(data['high[1]|5'], 2) if data.get('high[1]|5') else m5_high
@@ -208,17 +215,26 @@ def calculate_gold_h4_plan():
         h4_low = round(data['low|240'], 2)
         h4_ema20 = round(data['EMA20|240'], 2)
         
-        # 2. Vùng POC M15 OANDA (Volume Profile M15)
+        # 3. Vùng POC M15 OANDA (Volume Profile M15)
         poc_gold_m15 = round((m15_high + m15_low + m15_ema20) / 3.0, 2)
         
-        # 3. Phát hiện Bẫy Quét Thanh Khoản (Liquidity Sweep) trên OANDA
+        # 4. Phát hiện Bẫy Quét Thanh Khoản & Râu Nến Test trên M15/M5
         is_bear_sweep = (m5_high >= prev_m5_high and current_gold < m5_high - 1.5) or (current_gold < m15_ema20 and current_gold < h4_ema20)
         
-        signal = "SHORT" if (current_gold < h4_ema20 or is_bear_sweep) else "LONG"
+        # Ưu tiên tuyệt đối theo Bias Tuần & Ngày
+        if w1_bear and d1_bear:
+            signal = "SHORT"
+        elif not w1_bear and not d1_bear:
+            signal = "LONG"
+        else:
+            signal = "SHORT" if (current_gold < h4_ema20 or is_bear_sweep) else "LONG"
+            
+        is_diamond = (w1_bear and d1_bear and signal == "SHORT") or (not w1_bear and not d1_bear and signal == "LONG")
+        diamond_note = "⭐ ĐỒNG PHA TUẦN + NGÀY: Khả năng thắng cực cao khi đón râu test M15!" if is_diamond else "⚡ Lưu ý quản lý vốn chặt chẽ theo từng phiên."
         
         if signal == "SHORT":
             sweep_level = max(m5_high, m15_high)
-            # Entry 1: Bán Limit đón râu hồi kiểm tra lại POC M15 hoặc FVG/EMA20 (rất dễ khớp)
+            # Entry 1: Bán Limit đón râu nến hồi test lại POC M15 hoặc FVG/EMA20 (rất dễ khớp)
             entry_limit = round(poc_gold_m15 if poc_gold_m15 > current_gold else current_gold + 3.0, 2)
             if entry_limit > sweep_level - 1.0:
                 entry_limit = round(sweep_level - 2.0, 2)
@@ -226,7 +242,7 @@ def calculate_gold_h4_plan():
             # Entry 2: Bán Stop khi gãy đáy xác nhận sóng xả tiếp diễn
             entry_stop = round(m15_low - 1.2, 2)
             
-            # SL ĐẶT TRÊN RÂU QUÉT OANDA: đệm 1.8 giá ngoài đỉnh quét (Chuẩn MT5)
+            # SL ĐẶT TRÊN RÂU NẾN TEST OANDA: đệm 1.8 giá ngoài đỉnh râu test (Chuẩn MT5)
             sl = round(sweep_level + 1.8, 2)
             sl_dist = round(sl - entry_limit, 2)
             if sl_dist < 10.0:
@@ -239,10 +255,10 @@ def calculate_gold_h4_plan():
             tp1 = round(entry_limit - (sl_dist * 2.0), 2)
             tp2 = round(entry_limit - (sl_dist * 3.5), 2)
             
-            setup_desc = f"Quét Râu Đỉnh OANDA tại ${sweep_level:,.2f} + CHoCH Giảm"
+            setup_desc = f"Quét Râu Test Đỉnh M15 tại ${sweep_level:,.2f} + CHoCH Giảm"
             advice = (
-                f"⚠️ <b>CẮT SỚM KHI XẤU:</b> Nếu có nến M15 đóng cửa trên râu quét <b>${sweep_level:,.2f}</b> -> Thoát sớm bằng tay trên MT5!\n"
-                f"💎 <b>DCA NHỒI KHI ĐẸP:</b> Khớp Lệnh 1 và giá sập thủng đáy <b>${entry_stop:,.2f}</b> (lãi > {sl_dist*0.7:.1f} giá), dời SL về Hoà Vốn (Entry) và kích hoạt Lệnh 2 (Sell Stop)!"
+                f"⚠️ <b>CẮT SỚM KHI XẤU:</b> Nếu có nến M15 đóng cửa trên đỉnh râu test <b>${sweep_level:,.2f}</b> -> Thoát sớm bằng tay trên MT5!\n"
+                f"💎 <b>DCA NHỒI KHI ĐẸP:</b> Khớp Lệnh 1 và giá sập thủng đáy <b>${entry_stop:,.2f}</b> (lãi > {sl_dist*0.7:.1f} giá), dời SL về Hoà Vốn (Entry) và kích hoạt Lệnh 2 (Sell Stop) để ăn sóng xả Tuần/Ngày!"
             )
         else: # LONG
             sweep_level = min(m5_low, m15_low)
@@ -264,9 +280,9 @@ def calculate_gold_h4_plan():
             tp1 = round(entry_limit + (sl_dist * 2.0), 2)
             tp2 = round(entry_limit + (sl_dist * 3.5), 2)
             
-            setup_desc = f"Quét Râu Đáy OANDA tại ${sweep_level:,.2f} + CHoCH Tăng"
+            setup_desc = f"Quét Râu Test Đáy M15 tại ${sweep_level:,.2f} + CHoCH Tăng"
             advice = (
-                f"⚠️ <b>CẮT SỚM KHI XẤU:</b> Nếu có nến M15 đóng cửa gãy qua râu đáy quét <b>${sweep_level:,.2f}</b> -> Thoát sớm bằng tay trên MT5!\n"
+                f"⚠️ <b>CẮT SỚM KHI XẤU:</b> Nếu có nến M15 đóng cửa gãy qua râu đáy test <b>${sweep_level:,.2f}</b> -> Thoát sớm bằng tay trên MT5!\n"
                 f"💎 <b>DCA NHỒI KHI ĐẸP:</b> Khớp Lệnh 1 và giá tăng bứt phá đỉnh <b>${entry_stop:,.2f}</b> (lãi > {sl_dist*0.7:.1f} giá), dời SL về Hoà Vốn (Entry) và kích hoạt Lệnh 2 (Buy Stop)!"
             )
             
@@ -275,6 +291,9 @@ def calculate_gold_h4_plan():
         current_gold = 3538.0
         bid, ask = 3537.5, 3538.5
         data_source = "OANDA:XAUUSD (Dự phòng)"
+        w1_bias = "🔴 GIẢM (BEARISH)"
+        d1_bias = "🔴 GIẢM (BEARISH)"
+        diamond_note = "⭐ ĐỒNG PHA TUẦN + NGÀY (SETUP CAO CẤP)"
         poc_gold_m15 = 3535.0
         entry_limit = 3541.0
         entry_stop = 3524.0
@@ -283,7 +302,7 @@ def calculate_gold_h4_plan():
         tp1 = 3517.0
         tp2 = 3499.0
         signal = "SHORT"
-        setup_desc = "Cản Râu Đỉnh OANDA + CHoCH Giảm"
+        setup_desc = "Râu Nến Test Đỉnh OANDA + CHoCH Giảm"
         advice = "⚠️ Kiểm tra biểu đồ MT5 trước khi vào lệnh."
 
     plan = {
@@ -292,6 +311,9 @@ def calculate_gold_h4_plan():
         'bid': bid,
         'ask': ask,
         'data_source': data_source,
+        'w1_bias': w1_bias,
+        'd1_bias': d1_bias,
+        'diamond_note': diamond_note,
         'poc_m15': poc_gold_m15,
         'setup_desc': setup_desc,
         'entry_limit': entry_limit,
@@ -311,14 +333,19 @@ def handle_gold():
         plan = calculate_gold_h4_plan()
         s_emoji = "🟢 LONG (MUA)" if plan['signal'] == 'LONG' else "🔴 SHORT (BÁN)"
         action_l = "LỆNH 1: Bán Limit Đón Râu Hồi Retest POC M15" if plan['signal'] == 'SHORT' else "LỆNH 1: Mua Limit Đón Râu Hồi Retest POC M15"
-        action_s = "LỆNH 2: Bán Stop Phá Đáy Tiếp Diễn Động Lực" if plan['signal'] == 'SHORT' else "LỆNH 2: Mua Stop Phá Đỉnh Tiếp Diễn Động Lực"
+        action_s = "LỆNH 2: Bán Stop Phá Đáy Tiếp Diễn Sóng Tuần" if plan['signal'] == 'SHORT' else "LỆNH 2: Mua Stop Phá Đỉnh Tiếp Diễn Sóng Tuần"
         
         text = f"""🥇 <b>[CHIẾN LƯỢC VÀNG SMC: OANDA:XAUUSD (MT5 CHUẨN)]</b> 🥇
 ━━━━━━━━━━━━━━━━━━
 📊 Nguồn biểu đồ: <b>{plan['data_source']}</b>
 💰 Giá Vàng OANDA: <b>${plan['current_price']:,.2f}</b> (Bid: ${plan['bid']:,.2f} | Ask: ${plan['ask']:,.2f})
 🎯 <b>Vùng POC M15 (Thanh khoản hội tụ):</b> <code>${plan['poc_m15']:,.2f}</code>
-⚡ <b>Cấu trúc SMC:</b> <b>{plan['setup_desc']}</b>
+━━━━━━━━━━━━━━━━━━
+💎 <b>ĐỒNG PHA BIAS ĐA KHUNG (WINRATE CAO):</b>
+• <b>Bias Tuần (W1):</b> {plan['w1_bias']}
+• <b>Bias Ngày (D1):</b> {plan['d1_bias']}
+⚡ <b>Cấu trúc M15:</b> <b>{plan['setup_desc']}</b>
+<i>{plan['diamond_note']}</i>
 ━━━━━━━━━━━━━━━━━━
 🚀 <b>CHIẾN LƯỢC: {s_emoji}</b>
 👉 <b>{action_l}:</b>
@@ -326,7 +353,7 @@ def handle_gold():
 👉 <b>{action_s}:</b>
    <code>${plan['entry_stop']:,.2f}</code>
 
-🛡️ <b>Cắt lỗ (SL Trên Râu Quét ~{plan['sl_dist']:.1f} Giá):</b>
+🛡️ <b>Cắt lỗ (SL Trên Râu Test M15 ~{plan['sl_dist']:.1f} Giá):</b>
    <code>${plan['sl']:,.2f}</code>
 🎯 <b>Chốt lời 1 (TP1 - Ăn {plan['sl_dist']*2:.1f} Giá | R:R 1:2):</b> <code>${plan['tp1']:,.2f}</code>
 🎯 <b>Chốt lời 2 (TP2 - Ăn {plan['sl_dist']*3.5:.1f} Giá | R:R 1:3.5):</b> <code>${plan['tp2']:,.2f}</code>
@@ -336,7 +363,7 @@ def handle_gold():
 
 🛡️ <b>QUẢN LÝ VỐN VÀNG MT5 (${CONFIG['ACCOUNT_BALANCE']:,.0f}):</b>
 • Rủi ro tối đa 2%: <b>$20.0</b> (tương đương 0.01 - 0.02 lot trên MT5)
-<i>💡 Điểm vào và SL khớp 100% chart OANDA/Exness trên MT5! Đón lệnh khi Big Boys đã quét sạch thanh khoản, tránh bẫy râu giật!</i>"""
+<i>💡 Setup kinh điển: Thuận Bias Tuần & Ngày, rình M15 tạo CHoCH và giật râu test cản là vào lệnh! SL cực ngắn trên chóp râu, tỷ lệ ăn R:R cực lớn!</i>"""
         send_telegram(text, reply_markup=get_main_keyboard())
     except Exception as e:
         send_telegram(f"Lỗi phân tích Vàng: {e}", reply_markup=get_main_keyboard())
