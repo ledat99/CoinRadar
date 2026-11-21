@@ -32,6 +32,322 @@ LAST_ALERT_TIME = {
     'BTC': 0
 }
 
+VIP_TRADES_FILE = os.path.join(os.path.dirname(__file__), 'vip_active_trades.json')
+VIP_HISTORY_FILE = os.path.join(os.path.dirname(__file__), 'vip_trade_history.json')
+
+def load_vip_trades():
+    try:
+        if os.path.exists(VIP_TRADES_FILE):
+            with open(VIP_TRADES_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except Exception as e:
+        print(f"Lỗi load_vip_trades: {e}")
+    return []
+
+def save_vip_trades(trades):
+    try:
+        with open(VIP_TRADES_FILE, 'w', encoding='utf-8') as f:
+            json.dump(trades, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"Lỗi save_vip_trades: {e}")
+
+def load_vip_history():
+    try:
+        if os.path.exists(VIP_HISTORY_FILE):
+            with open(VIP_HISTORY_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except Exception as e:
+        print(f"Lỗi load_vip_history: {e}")
+    return []
+
+def save_vip_history(history):
+    try:
+        with open(VIP_HISTORY_FILE, 'w', encoding='utf-8') as f:
+            json.dump(history, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"Lỗi save_vip_history: {e}")
+
+def record_new_vip_trade(asset, symbol, signal, entry_price, entry_stop, sl, tp1, tp2, sl_dist):
+    trades = load_vip_trades()
+    # Chỉ cho phép duy nhất 1 lệnh active cho mỗi symbol để chống spam tuyệt đối
+    trades = [t for t in trades if t.get('symbol') != symbol]
+    now_dt = datetime.datetime.now(TZ_VN)
+    new_t = {
+        'id': f"{asset}_{int(time.time())}",
+        'asset': asset,
+        'symbol': symbol,
+        'signal': signal,
+        'entry_price': entry_price,
+        'entry_stop': entry_stop,
+        'sl': sl,
+        'orig_sl': sl,
+        'tp1': tp1,
+        'tp2': tp2,
+        'sl_dist': sl_dist,
+        'tp1_hit': False,
+        'tp2_hit': False,
+        'entry_time': now_dt.strftime('%H:%M %d/%m'),
+        'entry_timestamp': time.time(),
+        'status': 'RUNNING'
+    }
+    trades.append(new_t)
+    save_vip_trades(trades)
+    return new_t
+
+def check_and_update_vip_trades(curr_gold_p, curr_btc_p):
+    trades = load_vip_trades()
+    if not trades:
+        return
+    history = load_vip_history()
+    now_dt = datetime.datetime.now(TZ_VN)
+    time_str = now_dt.strftime('%H:%M %d/%m')
+    remaining = []
+
+    for t in trades:
+        is_gold = (t['asset'] == 'GOLD')
+        curr_p = curr_gold_p if is_gold else curr_btc_p
+        if not curr_p:
+            remaining.append(t)
+            continue
+
+        sym_name = "Vàng (OANDA:XAUUSD MT5)" if is_gold else "Bitcoin (BTCUSDT)"
+        unit = "Giá" if is_gold else "USDT"
+        dec = 2 if is_gold else 1
+        signal = t['signal']
+        entry_p = t['entry_price']
+        sl = t['sl']
+        tp1 = t['tp1']
+        tp2 = t['tp2']
+
+        # 1. KIỂM TRA LỆNH SHORT
+        if signal == 'SHORT':
+            profit = round(entry_p - curr_p, dec)
+            # A. Chạm TP1
+            if not t.get('tp1_hit') and curr_p <= tp1:
+                t['tp1_hit'] = True
+                t['sl'] = entry_p # Dời SL về hoà vốn
+                t['status'] = 'TP1_HIT_RISK_FREE'
+                save_vip_trades(trades)
+                msg = f"""🎯 <b>[VIP CHỐT LỜI 1 (TP1) - ĐÃ ĐẠT R:R 1:1.2]</b> 🎯
+━━━━━━━━━━━━━━━━━━
+💰 Tài sản: <b>{sym_name}</b>
+📈 Lệnh: <b>🔴 SHORT</b> từ <code>${entry_p:,.{dec}f}</code>
+🎯 Giá hiện tại: <b>${curr_p:,.{dec}f}</b> (Đã chạm mốc TP1 <code>${tp1:,.{dec}f}</code>)
+🔥 <b>LỢI NHUẬN TP1: +{abs(profit):,.{dec}f} {unit}!</b>
+━━━━━━━━━━━━━━━━━━
+✅ <b>HÀNH ĐỘNG KHUYẾN NGHỊ:</b>
+1. Chốt lời <b>50% khối lượng</b> để bảo toàn thành quả!
+2. Hệ thống đã tự động dời <b>SL về Hoà Vốn (Entry: ${entry_p:,.{dec}f})</b>.
+🛡️ <b>LỆNH HIỆN TẠI ĐÃ FREE-RISK (KHÔNG THỂ THUA ĐƯỢC NỮA)!</b>
+🚀 Tiếp tục gồng 50% còn lại về mốc <b>TP2: ${tp2:,.{dec}f}</b>!"""
+                send_telegram(msg, reply_markup=get_main_keyboard())
+                remaining.append(t)
+                continue
+
+            # B. Chạm TP2 (Đóng lệnh toàn bộ)
+            if t.get('tp1_hit') and curr_p <= tp2:
+                t['tp2_hit'] = True
+                t['close_price'] = curr_p
+                t['close_time'] = time_str
+                t['profit'] = round(entry_p - curr_p, dec)
+                t['status'] = 'CLOSED_TP2'
+                history.append(t)
+                save_vip_history(history)
+                msg = f"""🎉 <b>[VIP CHỐT LỜI 2 (TP2) - FULL TAKE PROFIT ĐỈNH CAO]</b> 🎉
+━━━━━━━━━━━━━━━━━━
+💰 Tài sản: <b>{sym_name}</b>
+📈 Lệnh: <b>🔴 SHORT</b> từ <code>${entry_p:,.{dec}f}</code>
+🎯 Giá hiện tại: <b>${curr_p:,.{dec}f}</b> (Đã chạm mốc TP2 <code>${tp2:,.{dec}f}</code>)
+🔥 <b>TỔNG LỢI NHUẬN TRỌN VẸN: +{abs(t['profit']):,.{dec}f} {unit} (R:R 1:2.5)!</b>
+━━━━━━━━━━━━━━━━━━
+🏁 <b>KẾT THÚC KÈO VIP HOÀN HẢO:</b>
+• Đã bỏ túi toàn bộ lợi nhuận từ con sóng sập!
+🟢 Hệ thống đã giải phóng vị thế, sẵn sàng đón kèo VIP tiếp theo khi có nến M5 kích Volume!"""
+                send_telegram(msg, reply_markup=get_main_keyboard())
+                continue
+
+            # C. Chạm SL (Cắt lỗ hoặc Hoà Vốn)
+            if curr_p >= sl:
+                t['close_price'] = curr_p
+                t['close_time'] = time_str
+                if t.get('tp1_hit'):
+                    t['status'] = 'CLOSED_BREAKEVEN'
+                    t['profit'] = round(abs(entry_p - tp1) * 0.5, dec) # Đã ăn 50% ở TP1
+                    msg = f"""🛡️ <b>[VIP ĐÓNG LỆNH HOÀ VỐN - BẢO TOÀN LÃI TP1]</b> 🛡️
+━━━━━━━━━━━━━━━━━━
+💰 Tài sản: <b>{sym_name}</b>
+📈 Lệnh: <b>🔴 SHORT</b> từ <code>${entry_p:,.{dec}f}</code>
+⚠️ Giá quay về đá SL Hoà Vốn tại: <b>${curr_p:,.{dec}f}</b>
+🎉 <b>KẾT QUẢ CUỐI CÙNG: VẪN CÓ LÃI!</b>
+• 50% khối lượng đã bỏ túi tại TP1 (+{abs(entry_p - tp1):,.{dec}f} {unit}).
+• 50% khối lượng còn lại thoát giá Hoà Vốn (Risk = $0).
+🟢 Hệ thống đã giải phóng slot, chờ đón cơ hội đẹp tiếp theo!"""
+                else:
+                    t['status'] = 'CLOSED_SL'
+                    t['profit'] = -round(curr_p - entry_p, dec)
+                    msg = f"""⚠️ <b>[VIP CHẠM CẮT LỖ (SL) - BẢO VỆ TÀI KHOẢN]</b> ⚠️
+━━━━━━━━━━━━━━━━━━
+💰 Tài sản: <b>{sym_name}</b>
+📈 Lệnh: <b>🔴 SHORT</b> từ <code>${entry_p:,.{dec}f}</code>
+🛑 Đã chạm SL tại: <b>${curr_p:,.{dec}f}</b> (-{abs(t['profit']):,.{dec}f} {unit})
+🛡️ Đúng kỷ luật theo tôn chỉ FX DREAM: Sai là cắt ngay tại chóp râu M5, không gồng lỗ!
+🟢 Hệ thống sẵn sàng tìm kiếm điểm vào mới."""
+                history.append(t)
+                save_vip_history(history)
+                send_telegram(msg, reply_markup=get_main_keyboard())
+                continue
+
+            remaining.append(t)
+
+        # 2. KIỂM TRA LỆNH LONG
+        elif signal == 'LONG':
+            profit = round(curr_p - entry_p, dec)
+            # A. Chạm TP1
+            if not t.get('tp1_hit') and curr_p >= tp1:
+                t['tp1_hit'] = True
+                t['sl'] = entry_p
+                t['status'] = 'TP1_HIT_RISK_FREE'
+                save_vip_trades(trades)
+                msg = f"""🎯 <b>[VIP CHỐT LỜI 1 (TP1) - ĐÃ ĐẠT R:R 1:1.2]</b> 🎯
+━━━━━━━━━━━━━━━━━━
+💰 Tài sản: <b>{sym_name}</b>
+📈 Lệnh: <b>🟢 LONG</b> từ <code>${entry_p:,.{dec}f}</code>
+🎯 Giá hiện tại: <b>${curr_p:,.{dec}f}</b> (Đã chạm mốc TP1 <code>${tp1:,.{dec}f}</code>)
+🔥 <b>LỢI NHUẬN TP1: +{abs(profit):,.{dec}f} {unit}!</b>
+━━━━━━━━━━━━━━━━━━
+✅ <b>HÀNH ĐỘNG KHUYẾN NGHỊ:</b>
+1. Chốt lời <b>50% khối lượng</b> để bảo toàn thành quả!
+2. Hệ thống đã tự động dời <b>SL về Hoà Vốn (Entry: ${entry_p:,.{dec}f})</b>.
+🛡️ <b>LỆNH HIỆN TẠI ĐÃ FREE-RISK (KHÔNG THỂ THUA ĐƯỢC NỮA)!</b>
+🚀 Tiếp tục gồng 50% còn lại về mốc <b>TP2: ${tp2:,.{dec}f}</b>!"""
+                send_telegram(msg, reply_markup=get_main_keyboard())
+                remaining.append(t)
+                continue
+
+            # B. Chạm TP2
+            if t.get('tp1_hit') and curr_p >= tp2:
+                t['tp2_hit'] = True
+                t['close_price'] = curr_p
+                t['close_time'] = time_str
+                t['profit'] = round(curr_p - entry_p, dec)
+                t['status'] = 'CLOSED_TP2'
+                history.append(t)
+                save_vip_history(history)
+                msg = f"""🎉 <b>[VIP CHỐT LỜI 2 (TP2) - FULL TAKE PROFIT ĐỈNH CAO]</b> 🎉
+━━━━━━━━━━━━━━━━━━
+💰 Tài sản: <b>{sym_name}</b>
+📈 Lệnh: <b>🟢 LONG</b> từ <code>${entry_p:,.{dec}f}</code>
+🎯 Giá hiện tại: <b>${curr_p:,.{dec}f}</b> (Đã chạm mốc TP2 <code>${tp2:,.{dec}f}</code>)
+🔥 <b>TỔNG LỢI NHUẬN TRỌN VẸN: +{abs(t['profit']):,.{dec}f} {unit} (R:R 1:2.5)!</b>
+━━━━━━━━━━━━━━━━━━
+🏁 <b>KẾT THÚC KÈO VIP HOÀN HẢO:</b>
+• Đã bỏ túi toàn bộ lợi nhuận từ con sóng tăng!
+🟢 Hệ thống đã giải phóng vị thế, sẵn sàng đón kèo VIP tiếp theo khi có nến M5 kích Volume!"""
+                send_telegram(msg, reply_markup=get_main_keyboard())
+                continue
+
+            # C. Chạm SL
+            if curr_p <= sl:
+                t['close_price'] = curr_p
+                t['close_time'] = time_str
+                if t.get('tp1_hit'):
+                    t['status'] = 'CLOSED_BREAKEVEN'
+                    t['profit'] = round(abs(tp1 - entry_p) * 0.5, dec)
+                    msg = f"""🛡️ <b>[VIP ĐÓNG LỆNH HOÀ VỐN - BẢO TOÀN LÃI TP1]</b> 🛡️
+━━━━━━━━━━━━━━━━━━
+💰 Tài sản: <b>{sym_name}</b>
+📈 Lệnh: <b>🟢 LONG</b> từ <code>${entry_p:,.{dec}f}</code>
+⚠️ Giá quay về đá SL Hoà Vốn tại: <b>${curr_p:,.{dec}f}</b>
+🎉 <b>KẾT QUẢ CUỐI CÙNG: VẪN CÓ LÃI!</b>
+• 50% khối lượng đã bỏ túi tại TP1 (+{abs(tp1 - entry_p):,.{dec}f} {unit}).
+• 50% khối lượng còn lại thoát giá Hoà Vốn (Risk = $0).
+🟢 Hệ thống đã giải phóng slot, chờ đón cơ hội đẹp tiếp theo!"""
+                else:
+                    t['status'] = 'CLOSED_SL'
+                    t['profit'] = -round(entry_p - curr_p, dec)
+                    msg = f"""⚠️ <b>[VIP CHẠM CẮT LỖ (SL) - BẢO VỆ TÀI KHOẢN]</b> ⚠️
+━━━━━━━━━━━━━━━━━━
+💰 Tài sản: <b>{sym_name}</b>
+📈 Lệnh: <b>🟢 LONG</b> từ <code>${entry_p:,.{dec}f}</code>
+🛑 Đã chạm SL tại: <b>${curr_p:,.{dec}f}</b> (-{abs(t['profit']):,.{dec}f} {unit})
+🛡️ Đúng kỷ luật theo tôn chỉ FX DREAM: Sai là cắt ngay tại chóp râu M5, không gồng lỗ!
+🟢 Hệ thống sẵn sàng tìm kiếm điểm vào mới."""
+                history.append(t)
+                save_vip_history(history)
+                send_telegram(msg, reply_markup=get_main_keyboard())
+                continue
+
+            remaining.append(t)
+
+    save_vip_trades(remaining)
+
+def handle_check_vip_trades():
+    try:
+        trades = load_vip_trades()
+        history = load_vip_history()
+
+        plan_gold = calculate_gold_h4_plan()
+        plan_btc = calculate_btc_h4_plan()
+        p_gold = plan_gold['current_price']
+        p_btc = plan_btc['current_price']
+
+        msg = "🔍 <b>[BÁO CÁO TRẠNG THÁI LỆNH VIP & LỊCH SỬ GIAO DỊCH]</b>\n━━━━━━━━━━━━━━━━━━\n"
+
+        if not trades:
+            msg += "🟢 <b>Lệnh VIP Đang Chạy:</b> <i>Không có lệnh nào đang chạy!</i>\n"
+            msg += "• Hệ thống đang theo dõi sát sao cản OB H1 và nến M5 để đón cơ hội vào lệnh duy nhất.\n"
+        else:
+            msg += f"🔥 <b>Lệnh VIP Đang Theo Dõi ({len(trades)} lệnh):</b>\n\n"
+            for i, t in enumerate(trades, 1):
+                is_gold = (t['asset'] == 'GOLD')
+                curr_p = p_gold if is_gold else p_btc
+                dec = 2 if is_gold else 1
+                unit = "Giá" if is_gold else "$"
+                sym = "🥇 VÀNG (XAUUSD)" if is_gold else "👑 BITCOIN"
+                sgn = "🔴 SHORT" if t['signal'] == 'SHORT' else "🟢 LONG"
+                
+                # Tính PnL tạm tính
+                if t['signal'] == 'SHORT':
+                    diff = t['entry_price'] - curr_p
+                else:
+                    diff = curr_p - t['entry_price']
+                pnl_str = f"+{diff:,.{dec}f} {unit}" if diff >= 0 else f"-{abs(diff):,.{dec}f} {unit}"
+                pnl_emoji = "🟢" if diff >= 0 else "🔴"
+                
+                status_txt = "🛡️ Đã Dời SL Hoà Vốn (Free-Risk)" if t.get('tp1_hit') else "⏳ Đang Chạy (Chờ TP1)"
+
+                msg += f"<b>{i}. {sym} - {sgn}</b>\n"
+                msg += f"• Thời gian vào: <code>{t.get('entry_time', '')}</code>\n"
+                msg += f"• Giá vào (Entry): <code>${t['entry_price']:,.{dec}f}</code>\n"
+                msg += f"• Giá hiện tại: <code>${curr_p:,.{dec}f}</code>\n"
+                msg += f"• Lãi/Lỗ tạm tính: {pnl_emoji} <b>{pnl_str}</b>\n"
+                msg += f"• Trạng thái: <b>{status_txt}</b>\n"
+                msg += f"• Stop Loss: <code>${t['sl']:,.{dec}f}</code>\n"
+                msg += f"• Mốc TP1: <code>${t['tp1']:,.{dec}f}</code> {'(✅ Đã Chạm)' if t.get('tp1_hit') else ''}\n"
+                msg += f"• Mốc TP2: <code>${t['tp2']:,.{dec}f}</code>\n\n"
+
+        # Tóm tắt lịch sử lệnh đã đóng
+        msg += "━━━━━━━━━━━━━━━━━━\n📊 <b>TỔNG KẾT KÈO ĐÃ ĐÓNG:</b>\n"
+        if not history:
+            msg += "• Chưa có lệnh nào được chốt trong chu kỳ hiện tại.\n"
+        else:
+            total_closed = len(history)
+            wins = [h for h in history if 'TP' in h.get('status', '') or h.get('status') == 'CLOSED_BREAKEVEN' or h.get('profit', 0) > 0]
+            win_rate = (len(wins) / total_closed) * 100.0
+            msg += f"• Tổng số kèo: <b>{total_closed}</b> | Thắng: <b>{len(wins)}</b> | Thua: <b>{total_closed - len(wins)}</b>\n"
+            msg += f"• Tỷ lệ Winrate: <b>{win_rate:.1f}%</b> 🔥\n"
+            msg += "• 3 lệnh gần nhất:\n"
+            for h in history[-3:]:
+                sym = "VÀNG" if h.get('asset') == 'GOLD' else "BTC"
+                p_val = h.get('profit', 0)
+                sgn_p = f"+{p_val}" if p_val >= 0 else f"{p_val}"
+                st = "✅ TP Full" if h.get('status') == 'CLOSED_TP2' else ("🛡️ Hoà Vốn" if h.get('status') == 'CLOSED_BREAKEVEN' else "🛑 Cắt Lỗ")
+                msg += f"  - {sym} {h.get('signal')}: {st} ({sgn_p}) [{h.get('close_time', '')}]\n"
+
+        send_telegram(msg, reply_markup=get_main_keyboard())
+    except Exception as e:
+        send_telegram(f"Lỗi kiểm tra lệnh: {e}", reply_markup=get_main_keyboard())
+
 def send_telegram(text, reply_markup=None):
     url = f"https://api.telegram.org/bot{CONFIG['TELEGRAM_BOT_TOKEN']}/sendMessage"
     payload = {
@@ -78,39 +394,53 @@ def find_smc_swings_and_ob(klines_desc, is_gold=False):
     curr_p = float(chrono[-1][4])
     min_disp = 15.0 if is_gold else 800.0
 
+    vols = [float(k[5]) for k in chrono]
+    avg_vol = (sum(vols) / len(vols)) if vols else 1.0
+
     # 1. Tìm Major Bearish OB có cú xả mạnh (Displacement) và CHƯA BỊ TEST LẠI (Unmitigated)
     major_bear_obs = []
     for i in range(len(chrono) - 3, 2, -1):
         c = chrono[i]
         h = float(c[2])
+        v = float(c[5])
+        o = float(c[1])
+        cl = float(c[4])
         if h > curr_p:
-            # Kiểm tra đỉnh Swing High (cao hơn 2 nến trước và 2 nến sau)
+            # Kiểm tra đỉnh Swing High hoặc Cây Nến Xung Lực KeyVolume đỏ (như hình mẫu nến 23:00)
             is_peak = all(h >= float(chrono[j][2]) for j in range(max(0, i - 2), min(n, i + 3)))
-            if is_peak:
+            is_key_vol_bar = (v >= avg_vol * 1.2 and o > cl)
+            if is_peak or is_key_vol_bar:
                 future_low = min(float(chrono[j][3]) for j in range(i + 1, min(n, i + 10)))
                 drop = h - future_low
                 if drop >= min_disp:
-                    # Kiểm tra chưa bị đóng cửa vượt đỉnh
+                    # Kiểm tra chưa bị nến nào sau đó đóng cửa vượt đỉnh
                     if not any(float(chrono[k][4]) > h for k in range(i + 1, n)):
                         t = datetime.datetime.fromtimestamp(int(c[0])/1000, tz=TZ_VN).strftime('%H:%M %d/%m')
-                        # Vùng OB: Chân sóng / hỗ trợ bị bẻ gãy (BOS) trước cú xả
-                        prev_bars = chrono[max(0, i - 6): i]
-                        if prev_bars:
-                            base_support = min(float(b[3]) for b in prev_bars)
-                            base_close = min(float(b[4]) for b in prev_bars)
-                            ob_bot = round(max(base_support, base_close - 3.0), 2 if is_gold else 1)
-                            ob_top = round(ob_bot + (6.0 if is_gold else 400.0), 2 if is_gold else 1)
-                        else:
+                        if is_key_vol_bar and not is_peak:
+                            # Cây nến Key Volume như hình vẽ chart: Lấy râu đỉnh và thân nến
                             ob_top = round(h, 2 if is_gold else 1)
-                            ob_bot = round(h - (6.0 if is_gold else 400.0), 2 if is_gold else 1)
+                            ob_bot = round(min(o, cl), 2 if is_gold else 1)
+                            filter_name = 'H1 KeyVolume OB'
+                        else:
+                            # Vùng chân sóng / hỗ trợ bị bẻ gãy (BOS) trước cú xả
+                            prev_bars = chrono[max(0, i - 6): i]
+                            if prev_bars:
+                                base_support = min(float(b[3]) for b in prev_bars)
+                                base_close = min(float(b[4]) for b in prev_bars)
+                                ob_bot = round(max(base_support, base_close - 3.0), 2 if is_gold else 1)
+                                ob_top = round(ob_bot + (6.0 if is_gold else 400.0), 2 if is_gold else 1)
+                            else:
+                                ob_top = round(h, 2 if is_gold else 1)
+                                ob_bot = round(h - (6.0 if is_gold else 400.0), 2 if is_gold else 1)
+                            filter_name = 'H1 Major Unmitigated OB'
                         
-                        # Kiểm tra xem từ sau cú xả (i+3 trở đi) giá có chạm lại vùng này chưa
-                        retested = any(float(chrono[m][2]) >= ob_bot for m in range(i + 3, n))
+                        # Kiểm tra xem từ sau cú xả (i+2 trở đi) giá có chạm lại vùng này chưa
+                        retested = any(float(chrono[m][2]) >= ob_bot for m in range(i + 2, n))
                         if not retested:
                             major_bear_obs.append({
                                 'time': t, 'high': h, 'ob_bot': ob_bot, 'ob_top': ob_top,
                                 'mid': round((ob_top + ob_bot) / 2.0, 2 if is_gold else 1),
-                                'filter': 'H1 Major Unmitigated OB'
+                                'filter': filter_name
                             })
 
     # 2. Tìm Major Bullish OB có cú bơm mạnh (Displacement) và CHƯA BỊ TEST LẠI (Unmitigated)
@@ -118,21 +448,33 @@ def find_smc_swings_and_ob(klines_desc, is_gold=False):
     for i in range(len(chrono) - 3, 2, -1):
         c = chrono[i]
         l = float(c[3])
+        v = float(c[5])
+        o = float(c[1])
+        cl = float(c[4])
         if l < curr_p:
             is_trough = all(l <= float(chrono[j][3]) for j in range(max(0, i - 2), min(n, i + 3)))
-            if is_trough:
+            is_key_vol_bar = (v >= avg_vol * 1.2 and cl > o)
+            if is_trough or is_key_vol_bar:
                 future_high = max(float(chrono[j][2]) for j in range(i + 1, min(n, i + 10)))
                 pump = future_high - l
                 if pump >= min_disp:
                     if not any(float(chrono[k][4]) < l for k in range(i + 1, n)):
                         t = datetime.datetime.fromtimestamp(int(c[0])/1000, tz=TZ_VN).strftime('%H:%M %d/%m')
-                        ob_bot = round(l, 2 if is_gold else 1)
-                        ob_top = round(l + (6.0 if is_gold else 400.0), 2 if is_gold else 1)
-                        major_bull_obs.append({
-                            'time': t, 'low': l, 'ob_bot': ob_bot, 'ob_top': ob_top,
-                            'mid': round((ob_top + ob_bot) / 2.0, 2 if is_gold else 1),
-                            'filter': 'H1 Major Unmitigated OB'
-                        })
+                        if is_key_vol_bar and not is_trough:
+                            ob_bot = round(l, 2 if is_gold else 1)
+                            ob_top = round(max(o, cl), 2 if is_gold else 1)
+                            filter_name = 'H1 KeyVolume OB'
+                        else:
+                            ob_bot = round(l, 2 if is_gold else 1)
+                            ob_top = round(l + (6.0 if is_gold else 400.0), 2 if is_gold else 1)
+                            filter_name = 'H1 Major Unmitigated OB'
+                        retested = any(float(chrono[m][3]) <= ob_top for m in range(i + 2, n))
+                        if not retested:
+                            major_bull_obs.append({
+                                'time': t, 'low': l, 'ob_bot': ob_bot, 'ob_top': ob_top,
+                                'mid': round((ob_top + ob_bot) / 2.0, 2 if is_gold else 1),
+                                'filter': filter_name
+                            })
 
     # Nếu tìm được Major OB theo Displacement thì ưu tiên lấy Major OB gần nhất trên/dưới giá
     if major_bear_obs:
@@ -985,6 +1327,8 @@ def run_bot():
                         
                     if text in ["/start", "menu", "Menu", "⚙️ Menu Hỗ Trợ"]:
                         send_telegram("Chọn một tính năng bên dưới:", reply_markup=get_main_keyboard())
+                    elif text in ["/check", "check", "🔍 Kiểm Tra Lệnh & Báo Cáo Ngày"]:
+                        handle_check_vip_trades()
                     elif text in ["/btc", "👑 Phân Tích BTC", "btc", "BTC"]:
                         handle_btc()
                     elif text in ["/gold", "🥇 Phân Tích VÀNG (XAU)", "gold", "vang", "Vàng"]:
@@ -1023,11 +1367,21 @@ def auto_diamond_alert_worker():
             PLAN_CACHE['GOLD']['data'] = None
             PLAN_CACHE['BTC']['data'] = None
             
-            # 2. QUÉT TỰ ĐỘNG VÀNG (OANDA:XAUUSD - Chuẩn MT5)
+            # 2. Lấy kế hoạch nến M5 mới nhất cho Vàng và BTC
             plan_gold = calculate_gold_h4_plan()
-            dist_to_cản = abs(plan_gold['current_price'] - plan_gold['entry_limit'])
-            if plan_gold.get('is_confirmed') and ('ĐÃ XÁC NHẬN' in plan_gold.get('confirm_badge', '')) and (dist_to_cản <= 8.0):
-                if now - LAST_ALERT_TIME['GOLD'] > 1200: # Cooldown 20 phút giữa các kèo
+            plan_btc = calculate_btc_h4_plan()
+
+            # 3. THEO DÕI VÀ CẬP NHẬT TRẠNG THÁI CÁC LỆNH VIP ĐANG CHẠY (TP1, TP2, SL)
+            check_and_update_vip_trades(plan_gold['current_price'], plan_btc['current_price'])
+            active_trades = load_vip_trades()
+
+            # 4. QUÉT TỰ ĐỘNG VÀNG (OANDA:XAUUSD - Chuẩn MT5)
+            # TÔN CHỈ CHỐNG SPAM: Nếu đang có lệnh Vàng chạy -> TUYỆT ĐỐI KHÔNG BẮN THÊM KÈO MỚI!
+            has_active_gold = any(t.get('symbol') == 'XAUUSD' for t in active_trades)
+            dist_to_cản_gold = abs(plan_gold['current_price'] - plan_gold['entry_limit'])
+
+            if not has_active_gold and plan_gold.get('is_confirmed') and ('ĐÃ XÁC NHẬN' in plan_gold.get('confirm_badge', '')) and (dist_to_cản_gold <= 8.0):
+                if now - LAST_ALERT_TIME['GOLD'] > 1200: # Cooldown giữa các kèo
                     price_gold = plan_gold['current_price']
                     entry_gold = plan_gold['entry_limit']
                     s_emoji = "🔴 SHORT (BÁN)" if plan_gold['signal'] == 'SHORT' else "🟢 LONG (MUA)"
@@ -1066,11 +1420,25 @@ def auto_diamond_alert_worker():
 • Rủi ro tối đa 2%: <b>$20.0</b> (tương đương 0.01 - 0.02 lot trên MT5)"""
                     send_telegram(msg)
                     LAST_ALERT_TIME['GOLD'] = now
+                    # Ghi nhận lệnh vào hệ thống theo dõi duy nhất 1 lệnh
+                    record_new_vip_trade(
+                        asset='GOLD',
+                        symbol='XAUUSD',
+                        signal=plan_gold['signal'],
+                        entry_price=entry_gold,
+                        entry_stop=plan_gold['entry_stop'],
+                        sl=plan_gold['sl'],
+                        tp1=plan_gold['tp1'],
+                        tp2=plan_gold['tp2'],
+                        sl_dist=plan_gold['sl_dist']
+                    )
 
-            # 3. QUÉT TỰ ĐỘNG BITCOIN (BTCUSDT)
-            plan_btc = calculate_btc_h4_plan()
-            dist_to_cản = abs(plan_btc['current_price'] - plan_btc['entry_limit'])
-            if plan_btc.get('is_confirmed') and ('ĐÃ XÁC NHẬN' in plan_btc.get('confirm_badge', '')) and (dist_to_cản <= 300.0):
+            # 5. QUÉT TỰ ĐỘNG BITCOIN (BTCUSDT)
+            # TÔN CHỈ CHỐNG SPAM: Nếu đang có lệnh BTC chạy -> TUYỆT ĐỐI KHÔNG BẮN THÊM KÈO MỚI!
+            has_active_btc = any(t.get('symbol') == 'BTCUSDT' for t in active_trades)
+            dist_to_cản_btc = abs(plan_btc['current_price'] - plan_btc['entry_limit'])
+
+            if not has_active_btc and plan_btc.get('is_confirmed') and ('ĐÃ XÁC NHẬN' in plan_btc.get('confirm_badge', '')) and (dist_to_cản_btc <= 300.0):
                 if now - LAST_ALERT_TIME['BTC'] > 1200:
                     price_btc = plan_btc['current_price']
                     entry_l = plan_btc['entry_limit']
@@ -1110,6 +1478,17 @@ def auto_diamond_alert_worker():
 • Rủi ro tối đa 2%: <b>$20.0</b> | Khối lượng: <b>$1,000.0</b> | Đòn bẩy: <b>5x</b>"""
                     send_telegram(msg)
                     LAST_ALERT_TIME['BTC'] = now
+                    record_new_vip_trade(
+                        asset='BTC',
+                        symbol='BTCUSDT',
+                        signal=plan_btc['signal'],
+                        entry_price=entry_l,
+                        entry_stop=entry_s,
+                        sl=plan_btc['sl'],
+                        tp1=plan_btc['tp1'],
+                        tp2=plan_btc['tp2'],
+                        sl_dist=abs(entry_l - plan_btc['sl'])
+                    )
 
         except Exception as e:
             print(f"Lỗi worker quét tự động: {e}")
