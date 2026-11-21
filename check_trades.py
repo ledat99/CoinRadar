@@ -6,8 +6,8 @@ import requests
 
 # --- CONFIGURATION ---
 ACTIVE_TRADES_FILE = 'active_trades.json'
-TELEGRAM_BOT_TOKEN = 'YOUR_TELEGRAM_BOT_TOKEN'
-TELEGRAM_CHAT_ID = 'YOUR_TELEGRAM_CHAT_ID'
+TELEGRAM_BOT_TOKEN = '9051874352:AAFrnfJ8Mm0QF4wBlz8V3vYjYiqz5_sIVF8'
+TELEGRAM_CHAT_ID = '6022180065'
 
 # Khởi tạo sàn Binance
 binance = ccxt.binance({

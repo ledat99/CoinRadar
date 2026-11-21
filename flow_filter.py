@@ -29,6 +29,10 @@ SCAN_LIMIT = 144  # 144 * 5m = 12 giờ
 # Ngưỡng đánh giá
 SHORT_TF_MIN_PCT = -30   # 5m net_pct_change > ngưỡng này → không bị dump
 DUMP_PCT_THRESHOLD = -50 # 5m pct < ngưỡng này → trừ điểm mạnh
+SIDEWAYS_PCT_MAX = 4.0   # |price_change_4h| < ngưỡng này → coi là đi ngang
+DOWN_PCT_MAX = 8.0       # giá giảm tối đa 4h (%) mà vẫn được coi là "giảm -> cơ hội"
+DEAD_PCT_12H = -15.0     # price_change_12h < ngưỡng này → coin đã chết, bỏ
+LONG_POS_MIN = 2         # số khung dài (trong 4h/8h/12h) tối thiểu phải dương
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -80,16 +84,15 @@ def fetch_klines_with_taker(symbol: str, interval: str = SCAN_INTERVAL,
 def compute_inflow_outflow(df: pd.DataFrame, last_n_candles: int) -> dict | None:
     """Tính inflow/outflow cho N nến gần nhất.
     Trả về: {'inflow': USD, 'outflow': USD, 'net': USD, 'pct': float}
-      pct = % thay đổi của net so với N nến liền trước (giống cột "%" CoinGlass).
+      pct = % thay đổi của net so với N nến liền trước (nếu có đủ dữ liệu,
+            giống cột '%' trên CoinGlass). Nếu không đủ → pct = 0.
     """
     if df is None or df.empty:
         return None
-    need = last_n_candles * 2  # cần đủ 2 đoạn để tính % thay đổi
-    if len(df) < need:
+    if len(df) < last_n_candles:
         return None
 
     cur = df.tail(last_n_candles)
-    prev = df.iloc[-(last_n_candles * 2):-last_n_candles]
 
     def summarize(part: pd.DataFrame) -> tuple:
         inflow = float(part['taker_buy_quote'].sum())
@@ -99,9 +102,16 @@ def compute_inflow_outflow(df: pd.DataFrame, last_n_candles: int) -> dict | None
         return inflow, outflow, net
 
     inflow, outflow, net = summarize(cur)
-    _, _, prev_net = summarize(prev)
 
-    if prev_net != 0:
+    # Thử lấy N nến liền trước để tính % thay đổi (nếu df đủ dài)
+    prev_net = None
+    if len(df) >= last_n_candles * 2:
+        prev = df.iloc[-(last_n_candles * 2):-last_n_candles]
+        _, _, prev_net = summarize(prev)
+
+    if prev_net is None:
+        pct = 0.0
+    elif prev_net != 0:
         pct = (net - prev_net) / abs(prev_net) * 100.0
     elif net != 0:
         pct = 100.0 if net > 0 else -100.0
@@ -141,13 +151,16 @@ def get_flow_snapshot(symbol: str) -> dict | None:
         '15m': {...},
         ...
         '12h': {...},
+        'price': {'pct_5m','pct_15m','pct_1h','pct_4h','pct_12h'},
         'summary': {
             'long_term_positive': bool,         # (4h, 8h, 12h) đều net > 0
             'short_term_not_dump': bool,        # 5m pct > SHORT_TF_MIN_PCT
             'momentum_aligned_positive': bool,  # 30m và 1h đều net > 0
             'momentum_aligned_negative': bool,  # 30m và 1h đều net < 0
+            'price_sideways_or_down': bool,     # giá 4h chưa tăng quá SIDEWAYS_PCT_MAX
+            'is_accumulation': bool,            # giá ngang/giảm + dòng tiền dài hạn dương
             'score': float,                     # 0..100
-            'long_positive_count': int,         # bao nhiêu khung dài dương
+            'long_positive_count': int,
         }
       }
     Hoặc None nếu fetch thất bại.
@@ -165,9 +178,35 @@ def get_flow_snapshot(symbol: str) -> dict | None:
     if '12h' not in snapshot:
         return None
 
+    # --- % GIÁ cho từng khung (so với giá trước đó) ---
+    cur_close = float(df['close'].iloc[-1])
+    def pct_change_n_candles_back(n: int) -> float:
+        if len(df) <= n:
+            return 0.0
+        prev_close = float(df['close'].iloc[-(n+1)])
+        if prev_close == 0:
+            return 0.0
+        return (cur_close - prev_close) / prev_close * 100.0
+
+    # pct_12h tính từ cây nến đầu tiên vì ta chỉ có đúng 144 nến (= 12h)
+    def pct_from_first_to_now() -> float:
+        first_close = float(df['close'].iloc[0])
+        if first_close == 0:
+            return 0.0
+        return (cur_close - first_close) / first_close * 100.0
+
+    price_block = {
+        'pct_5m':   pct_change_n_candles_back(1),     # 1 nến 5m trước
+        'pct_15m':  pct_change_n_candles_back(3),     # 3 nến 5m trước
+        'pct_1h':   pct_change_n_candles_back(12),
+        'pct_4h':   pct_change_n_candles_back(48),
+        'pct_12h':  pct_from_first_to_now(),
+    }
+    snapshot['price'] = price_block
+
     long_tfs = ['4h', '8h', '12h']
     long_pos = sum(1 for tf in long_tfs if snapshot.get(tf, {}).get('net', 0) > 0)
-    long_term_positive = (long_pos == len(long_tfs))
+    long_term_positive = (long_pos >= LONG_POS_MIN)
 
     five_m = snapshot.get('5m', {'pct': 0})
     short_term_not_dump = five_m.get('pct', 0) > SHORT_TF_MIN_PCT
@@ -177,23 +216,39 @@ def get_flow_snapshot(symbol: str) -> dict | None:
     momentum_aligned_positive = (thirty_m['net'] > 0) and (one_h['net'] > 0)
     momentum_aligned_negative = (thirty_m['net'] < 0) and (one_h['net'] < 0)
 
+    # --- ĐÁNH GIÁ GIÁ ---
+    # "Giá đi ngang" = |price_change_4h| <= SIDEWAYS_PCT_MAX  (4%)
+    # "Giá đi giảm"   = price_change_4h < 0 nhưng > -DOWN_PCT_MAX (8%) — coin đang
+    #                    điều chỉnh nhẹ, chưa đến mức chết
+    pct_4h = price_block.get('pct_4h', 0)
+    pct_12h = price_block.get('pct_12h', 0)
+    price_sideways = abs(pct_4h) <= SIDEWAYS_PCT_MAX
+    price_down_soft = (-DOWN_PCT_MAX < pct_4h < -SIDEWAYS_PCT_MAX)
+    price_sideways_or_down = (
+        (price_sideways or price_down_soft) and pct_12h >= DEAD_PCT_12H
+    )
+    # TÍCH LŨY = giá chưa pump (ngang/giảm nhẹ) + dòng tiền dài hạn dương (>= 2/3 khung)
+    is_accumulation = price_sideways_or_down and long_term_positive
+
     # --- ĐIỂM 0..100 ---
     score = 0
     if long_term_positive:
-        score += 30
+        score += 25
     if momentum_aligned_positive:
-        score += 20
+        score += 15
     if five_m.get('net', 0) > 0:
-        score += 20
+        score += 15
+    if price_sideways_or_down and long_term_positive:
+        score += 25  # thưởng to cho tích lũy (mục tiêu chính của user)
     short_momentum = [snapshot.get('15m', {'net': 0})['net'], thirty_m['net']]
     if all(n > 0 for n in short_momentum):
-        score += 15
+        score += 10
 
     long_data = snapshot.get('12h', {})
     if long_data.get('quote_volume', 0) > 0:
         net_ratio = abs(long_data.get('net', 0)) / long_data['quote_volume']
         if net_ratio > 0.05:
-            score += 15
+            score += 10
 
     if five_m.get('pct', 0) < DUMP_PCT_THRESHOLD:
         score -= 20
@@ -205,6 +260,8 @@ def get_flow_snapshot(symbol: str) -> dict | None:
         'short_term_not_dump':         short_term_not_dump,
         'momentum_aligned_positive':  momentum_aligned_positive,
         'momentum_aligned_negative':  momentum_aligned_negative,
+        'price_sideways_or_down':      price_sideways_or_down,
+        'is_accumulation':             is_accumulation,
         'score':                       score,
         'long_positive_count':         long_pos,
     }
