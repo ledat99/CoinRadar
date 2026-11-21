@@ -101,19 +101,20 @@ def handle_gold():
         s_emoji = "🟢 LONG" if sig['type'] == 'LONG' else "🔴 SHORT"
         text += f"""
 🚀 <b>TÍN HIỆU VÀNG: {s_emoji}</b>
-• Entry: <b>${sig['entry']:,.2f}</b>
+• Giá hiện tại: <b>${sig['market_price']:,.2f}</b>
+👉 <b>Vùng LIMIT đón râu:</b> <code>${sig['entry_limit']:,.2f}</code>
+👉 <b>Điểm STOP phá cản:</b> <code>${sig['entry_stop']:,.2f}</code>
 • Cắt lỗ (SL): <b>${sig['sl']:,.2f}</b> (-{sig['sl_percent']:.2f}%)
 • Chốt lời 1 (TP1 - R:R 1:2): <b>${sig['tp1']:,.2f}</b>
-• Chốt lời 2 (TP2 - R:R 1:3): <b>${sig['tp2']:,.2f}</b>
+• Chốt lời 2 (TP2 - R:R 1:3.5): <b>${sig['tp2']:,.2f}</b>
 
 🛡️ <b>QUẢN LÝ VỐN (Vốn mẫu: ${CONFIG['ACCOUNT_BALANCE']:,.0f}):</b>
 • Rủi ro: <b>{sig['risk_percent']}% (${CONFIG['ACCOUNT_BALANCE']*sig['risk_percent']/100:.1f})</b>
-• Quy mô lệnh (Size): <b>${sig['position_size_usd']:,.1f}</b>
+• Quy mô vị thế: <b>${sig['position_size_usd']:,.1f}</b>
 • Đòn bẩy đề xuất: <b>{sig['suggested_leverage']}</b>
-• Margin cần dùng: <b>${sig['margin_usd']:,.1f}</b>"""
+• Ký quỹ (Margin): <b>${sig['margin_usd']:,.1f}</b>"""
     else:
-        trend_vi = "TĂNG" if sig.get('trend') == 'UPTREND' else "GIẢM"
-        text += f"\n\n📈 Xu hướng tổng thể: <b>{trend_vi}</b>\n⏳ Chưa có tín hiệu vào lệnh đẹp. Tiếp tục theo dõi vùng hỗ trợ / kháng cự."
+        text += f"\n\n📈 Xu hướng tổng thể: <b>{sig.get('trend')}</b>\n👉 Gợi ý vùng Limit đón râu nến (EMA20): <code>${sig.get('suggested_limit', 0):,.2f}</code>\n⏳ Đang theo dõi nén biên độ quanh hỗ trợ / kháng cự."
         
     send_telegram(text, reply_markup=get_main_keyboard())
 
@@ -150,7 +151,7 @@ def handle_scan(mode='long'):
             active_trades.append({
                 'symbol': r['symbol'],
                 'type': r['type'],
-                'entry': r['entry'],
+                'entry': r['entry_limit'],
                 'sl': r['sl'],
                 'tp1': r['tp1']
             })
@@ -158,12 +159,14 @@ def handle_scan(mode='long'):
         emoji = "🟢" if mode == 'long' else "🔴"
         msg += f"""
 {i}. <b>{r['symbol']}</b> {emoji} (Vol 24h: ${r['vol_m']:.1f}M)
-• Biến động 24h: <b>{r['change_24h']:+.2f}%</b> | RSI: <b>{r['rsi']:.1f}</b>
-• <b>Entry:</b> {r['entry']}
-• <b>Cắt lỗ (SL):</b> {r['sl']:.4f} (-{r['sl_pct']:.1f}%)
-• <b>Chốt lời (TP1 - R:R 1:2):</b> {r['tp1']:.4f}"""
+• Giá thị trường: <b>{r['market_price']}</b> | RSI: <b>{r['rsi']:.1f}</b>
+👉 <b>{r['limit_label']}:</b> <code>{r['entry_limit']}</code>
+👉 <b>{r['stop_label']}:</b> <code>{r['entry_stop']}</code>
+🛡️ <b>Cắt lỗ (SL an toàn):</b> <code>{r['sl']:.4f}</code> (-{r['sl_pct']:.1f}%)
+🎯 <b>Chốt lời (TP1 - R:R 1:2):</b> <code>{r['tp1']:.4f}</code>
+🎯 <b>Chốt lời (TP2 - R:R 1:3.5):</b> <code>{r['tp2']:.4f}</code>"""
 
-    msg += "\n━━━━━━━━━━━━━━━━━━\n<i>💡 Các coin này đã tự động được lưu vào danh sách kiểm tra TP/SL! Bấm 'Kiểm Tra Lệnh' bất cứ lúc nào để xem báo cáo.</i>"
+    msg += "\n━━━━━━━━━━━━━━━━━━\n<i>💡 Mẹo: Ưu tiên đặt LIMIT đón nhịp quét râu nến về cản để có giá vốn tốt nhất và khoảng SL cực ngắn!</i>"
     
     with open('active_trades.json', 'w', encoding='utf-8') as f:
         json.dump(active_trades, f, indent=4)

@@ -139,25 +139,73 @@ def quick_scan_market(mode='long', limit=5):
             price = last['close']
             
             if mode == 'long':
-                sl = min(df['low'].tail(5).min(), price - (1.6 * atr))
-                sl_dist = price - sl
-                tp1 = price + (sl_dist * 2.0)
-                sl_pct = (sl_dist / price) * 100
+                # Xu hướng TĂNG:
+                # 1. Điểm Limit đón râu nến (Pullback Limit): Đón ở vùng râu gần cản dưới (Swing Low 5 nến hoặc EMA20)
+                swing_low_wick = df['low'].tail(6).min()
+                ema_support = last['ema_20']
+                entry_limit = max(swing_low_wick, ema_support * 0.998)
+                # Nếu giá hiện tại quá gần limit thì lấy mức râu dưới
+                if entry_limit >= price:
+                    entry_limit = price * 0.995
+                
+                # 2. Điểm Buy Stop phá vỡ (Breakout Stop): Đặt trên râu nến cao nhất gần nhất
+                swing_high_wick = df['high'].tail(6).max()
+                entry_stop = swing_high_wick * 1.002
+                
+                # Cắt lỗ SL đặt an toàn dưới râu cản cứng - 1.5 ATR
+                sl = min(swing_low_wick, entry_limit - (1.5 * atr))
+                risk_limit = entry_limit - sl
+                tp1 = entry_limit + (risk_limit * 2.0)
+                tp2 = entry_limit + (risk_limit * 3.5)
+                sl_pct = (risk_limit / entry_limit) * 100
                 score = (last['rsi'] - 40) + (c['change'] * 2)
+                
+                order_strategy = {
+                    'limit_label': 'BUY LIMIT (Đón Râu Hồi)',
+                    'entry_limit': entry_limit,
+                    'stop_label': 'BUY STOP (Phá Vỡ Cản)',
+                    'entry_stop': entry_stop,
+                }
             else:
-                sl = max(df['high'].tail(5).max(), price + (1.6 * atr))
-                sl_dist = sl - price
-                tp1 = price - (sl_dist * 2.0)
-                sl_pct = (sl_dist / price) * 100
+                # Xu hướng GIẢM:
+                # 1. Điểm Sell Limit đón râu hồi lên cản trên (Swing High 5 nến hoặc EMA20)
+                swing_high_wick = df['high'].tail(6).max()
+                ema_resistance = last['ema_20']
+                entry_limit = min(swing_high_wick, ema_resistance * 1.002)
+                if entry_limit <= price:
+                    entry_limit = price * 1.005
+                    
+                # 2. Điểm Sell Stop phá đáy (Breakout Down): Đặt dưới đáy râu thấp nhất
+                swing_low_wick = df['low'].tail(6).min()
+                entry_stop = swing_low_wick * 0.998
+                
+                # Cắt lỗ SL đặt an toàn trên râu cản cứng + 1.5 ATR
+                sl = max(swing_high_wick, entry_limit + (1.5 * atr))
+                risk_limit = sl - entry_limit
+                tp1 = entry_limit - (risk_limit * 2.0)
+                tp2 = entry_limit - (risk_limit * 3.5)
+                sl_pct = (risk_limit / entry_limit) * 100
                 score = (60 - last['rsi']) + (abs(c['change']) * 2)
+                
+                order_strategy = {
+                    'limit_label': 'SELL LIMIT (Đón Râu Cản)',
+                    'entry_limit': entry_limit,
+                    'stop_label': 'SELL STOP (Phá Đáy)',
+                    'entry_stop': entry_stop,
+                }
                 
             results.append({
                 'symbol': c['symbol'],
                 'type': 'LONG' if mode == 'long' else 'SHORT',
-                'entry': price,
+                'market_price': price,
+                'entry_limit': entry_limit,
+                'entry_stop': entry_stop,
+                'limit_label': order_strategy['limit_label'],
+                'stop_label': order_strategy['stop_label'],
                 'sl': sl,
                 'sl_pct': sl_pct,
                 'tp1': tp1,
+                'tp2': tp2,
                 'change_24h': c['change'],
                 'rsi': last['rsi'],
                 'vol_m': c['volume'] / 1000000,
@@ -224,30 +272,40 @@ def analyze_major_asset(symbol='BTC/USDT', risk_capital_percent=2.0, account_bal
                 signal = None
                 if price > ema_20 and ema_20 > ema_50 and 48 <= rsi <= 68:
                     signal = "LONG"
-                    sl = price - (1.8 * atr)
-                    sl_dist = price - sl
-                    tp1 = price + (sl_dist * 2.0)
-                    tp2 = price + (sl_dist * 3.0)
+                    # Entry Limit: Đón râu pullback về EMA20 hoặc cản dưới
+                    entry_limit = max(tv_data['low'], ema_20)
+                    entry_stop = tv_data['high'] + 1.0 # Buy stop vượt râu nến cao nhất
+                    sl = entry_limit - (1.8 * atr)
+                    sl_dist = entry_limit - sl
+                    tp1 = entry_limit + (sl_dist * 2.0)
+                    tp2 = entry_limit + (sl_dist * 3.5)
                 elif price < ema_20 and ema_20 < ema_50 and 32 <= rsi <= 52:
                     signal = "SHORT"
-                    sl = price + (1.8 * atr)
-                    sl_dist = sl - price
-                    tp1 = price - (sl_dist * 2.0)
-                    tp2 = price - (sl_dist * 3.0)
+                    # Entry Limit: Đón râu pullback hồi lên EMA20 hoặc cản trên
+                    entry_limit = min(tv_data['high'], ema_20)
+                    entry_stop = tv_data['low'] - 1.0 # Sell stop thủng râu nến thấp nhất
+                    sl = entry_limit + (1.8 * atr)
+                    sl_dist = sl - entry_limit
+                    tp1 = entry_limit - (sl_dist * 2.0)
+                    tp2 = entry_limit - (sl_dist * 3.5)
                     
                 if not signal:
+                    # Mặc dù chưa có điểm vào gấp, vẫn gợi ý vùng Limit đón râu theo xu hướng EMA
+                    is_uptrend = price > ema_50
+                    suggested_limit = ema_20 if is_uptrend else ema_20
                     return {
                         'has_signal': False,
                         'symbol': 'OANDA:XAUUSD (TradingView)',
                         'price': price,
                         'rsi': rsi,
                         'volume': tv_data['volume'],
-                        'trend': "UPTREND" if price > ema_50 else "DOWNTREND",
+                        'trend': "UPTREND (Ưu tiên Buy)" if is_uptrend else "DOWNTREND (Ưu tiên Sell)",
+                        'suggested_limit': suggested_limit,
                         'ema_20': ema_20,
                         'ema_50': ema_50
                     }
                     
-                sl_percent = (sl_dist / price) * 100
+                sl_percent = (sl_dist / entry_limit) * 100
                 max_loss_usd = account_balance * (risk_capital_percent / 100.0)
                 position_size_usd = (max_loss_usd / (sl_percent / 100.0))
                 suggested_leverage = min(20, max(2, int(position_size_usd / account_balance)))
@@ -258,13 +316,15 @@ def analyze_major_asset(symbol='BTC/USDT', risk_capital_percent=2.0, account_bal
                     'has_signal': True,
                     'symbol': 'OANDA:XAUUSD (TradingView)',
                     'type': signal,
-                    'entry': price,
+                    'market_price': price,
+                    'entry_limit': entry_limit,
+                    'entry_stop': entry_stop,
                     'sl': sl,
                     'sl_percent': sl_percent,
                     'tp1': tp1,
                     'tp2': tp2,
                     'rr_tp1': "1:2.0",
-                    'rr_tp2': "1:3.0",
+                    'rr_tp2': "1:3.5",
                     'risk_percent': risk_capital_percent,
                     'position_size_usd': position_size_usd,
                     'suggested_leverage': f"{suggested_leverage}x",
