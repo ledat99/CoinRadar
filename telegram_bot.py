@@ -554,6 +554,69 @@ def analyze_m5_entry(m5_klines_desc):
         'is_confirmed_entry_bull': confirmed_bull_rejection is not None
     }
 
+def analyze_m15_structure(m15_klines_desc, delta=0.0, is_gold=False):
+    """
+    Phân tích Cấu Trúc Khung M15 (Structure Timeframe) theo chuẩn SMC & FX DREAM:
+    - NGUYÊN TẮC VÀNG CHỐNG CẢN TÀU (QUYẾT ĐỊNH WINRATE):
+      1. Kèo SHORT tại Bearish OB H1: Giá tiếp cận cản H1 là một con sóng tăng trên M15.
+         -> Bắt buộc M15 phải PHÁ VỠ CẤU TRÚC (BOS / CHoCH Giảm): Giá phải sập thủng Đáy Swing Low gần nhất của M15 (đáy hỗ trợ tạo nên đỉnh cao nhất).
+         -> Chỉ khi M15 đã bẻ gãy cấu trúc tăng này thì mới được phép tìm điểm vào lệnh M5! Nếu chưa thủng -> CẤM BÁN (CẢN TÀU)!
+      2. Kèo LONG tại Bullish OB H1: Giá tiếp cận cản H1 là một con sóng giảm trên M15.
+         -> Bắt buộc M15 phải PHÁ VỠ CẤU TRÚC (BOS / CHoCH Tăng): Giá phải đục thủng Đỉnh Swing High gần nhất của M15.
+         -> Chỉ khi M15 đã bẻ gãy cấu trúc giảm này thì mới được phép tìm điểm vào lệnh M5! Nếu chưa vượt -> CẤM MUA (BẮT DAO RƠI / CẢN TÀU)!
+    """
+    if not m15_klines_desc or len(m15_klines_desc) < 6:
+        return {
+            'has_bear_bos': False,
+            'has_bull_bos': False,
+            'choch_bear_level': 0.0,
+            'choch_bull_level': 0.0,
+            'curr_p': 0.0
+        }
+        
+    chrono = list(reversed(m15_klines_desc))
+    curr_p = float(chrono[-1][4]) + delta
+    highs = [float(c[2]) + delta for c in chrono]
+    lows = [float(c[3]) + delta for c in chrono]
+    closes = [float(c[4]) + delta for c in chrono]
+    n = len(chrono)
+    
+    # 1. Tìm đỉnh gần nhất trong 15 nến M15 và đáy Swing Low tạo nên đỉnh đó (M15 Bearish CHoCH level)
+    recent_len = min(15, n)
+    recent_highs = highs[-recent_len:]
+    max_h_idx = (n - recent_len) + int(np.argmax(recent_highs))
+    
+    # Đáy tạo nên đỉnh này nằm trong các nến trước max_h_idx
+    prior_lows = lows[max(0, max_h_idx - 6): max_h_idx]
+    if prior_lows:
+        choch_bear_level = round(min(prior_lows), 2 if is_gold else 1)
+    else:
+        choch_bear_level = round(lows[max(0, max_h_idx - 1)], 2 if is_gold else 1)
+        
+    # Kiểm tra xem nến từ sau đỉnh có nến nào đóng cửa hoặc giá hiện tại đâm thủng đáy này chưa
+    has_bear_bos = (curr_p < choch_bear_level) or any(c < choch_bear_level for c in closes[max_h_idx:])
+    
+    # 2. Tìm đáy gần nhất trong 15 nến M15 và đỉnh Swing High tạo nên đáy đó (M15 Bullish CHoCH level)
+    recent_lows = lows[-recent_len:]
+    min_l_idx = (n - recent_len) + int(np.argmin(recent_lows))
+    
+    # Đỉnh tạo nên đáy này nằm trong các nến trước min_l_idx
+    prior_highs = highs[max(0, min_l_idx - 6): min_l_idx]
+    if prior_highs:
+        choch_bull_level = round(max(prior_highs), 2 if is_gold else 1)
+    else:
+        choch_bull_level = round(highs[max(0, min_l_idx - 1)], 2 if is_gold else 1)
+        
+    has_bull_bos = (curr_p > choch_bull_level) or any(c > choch_bull_level for c in closes[min_l_idx:])
+    
+    return {
+        'has_bear_bos': has_bear_bos,
+        'has_bull_bos': has_bull_bos,
+        'choch_bear_level': choch_bear_level,
+        'choch_bull_level': choch_bull_level,
+        'curr_p': curr_p
+    }
+
 def calculate_keyvolume_nodes(klines, n_bins=20):
     """
     Tính Volume Profile & Xác định vùng High Volume Node (HVN) và Low Volume Node (LVN)
@@ -619,22 +682,24 @@ def calculate_btc_h4_plan():
         sl_time = valid_sl['time']
         sl_filter = valid_sl['filter']
 
-        # 3. Tính POC & Vùng High Volume Node (HVN) M15 theo Lý Thuyết Giá FX DREAM
+        # 3. Phân tích cấu trúc M15 (Structure Timeframe - Chống Cản Tàu) & Vùng HVN/POC
+        m15_struct = analyze_m15_structure(m15_klines, delta=0.0, is_gold=False)
         poc_m15, hvn_lower, hvn_upper = calculate_keyvolume_nodes(m15_klines, n_bins=20)
 
         # XÁC ĐỊNH HƯỚNG ĐÁNH THEO BIAS VĨ MÔ & TEST CẢN
-        is_bear_confirmed = m5_info['is_confirmed_entry_bear']
-        is_bull_confirmed = m5_info['is_confirmed_entry_bull']
+        # ĐIỀU KIỆN TIÊN QUYẾT: M15 BẮT BUỘC PHẢI PHÁ VỠ CẤU TRÚC (BOS/CHoCH) TRƯỚC!
+        is_bear_confirmed = m15_struct['has_bear_bos'] and m5_info['is_confirmed_entry_bear']
+        is_bull_confirmed = m15_struct['has_bull_bos'] and m5_info['is_confirmed_entry_bull']
 
         if is_bull_confirmed and not (w1_bear and d1_bear):
             signal = "LONG"
-            setup_desc = f"M5 Rút Chân Quét Đáy + Kích Volume tại Khối Bullish OB ${swing_low:,.1f} ({sl_time})"
-            diamond_note = "⭐ ĐẢO CHIỀU UY TÍN (CÂN BẰNG QUÂN LỰC): Đã có nến M5 rút chân kèm Kích Volume xác nhận!"
+            setup_desc = f"M15 BOS Tăng + M5 Rút Chân Kích Volume tại Khối Bullish OB ${swing_low:,.1f} ({sl_time})"
+            diamond_note = "⭐ ĐẢO CHIỀU UY TÍN (CÂN BẰNG QUÂN LỰC): M15 đã phá cấu trúc + M5 kích Volume xác nhận!"
         elif is_bear_confirmed or (w1_bear and d1_bear):
             signal = "SHORT"
-            m5_txt = " + Xác Nhận Kích Vol M5" if is_bear_confirmed else " (Đang Chờ Kích Vol)"
+            m5_txt = " + M15 BOS & Kích Vol M5" if is_bear_confirmed else " (Đang Chờ M15 BOS)"
             setup_desc = f"Đồng Pha Giảm Tuần/Ngày - Test Khối Bearish OB H1 ${bearish_ob['mid']:,.1f}{m5_txt}"
-            diamond_note = "⭐ ĐỒNG PHA TUẦN + NGÀY (CẢN TO H1): Tuyệt đối không chạm là vào, chờ nến M5 rút râu + kích Volume!"
+            diamond_note = "⭐ ĐỒNG PHA TUẦN + NGÀY (CẢN TO H1): Tuyệt đối không cản tàu, chờ M15 phá vỡ cấu trúc!"
         else:
             signal = "SHORT" if d1_bear else "LONG"
             setup_desc = f"Cấu Trúc KeyVolume H1 tại Khối OB ${bearish_ob['mid']:,.1f}"
@@ -643,28 +708,37 @@ def calculate_btc_h4_plan():
         if signal == "SHORT":
             entry_stop = round(swing_low * 0.998, 1)
             conf = m5_info['confirmed_bear_rejection']
-            if conf:
-                # ĐÃ CÓ XÁC NHẬN NẾN + VOLUME (KEYVOLUME CONFIRMATION)
-                confirm_badge = "🔥 ĐÃ XÁC NHẬN (NẾN RÚT RÂU + KÍCH VOLUME)"
+            if not m15_struct['has_bear_bos']:
+                confirm_badge = "⏳ CHỜ M15 PHÁ VỠ CẤU TRÚC (TRÁNH CẢN TÀU)"
+                entry_limit = round(max(bearish_ob['bottom'], min(poc_m15, bearish_ob['mid'])), 1)
+                sl = round(swing_high + 180.0, 1)
+                advice = (
+                    f"⛔ <b>CHƯA BẺ GÃY CẤU TRÚC M15 (TUYỆT ĐỐI KHÔNG CẢN TÀU):</b>\n"
+                    f"• Giá BTC đang trong đà tăng mạnh tiếp cận cản H1! Đáy hỗ trợ M15 tạo đỉnh tại <b>${m15_struct['choch_bear_level']:,.1f}</b> CHƯA BỊ BẺ GÃY!\n"
+                    f"• Bán lúc này sẽ là <b>CẢN TÀU RẤT DỄ CHÁY TÀI KHOẢN</b>!\n"
+                    f"• <b>Kiên nhẫn chờ:</b> Nến M15 phải đóng cửa đâm thủng đáy <b>${m15_struct['choch_bear_level']:,.1f}</b> (M15 BOS) để xác nhận đảo chiều, sau đó mới tìm nến M5 hồi retest kích Volume để vào lệnh!"
+                )
+            elif conf:
+                # ĐÃ CÓ XÁC NHẬN CẢ M15 BOS LẪN NẾN & VOLUME M5
+                confirm_badge = "🔥 ĐÃ PHÁ VỠ CẤU TRÚC M15 (BOS) + KÍCH VOLUME M5"
                 entry_limit = round(current_price, 1)
                 sl = round(conf['high'] + 120.0, 1)
                 advice = (
-                    f"✅ <b>TÔN CHỈ KEYVOLUME ĐÃ THỎA MÃN (VÀO LỆNH NGAY):</b>\n"
-                    f"• Tại Khối Bearish OB H1, nến M5 lúc <b>{conf['time']}</b> đã RÚT RÂU <b>{conf['wick_pct']}%</b> kèm <b>KÍCH VOLUME ({conf['vol_ratio']}x)</b>!\n"
-                    f"• Đủ 100% điều kiện Nến + Volume xác nhận phe Bán nhảy vào đạp giá, vào lệnh Sell ngay!\n"
+                    f"✅ <b>TÔN CHỈ CHỐNG CẢN TÀU ĐÃ THỎA MÃN (VÀO LỆNH NGAY):</b>\n"
+                    f"• <b>Cấu trúc M15:</b> Đã sập bẻ gãy đáy hỗ trợ <b>${m15_struct['choch_bear_level']:,.1f}</b> (M15 BOS thành công)!\n"
+                    f"• <b>Xác nhận M5:</b> Nến M5 lúc <b>{conf['time']}</b> đã RÚT RÂU <b>{conf['wick_pct']}%</b> kèm <b>KÍCH VOLUME ({conf['vol_ratio']}x)</b>!\n"
+                    f"• Đủ 100% điều kiện: Xu hướng M15 đã gãy + phe Bán kích Volume tại M5, an toàn vào lệnh Sell ngay!\n"
                     f"🛡️ <b>SL SIÊU MỎNG:</b> Đặt ngoài chóp râu M5 ${sl:,.1f}. Đục thủng chóp râu ra ngoài là kịch bản sai, cắt lỗ ngay!\n"
                     f"💎 <b>ĐUA SÓNG ĐÂM 1 MẠCH:</b> Nếu BTC lao thẳng phá đáy <b>${entry_stop:,.1f}</b>, Lệnh 2 Sell Stop sẽ tự kích hoạt!"
                 )
             else:
-                # CHƯA CÓ XÁC NHẬN -> CHỜ, KHÔNG CHẠM LÀ VÀO
-                confirm_badge = "⏳ ĐANG CHỜ XÁC NHẬN (CHƯA VÀO LỆNH)"
+                confirm_badge = "⏳ ĐÃ GÃY CẤU TRÚC M15 (CHỜ M5 RETEST KÍCH VOL)"
                 entry_limit = round(max(bearish_ob['bottom'], min(poc_m15, bearish_ob['mid'])), 1)
                 sl = round(swing_high + 180.0, 1)
                 advice = (
-                    f"⚠️ <b>TÔN CHỈ FX KEYVOLUME (TUYỆT ĐỐI KHÔNG CHẠM LÀ VÀO):</b>\n"
-                    f"• Giá đang tiếp cận Khối Bearish OB H1 [${bearish_ob['bottom']:,.1f} - ${bearish_ob['top']:,.1f}], nhưng <b>CHƯA CÓ nến M5 rút râu kèm KÍCH VOLUME</b> xác nhận!\n"
-                    f"• Kiên nhẫn đứng ngoài quan sát! Chỉ bấm lệnh khi xuất hiện cây nến M5 rút râu mạnh + Volume tăng vọt từ chối tại cản!\n"
-                    f"💎 <b>ĐUA SÓNG ĐÂM 1 MẠCH:</b> Nếu BTC lao thẳng phá đáy <b>${entry_stop:,.1f}</b>, Lệnh 2 Sell Stop sẽ tự kích hoạt!"
+                    f"⚠️ <b>M15 ĐÃ BẺ GÃY CẤU TRÚC (BOS ĐÁY ${m15_struct['choch_bear_level']:,.1f}):</b>\n"
+                    f"• Cấu trúc tăng M15 đã gãy, không còn lo cản tàu!\n"
+                    f"• Hiện đang kiên nhẫn chờ nhịp nến M5 hồi retest cản rút râu mạnh kèm KÍCH VOLUME để vào lệnh!"
                 )
             risk = sl - entry_limit
             if risk < 300.0:
@@ -675,26 +749,36 @@ def calculate_btc_h4_plan():
         else: # LONG
             entry_stop = round(swing_high * 1.002, 1)
             conf = m5_info['confirmed_bull_rejection']
-            if conf:
-                confirm_badge = "🔥 ĐÃ XÁC NHẬN (NẾN RÚT CHÂN + KÍCH VOLUME)"
+            if not m15_struct['has_bull_bos']:
+                confirm_badge = "⏳ CHỜ M15 PHÁ VỠ CẤU TRÚC (TRÁNH BẮT DAO RƠI)"
+                entry_limit = round(min(bullish_ob['top'], max(poc_m15, bullish_ob['mid'])), 1)
+                sl = round(swing_low - 180.0, 1)
+                advice = (
+                    f"⛔ <b>CHƯA BẺ GÃY CẤU TRÚC M15 (TUYỆT ĐỐI KHÔNG BẮT DAO RƠI):</b>\n"
+                    f"• Giá BTC đang trong đà xả mạnh tiếp cận cản H1! Đỉnh cản M15 tạo đáy tại <b>${m15_struct['choch_bull_level']:,.1f}</b> CHƯA BỊ BỨT PHÁ!\n"
+                    f"• Mua lúc này sẽ là <b>BẮT DAO RƠI / CẢN TÀU VÔ CÙNG NGUY HIỂM</b>!\n"
+                    f"• <b>Kiên nhẫn chờ:</b> Nến M15 phải bứt phá đóng cửa vượt đỉnh <b>${m15_struct['choch_bull_level']:,.1f}</b> (M15 BOS) để xác nhận đảo chiều, sau đó mới tìm nến M5 hồi retest kích Volume để vào lệnh!"
+                )
+            elif conf:
+                confirm_badge = "🔥 ĐÃ PHÁ VỠ CẤU TRÚC M15 (BOS) + KÍCH VOLUME M5"
                 entry_limit = round(current_price, 1)
                 sl = round(conf['low'] - 120.0, 1)
                 advice = (
-                    f"✅ <b>TÔN CHỈ KEYVOLUME ĐÃ THỎA MÃN (VÀO LỆNH NGAY):</b>\n"
-                    f"• Tại Khối Bullish OB H1, nến M5 lúc <b>{conf['time']}</b> đã RÚT CHÂN <b>{conf['wick_pct']}%</b> kèm <b>KÍCH VOLUME ({conf['vol_ratio']}x)</b>!\n"
-                    f"• Đủ 100% điều kiện Nến + Volume xác nhận phe Mua đẩy giá, vào lệnh Buy ngay!\n"
+                    f"✅ <b>TÔN CHỈ CHỐNG CẢN TÀU ĐÃ THỎA MÃN (VÀO LỆNH NGAY):</b>\n"
+                    f"• <b>Cấu trúc M15:</b> Đã bứt phá vượt đỉnh cản <b>${m15_struct['choch_bull_level']:,.1f}</b> (M15 BOS thành công)!\n"
+                    f"• <b>Xác nhận M5:</b> Nến M5 lúc <b>{conf['time']}</b> đã RÚT CHÂN <b>{conf['wick_pct']}%</b> kèm <b>KÍCH VOLUME ({conf['vol_ratio']}x)</b>!\n"
+                    f"• Đủ 100% điều kiện: Xu hướng M15 đã đảo chiều tăng + phe Mua kích Volume tại M5, an toàn vào lệnh Buy ngay!\n"
                     f"🛡️ <b>SL SIÊU MỎNG:</b> Đặt dưới đáy râu M5 ${sl:,.1f}. Thủng râu ra ngoài là cắt lỗ ngay!\n"
                     f"💎 <b>ĐUA SÓNG BỨT TỐC:</b> Nếu BTC tăng thốc qua đỉnh <b>${entry_stop:,.1f}</b>, Lệnh 2 Buy Stop sẽ tự khớp!"
                 )
             else:
-                confirm_badge = "⏳ ĐANG CHỜ XÁC NHẬN (CHƯA VÀO LỆNH)"
+                confirm_badge = "⏳ ĐÃ GÃY CẤU TRÚC M15 (CHỜ M5 RETEST KÍCH VOL)"
                 entry_limit = round(min(bullish_ob['top'], max(poc_m15, bullish_ob['mid'])), 1)
                 sl = round(swing_low - 180.0, 1)
                 advice = (
-                    f"⚠️ <b>TÔN CHỈ FX KEYVOLUME (TUYỆT ĐỐI KHÔNG CHẠM LÀ VÀO):</b>\n"
-                    f"• Giá đang ở vùng Khối Bullish OB H1 [${bullish_ob['bottom']:,.1f} - ${bullish_ob['top']:,.1f}], nhưng <b>CHƯA CÓ nến M5 rút chân kèm KÍCH VOLUME</b> xác nhận!\n"
-                    f"• Kiên nhẫn chờ cây nến M5 rút chân kèm Volume lớn để xác nhận trước khi vào lệnh!\n"
-                    f"💎 <b>ĐUA SÓNG BỨT TỐC:</b> Nếu BTC tăng thốc qua đỉnh <b>${entry_stop:,.1f}</b>, Lệnh 2 Buy Stop sẽ tự khớp!"
+                    f"⚠️ <b>M15 ĐÃ BẺ GÃY CẤU TRÚC (BOS ĐỈNH ${m15_struct['choch_bull_level']:,.1f}):</b>\n"
+                    f"• Cấu trúc giảm M15 đã gãy, không còn lo bắt dao rơi!\n"
+                    f"• Hiện đang kiên nhẫn chờ nhịp nến M5 hồi retest cản rút chân mạnh kèm KÍCH VOLUME để vào lệnh!"
                 )
             risk = entry_limit - sl
             if risk < 300.0:
@@ -730,6 +814,8 @@ def calculate_btc_h4_plan():
             'bull_ob_top': bullish_ob['top'],
             'bull_ob_bot': bullish_ob['bottom'],
             'bull_ob_mid': bullish_ob['mid'],
+            'm15_status': "✅ Đã Phá Vỡ Cấu Trúc (BOS)" if (m15_struct['has_bear_bos'] if signal == 'SHORT' else m15_struct['has_bull_bos']) else "⛔ Chưa Phá Vỡ (Đang Chờ BOS)",
+            'm15_choch_level': m15_struct['choch_bear_level'] if signal == 'SHORT' else m15_struct['choch_bull_level'],
             'm5_high': m5_info['m5_high'],
             'm5_low': m5_info['m5_low'],
             'm5_pattern': 'Rút Râu + Kích Volume' if (is_bear_confirmed or is_bull_confirmed) else 'Đang Chờ Kích Vol',
@@ -768,6 +854,9 @@ def handle_btc():
    🧱 <b>Khối Bearish OB H1:</b> <code>[${plan['b_ob_bot']:,.1f} - ${plan['b_ob_top']:,.1f}]</code> (50% Mid: ${plan['b_ob_mid']:,.1f})
 📉 <b>Swing Low H1:</b> <code>${plan['swing_low']:,.1f}</code>{sl_time_str}
    🧱 <b>Khối Bullish OB H1:</b> <code>[${plan['bull_ob_bot']:,.1f} - ${plan['bull_ob_top']:,.1f}]</code> (50% Mid: ${plan['bull_ob_mid']:,.1f})
+⚡ <b>Cấu Trúc Khung M15 (Chống Cản Tàu):</b>
+   • Trạng thái M15: <b>{plan.get('m15_status', 'Đang Quan Sát')}</b>
+   • Mốc Phá Vỡ Cấu Trúc (CHoCH/BOS): <code>${plan.get('m15_choch_level', 0):,.1f}</code>
 🎯 <b>Khung M5 Vào Lệnh (Entry & Râu Test):</b>
    • Trạng thái M5: <b>{plan.get('m5_pattern', 'Test Cạnh OB')}</b>
    • Tôn chỉ KeyVolume: <b>{plan.get('confirm_badge', '⏳ Đang Chờ Nến & Kích Vol')}</b>
@@ -793,7 +882,7 @@ def handle_btc():
 
 🛡️ <b>QUẢN LÝ VỐN (${CONFIG['ACCOUNT_BALANCE']:,.0f}):</b>
 • Rủi ro tối đa 2%: <b>$20.0</b> | Khối lượng: <b>$1,000.0</b> | Đòn bẩy: <b>5x</b>
-<i>💡 Nguyên tắc vàng: Khối OB chuẩn đét lấy theo H1 để tránh cản nhiễu, điểm vào lệnh (Entry Limit) và SL siêu mỏng lấy theo nến rút râu M5!</i>"""
+<i>💡 Nguyên tắc vàng: Khối OB chuẩn đét lấy theo H1 để tránh cản nhiễu, bắt buộc M15 phải bẻ gãy cấu trúc (BOS) để tránh cản tàu, và điểm vào lệnh mỏng lấy theo nến rút râu M5 kích Volume!</i>"""
         send_telegram(text, reply_markup=get_main_keyboard())
     except Exception as e:
         send_telegram(f"Lỗi BTC POC: {e}", reply_markup=get_main_keyboard())
@@ -873,7 +962,7 @@ def calculate_gold_h4_plan():
         m15_ema20 = round(data['EMA20|15'], 2)
         h4_ema20 = round(data['EMA20|240'], 2)
         
-        # 3. Vùng HVN / POC M15 Vàng theo KeyVolume
+        # 3. Phân tích cấu trúc M15 (Structure Timeframe - Chống Cản Tàu) & Vùng HVN/POC
         try:
             url_gold_m15 = 'https://api.bybit.com/v5/market/kline?category=linear&symbol=XAUUSDT&interval=15&limit=30'
             req_gm15 = urllib.request.Request(url_gold_m15, headers=HEADERS)
@@ -883,11 +972,13 @@ def calculate_gold_h4_plan():
             poc_gold_m15 = round(poc_raw + delta, 2)
             hvn_lower = round(hvn_l_raw + delta, 2)
             hvn_upper = round(hvn_u_raw + delta, 2)
+            m15_struct = analyze_m15_structure(gold_m15_klines, delta=delta, is_gold=True)
         except Exception:
             poc_gold_m15 = round((m15_high + m15_low + m15_ema20) / 3.0, 2)
             hvn_lower = round(m15_low, 2)
             hvn_upper = round(m15_high, 2)
             gold_m15_klines = []
+            m15_struct = {'has_bear_bos': False, 'has_bull_bos': False, 'choch_bear_level': m15_low, 'choch_bull_level': m15_high}
         
         # 4. Phân tích khung M5 (Khung vào lệnh Entry theo chuẩn SMC)
         try:
@@ -915,18 +1006,19 @@ def calculate_gold_h4_plan():
             m5_entry_low = m15_low
 
         # XÁC ĐỊNH HƯỚNG ĐÁNH THEO BIAS VĨ MÔ & TEST CẢN
-        is_bear_confirmed = m5_info['is_confirmed_entry_bear']
-        is_bull_confirmed = m5_info['is_confirmed_entry_bull']
+        # ĐIỀU KIỆN TIÊN QUYẾT: M15 BẮT BUỘC PHẢI PHÁ VỠ CẤU TRÚC (BOS/CHoCH) TRƯỚC!
+        is_bear_confirmed = m15_struct['has_bear_bos'] and m5_info['is_confirmed_entry_bear']
+        is_bull_confirmed = m15_struct['has_bull_bos'] and m5_info['is_confirmed_entry_bull']
         
         if is_bull_confirmed and not (w1_bear and d1_bear):
             signal = "LONG"
-            setup_desc = f"M5 Rút Chân Quét Đáy + Kích Volume tại Khối Bullish OB ${major_sup:,.2f} ({sl_time})"
-            diamond_note = "⭐ ĐẢO CHIỀU UY TÍN (CÂN BẰNG QUÂN LỰC): Đã có nến M5 rút chân kèm Kích Volume xác nhận!"
+            setup_desc = f"M15 BOS Tăng + M5 Rút Chân Kích Volume tại Khối Bullish OB ${major_sup:,.2f} ({sl_time})"
+            diamond_note = "⭐ ĐẢO CHIỀU UY TÍN (CÂN BẰNG QUÂN LỰC): M15 đã phá cấu trúc + M5 kích Volume xác nhận!"
         elif is_bear_confirmed or (w1_bear and d1_bear):
             signal = "SHORT"
-            m5_txt = " + Xác Nhận Kích Vol M5" if is_bear_confirmed else " (Đang Chờ Kích Vol)"
+            m5_txt = " + M15 BOS & Kích Vol M5" if is_bear_confirmed else " (Đang Chờ M15 BOS)"
             setup_desc = f"Đồng Pha Giảm Tuần/Ngày - Test Khối Bearish OB H1 ${b_ob_mid:,.2f}{m5_txt}"
-            diamond_note = "⭐ ĐỒNG PHA TUẦN + NGÀY (CẢN TO H1): Tuyệt đối không chạm là vào, chờ nến M5 rút râu + kích Volume!"
+            diamond_note = "⭐ ĐỒNG PHA TUẦN + NGÀY (CẢN TO H1): Tuyệt đối không cản tàu, chờ M15 phá vỡ cấu trúc!"
         else:
             signal = "SHORT" if d1_bear else "LONG"
             setup_desc = f"Cấu Trúc KeyVolume H1 tại Khối OB ${b_ob_mid:,.2f}"
@@ -935,39 +1027,41 @@ def calculate_gold_h4_plan():
         if signal == "SHORT":
             entry_stop = round(major_sup - 1.2, 2)
             conf = m5_info['confirmed_bear_rejection']
-            if conf:
-                # ĐÃ CÓ XÁC NHẬN NẾN + VOLUME (KEYVOLUME CONFIRMATION)
-                confirm_badge = "🔥 ĐÃ XÁC NHẬN (NẾN RÚT RÂU + KÍCH VOLUME)"
+            if not m15_struct['has_bear_bos']:
+                confirm_badge = "⏳ CHỜ M15 PHÁ VỠ CẤU TRÚC (TRÁNH CẢN TÀU)"
+                entry_limit = round(b_ob_bot, 2)
+                sl = round(max(b_ob_top + 6.0, major_res + 2.5), 2)
+                sl_dist = round(sl - entry_limit, 2)
+                advice = (
+                    f"⛔ <b>CHƯA BẺ GÃY CẤU TRÚC M15 (TUYỆT ĐỐI KHÔNG CẢN TÀU):</b>\n"
+                    f"• Giá Vàng đang trong đà tăng mạnh tiếp cận cản H1! Đáy hỗ trợ M15 tạo đỉnh tại <b>${m15_struct['choch_bear_level']:,.2f}</b> CHƯA BỊ BẺ GÃY!\n"
+                    f"• Bán lúc này sẽ là <b>CẢN TÀU VÔ CÙNG NGUY HIỂM</b>!\n"
+                    f"• <b>Kiên nhẫn chờ:</b> Nến M15 phải đóng cửa đâm thủng đáy <b>${m15_struct['choch_bear_level']:,.2f}</b> (M15 BOS) để xác nhận đảo chiều, sau đó mới tìm nến M5 hồi retest kích Volume để vào lệnh!"
+                )
+            elif conf:
+                # ĐÃ CÓ XÁC NHẬN CẢ M15 BOS LẪN NẾN & VOLUME M5
+                confirm_badge = "🔥 ĐÃ PHÁ VỠ CẤU TRÚC M15 (BOS) + KÍCH VOLUME M5"
                 entry_limit = round(current_gold, 2)
                 sl = round(max(conf['high'] + 2.5, major_res + 2.0), 2)
                 sl_dist = round(sl - entry_limit, 2)
                 advice = (
-                    f"✅ <b>TÔN CHỈ KEYVOLUME ĐÃ THỎA MÃN (VÀO LỆNH NGAY):</b>\n"
-                    f"• Tại Khối Bearish OB H1, nến M5 lúc <b>{conf['time']}</b> đã RÚT RÂU <b>{conf['wick_pct']}%</b> kèm <b>KÍCH VOLUME ({conf['vol_ratio']}x)</b>!\n"
-                    f"• Đủ 100% điều kiện Nến + Volume xác nhận phe Bán nhảy vào đạp giá, vào lệnh Sell ngay!\n"
-                    f"🛡️ <b>SL SIÊU MỎNG:</b> Đặt ngoài chóp râu M5 ${sl:,.2f} (~{sl_dist:.1f} giá). Đục thủng chóp râu ra ngoài là cắt lỗ ngay!\n"
+                    f"✅ <b>TÔN CHỈ CHỐNG CẢN TÀU ĐÃ THỎA MÃN (VÀO LỆNH NGAY):</b>\n"
+                    f"• <b>Cấu trúc M15:</b> Đã sập bẻ gãy đáy hỗ trợ <b>${m15_struct['choch_bear_level']:,.2f}</b> (M15 BOS thành công)!\n"
+                    f"• <b>Xác nhận M5:</b> Nến M5 lúc <b>{conf['time']}</b> đã RÚT RÂU <b>{conf['wick_pct']}%</b> kèm <b>KÍCH VOLUME ({conf['vol_ratio']}x)</b>!\n"
+                    f"• Đủ 100% điều kiện: Xu hướng M15 đã gãy + phe Bán kích Volume tại M5, an toàn vào lệnh Sell ngay!\n"
+                    f"🛡️ <b>SL SIÊU MỎNG:</b> Đặt ngoài chóp râu M5 ${sl:,.2f} (~{sl_dist:.1f} giá).\n"
                     f"💎 <b>DCA NHỒI KHI ĐẸP:</b> Khớp Lệnh 1 và giá sập thủng đáy <b>${entry_stop:,.2f}</b>, dời SL về Hoà Vốn (Entry) và kích hoạt Lệnh 2 (Sell Stop)!"
                 )
             else:
-                # CHƯA CÓ XÁC NHẬN -> CHỜ, KHÔNG CHẠM LÀ VÀO
-                confirm_badge = "⏳ ĐANG CHỜ XÁC NHẬN (CHƯA VÀO LỆNH)"
+                confirm_badge = "⏳ ĐÃ GÃY CẤU TRÚC M15 (CHỜ M5 RETEST KÍCH VOL)"
                 entry_limit = round(b_ob_bot, 2)
                 sl = round(max(b_ob_top + 6.0, major_res + 2.5), 2)
                 sl_dist = round(sl - entry_limit, 2)
-                if current_gold < b_ob_bot - 10.0:
-                    advice = (
-                        f"⚠️ <b>LÝ THUYẾT GIÁ (FX DREAM - TUYỆT ĐỐI KHÔNG BÁN LƯNG CHỪNG):</b>\n"
-                        f"• Giá hiện tại <b>${current_gold:,.2f}</b> đang ở vùng chợ mỏng (LVN) / lưng chừng, cách Khối Bearish OB H1 [${b_ob_bot:,.2f} - ${b_ob_top:,.2f}] ({sh_time}) hơn {abs(current_gold - b_ob_bot):.1f} giá!\n"
-                        f"• <b>Kế hoạch:</b> Đặt sẵn Limit đón tại cạnh Khối Bearish OB <b>${entry_limit:,.2f}</b>. Khi giá hồi lên cản to H1, bắt buộc phải có nến M5 rút râu + Kích Volume xác nhận mới vào lệnh!\n"
-                        f"💎 <b>DCA NHỒI KHI ĐẸP:</b> Khớp Lệnh 1 và giá sập thủng đáy <b>${entry_stop:,.2f}</b>, dời SL về Hoà Vốn (Entry) và kích hoạt Lệnh 2 (Sell Stop)!"
-                    )
-                else:
-                    advice = (
-                        f"⚠️ <b>TÔN CHỈ FX KEYVOLUME (TUYỆT ĐỐI KHÔNG CHẠM LÀ VÀO):</b>\n"
-                        f"• Giá đang tiếp cận Khối Bearish OB H1 [${b_ob_bot:,.2f} - ${b_ob_top:,.2f}], nhưng <b>CHƯA CÓ nến M5 rút râu kèm KÍCH VOLUME</b> xác nhận!\n"
-                        f"• Kiên nhẫn đứng ngoài quan sát! Chỉ bấm lệnh khi xuất hiện cây nến M5 rút râu mạnh + Volume tăng vọt từ chối tại cản!\n"
-                        f"💎 <b>DCA NHỒI KHI ĐẸP:</b> Khớp Lệnh 1 và giá sập thủng đáy <b>${entry_stop:,.2f}</b>, dời SL về Hoà Vốn (Entry) và kích hoạt Lệnh 2 (Sell Stop)!"
-                    )
+                advice = (
+                    f"⚠️ <b>M15 ĐÃ BẺ GÃY CẤU TRÚC (BOS ĐÁY ${m15_struct['choch_bear_level']:,.2f}):</b>\n"
+                    f"• Cấu trúc tăng M15 đã gãy, không còn lo cản tàu!\n"
+                    f"• Hiện đang kiên nhẫn chờ nhịp nến M5 hồi retest cản rút râu mạnh kèm KÍCH VOLUME để vào lệnh!"
+                )
             
             if sl_dist < 6.0:
                 sl = round(entry_limit + 8.0, 2)
@@ -981,37 +1075,40 @@ def calculate_gold_h4_plan():
         else: # LONG
             entry_stop = round(major_res + 1.2, 2)
             conf = m5_info['confirmed_bull_rejection']
-            if conf:
-                confirm_badge = "🔥 ĐÃ XÁC NHẬN (NẾN RÚT CHÂN + KÍCH VOLUME)"
+            if not m15_struct['has_bull_bos']:
+                confirm_badge = "⏳ CHỜ M15 PHÁ VỠ CẤU TRÚC (TRÁNH BẮT DAO RƠI)"
+                entry_limit = round(bull_ob_top, 2)
+                sl = round(min(bull_ob_bot - 6.0, major_sup - 2.5), 2)
+                sl_dist = round(entry_limit - sl, 2)
+                advice = (
+                    f"⛔ <b>CHƯA BẺ GÃY CẤU TRÚC M15 (TUYỆT ĐỐI KHÔNG BẮT DAO RƠI):</b>\n"
+                    f"• Giá Vàng đang trong đà xả mạnh tiếp cận cản H1! Đỉnh cản M15 tạo đáy tại <b>${m15_struct['choch_bull_level']:,.2f}</b> CHƯA BỊ BỨT PHÁ!\n"
+                    f"• Mua lúc này sẽ là <b>BẮT DAO RƠI / CẢN TÀU VÔ CÙNG NGUY HIỂM</b>!\n"
+                    f"• <b>Kiên nhẫn chờ:</b> Nến M15 phải bứt phá đóng cửa vượt đỉnh <b>${m15_struct['choch_bull_level']:,.2f}</b> (M15 BOS) để xác nhận đảo chiều, sau đó mới tìm nến M5 hồi retest kích Volume để vào lệnh!"
+                )
+            elif conf:
+                confirm_badge = "🔥 ĐÃ PHÁ VỠ CẤU TRÚC M15 (BOS) + KÍCH VOLUME M5"
                 entry_limit = round(current_gold, 2)
                 sl = round(min(conf['low'] - 2.5, major_sup - 2.0), 2)
                 sl_dist = round(entry_limit - sl, 2)
                 advice = (
-                    f"✅ <b>TÔN CHỈ KEYVOLUME ĐÃ THỎA MÃN (VÀO LỆNH NGAY):</b>\n"
-                    f"• Tại Khối Bullish OB H1, nến M5 lúc <b>{conf['time']}</b> đã RÚT CHÂN <b>{conf['wick_pct']}%</b> kèm <b>KÍCH VOLUME ({conf['vol_ratio']}x)</b>!\n"
-                    f"• Đủ 100% điều kiện Nến + Volume xác nhận phe Mua đẩy giá, vào lệnh Buy ngay!\n"
-                    f"🛡️ <b>SL SIÊU MỎNG:</b> Đặt dưới đáy râu M5 ${sl:,.2f}. Thủng râu ra ngoài là cắt lỗ ngay lập tức!\n"
-                    f"💎 <b>DCA NHỒI KHI ĐẸP:</b> Khớp Lệnh 1 và giá bứt phá qua đỉnh <b>${entry_stop:,.2f}</b>, dời SL về Hoà Vốn và kích hoạt Lệnh 2 (Buy Stop)!"
+                    f"✅ <b>TÔN CHỈ CHỐNG CẢN TÀU ĐÃ THỎA MÃN (VÀO LỆNH NGAY):</b>\n"
+                    f"• <b>Cấu trúc M15:</b> Đã bứt phá vượt đỉnh cản <b>${m15_struct['choch_bull_level']:,.2f}</b> (M15 BOS thành công)!\n"
+                    f"• <b>Xác nhận M5:</b> Nến M5 lúc <b>{conf['time']}</b> đã RÚT CHÂN <b>{conf['wick_pct']}%</b> kèm <b>KÍCH VOLUME ({conf['vol_ratio']}x)</b>!\n"
+                    f"• Đủ 100% điều kiện: Xu hướng M15 đã đảo chiều tăng + phe Mua kích Volume tại M5, an toàn vào lệnh Buy ngay!\n"
+                    f"🛡️ <b>SL SIÊU MỎNG:</b> Đặt dưới đáy râu M5 ${sl:,.2f} (~{sl_dist:.1f} giá).\n"
+                    f"💎 <b>DCA NHỒI KHI ĐẸP:</b> Khớp Lệnh 1 và giá tăng vượt đỉnh <b>${entry_stop:,.2f}</b>, dời SL về Hoà Vốn và kích hoạt Lệnh 2 (Buy Stop)!"
                 )
             else:
-                confirm_badge = "⏳ ĐANG CHỜ XÁC NHẬN (CHƯA VÀO LỆNH)"
+                confirm_badge = "⏳ ĐÃ GÃY CẤU TRÚC M15 (CHỜ M5 RETEST KÍCH VOL)"
                 entry_limit = round(bull_ob_top, 2)
                 sl = round(min(bull_ob_bot - 6.0, major_sup - 2.5), 2)
                 sl_dist = round(entry_limit - sl, 2)
-                if current_gold > bull_ob_top + 10.0:
-                    advice = (
-                        f"⚠️ <b>LÝ THUYẾT GIÁ (FX DREAM - TUYỆT ĐỐI KHÔNG MUA LƯNG CHỪNG):</b>\n"
-                        f"• Giá hiện tại <b>${current_gold:,.2f}</b> đang ở vùng chợ mỏng (LVN) / lưng chừng, cách Khối Bullish OB H1 [${bull_ob_bot:,.2f} - ${bull_ob_top:,.2f}] ({sl_time}) hơn {abs(current_gold - bull_ob_top):.1f} giá!\n"
-                        f"• <b>Kế hoạch:</b> Đặt sẵn Limit đón tại cạnh Khối Bullish OB <b>${entry_limit:,.2f}</b>. Khi giá đạp về cản to H1, bắt buộc phải có nến M5 rút chân + Kích Volume xác nhận mới vào lệnh!\n"
-                        f"💎 <b>DCA NHỒI KHI ĐẸP:</b> Khớp Lệnh 1 và giá bứt phá qua đỉnh <b>${entry_stop:,.2f}</b>, dời SL về Hoà Vốn và kích hoạt Lệnh 2 (Buy Stop)!"
-                    )
-                else:
-                    advice = (
-                        f"⚠️ <b>TÔN CHỈ FX KEYVOLUME (TUYỆT ĐỐI KHÔNG CHẠM LÀ VÀO):</b>\n"
-                        f"• Giá đang ở vùng Khối Bullish OB H1 [${bull_ob_bot:,.2f} - ${bull_ob_top:,.2f}], nhưng <b>CHƯA CÓ nến M5 rút chân kèm KÍCH VOLUME</b> xác nhận!\n"
-                        f"• Kiên nhẫn chờ cây nến M5 rút chân kèm Volume lớn để xác nhận trước khi vào lệnh!\n"
-                        f"💎 <b>DCA NHỒI KHI ĐẸP:</b> Khớp Lệnh 1 và giá bứt phá qua đỉnh <b>${entry_stop:,.2f}</b>, dời SL về Hoà Vốn và kích hoạt Lệnh 2 (Buy Stop)!"
-                    )
+                advice = (
+                    f"⚠️ <b>M15 ĐÃ BẺ GÃY CẤU TRÚC (BOS ĐỈNH ${m15_struct['choch_bull_level']:,.2f}):</b>\n"
+                    f"• Cấu trúc giảm M15 đã gãy, không còn lo bắt dao rơi!\n"
+                    f"• Hiện đang kiên nhẫn chờ nhịp nến M5 hồi retest cản rút chân mạnh kèm KÍCH VOLUME để vào lệnh!"
+                )
             
             if sl_dist < 6.0:
                 sl = round(entry_limit - 8.0, 2)
@@ -1086,6 +1183,8 @@ def calculate_gold_h4_plan():
         'bull_ob_top': bull_ob_top,
         'bull_ob_bot': bull_ob_bot,
         'bull_ob_mid': bull_ob_mid,
+        'm15_status': "✅ Đã Phá Vỡ Cấu Trúc (BOS)" if (m15_struct['has_bear_bos'] if signal == 'SHORT' else m15_struct['has_bull_bos']) else "⛔ Chưa Phá Vỡ (Đang Chờ BOS)",
+        'm15_choch_level': m15_struct['choch_bear_level'] if signal == 'SHORT' else m15_struct['choch_bull_level'],
         'confirm_badge': confirm_badge,
         'is_confirmed': is_bear_confirmed if signal == 'SHORT' else is_bull_confirmed,
         'test_bear_wick': is_bear_confirmed,
@@ -1125,6 +1224,9 @@ def handle_gold():
    🧱 <b>Khối Bearish OB H1:</b> <code>[${plan['b_ob_bot']:,.2f} - ${plan['b_ob_top']:,.2f}]</code> (50% Mid: ${plan['b_ob_mid']:,.2f})
 📉 <b>Swing Low H1:</b> <code>${plan['swing_low']:,.2f}</code>{sl_time_str}
    🧱 <b>Khối Bullish OB H1:</b> <code>[${plan['bull_ob_bot']:,.2f} - ${plan['bull_ob_top']:,.2f}]</code> (50% Mid: ${plan['bull_ob_mid']:,.2f})
+⚡ <b>Cấu Trúc Khung M15 (Chống Cản Tàu):</b>
+   • Trạng thái M15: <b>{plan.get('m15_status', 'Đang Quan Sát')}</b>
+   • Mốc Phá Vỡ Cấu Trúc (CHoCH/BOS): <code>${plan.get('m15_choch_level', 0):,.2f}</code>
 🎯 <b>Khung M5 Vào Lệnh (Entry & Râu Test):</b>
    • Trạng thái M5: <b>{plan.get('m5_pattern', 'Test Cạnh OB')}</b>
    • Tôn chỉ KeyVolume: <b>{plan.get('confirm_badge', '⏳ Đang Chờ Nến & Kích Vol')}</b>
@@ -1151,7 +1253,7 @@ def handle_gold():
 
 🛡️ <b>QUẢN LÝ VỐN VÀNG MT5 (${CONFIG['ACCOUNT_BALANCE']:,.0f}):</b>
 • Rủi ro tối đa 2%: <b>$20.0</b> (tương đương 0.01 - 0.02 lot trên MT5)
-<i>💡 Nguyên tắc vàng: Khối OB chuẩn đét lấy theo H1 để tránh cản nhiễu, điểm vào lệnh (Entry Limit) và SL siêu mỏng lấy theo nến rút râu M5!</i>"""
+<i>💡 Nguyên tắc vàng: Khối OB chuẩn đét lấy theo H1, bắt buộc M15 phải bẻ gãy cấu trúc (BOS) để tránh cản tàu, và điểm vào lệnh mỏng lấy theo M5 rút râu kích Volume!</i>"""
         send_telegram(text, reply_markup=get_main_keyboard())
     except Exception as e:
         send_telegram(f"Lỗi phân tích Vàng: {e}", reply_markup=get_main_keyboard())
@@ -1376,17 +1478,19 @@ def auto_diamond_alert_worker():
             active_trades = load_vip_trades()
 
             # 4. QUÉT TỰ ĐỘNG VÀNG (OANDA:XAUUSD - Chuẩn MT5)
-            # TÔN CHỈ CHỐNG SPAM: Nếu đang có lệnh Vàng chạy -> TUYỆT ĐỐI KHÔNG BẮN THÊM KÈO MỚI!
+            # TÔN CHỈ CHỐNG SPAM & CHỐNG CẢN TÀU:
+            # 1. Nếu đang có lệnh Vàng chạy -> KHÔNG BẮN THÊM KÈO MỚI!
+            # 2. BẮT BUỘC M15 PHẢI BỊ BẺ GÃY CẤU TRÚC (BOS/CHoCH) + NẾN M5 RETEST KÍCH VOL MỚI ĐƯỢC VÀO LỆNH!
             has_active_gold = any(t.get('symbol') == 'XAUUSD' for t in active_trades)
             dist_to_cản_gold = abs(plan_gold['current_price'] - plan_gold['entry_limit'])
 
-            if not has_active_gold and plan_gold.get('is_confirmed') and ('ĐÃ XÁC NHẬN' in plan_gold.get('confirm_badge', '')) and (dist_to_cản_gold <= 8.0):
+            if not has_active_gold and plan_gold.get('is_confirmed') and ('ĐÃ PHÁ VỠ CẤU TRÚC M15' in plan_gold.get('confirm_badge', '')) and (dist_to_cản_gold <= 8.0):
                 if now - LAST_ALERT_TIME['GOLD'] > 1200: # Cooldown giữa các kèo
                     price_gold = plan_gold['current_price']
                     entry_gold = plan_gold['entry_limit']
                     s_emoji = "🔴 SHORT (BÁN)" if plan_gold['signal'] == 'SHORT' else "🟢 LONG (MUA)"
-                    action_l = "LỆNH VÀO NGAY (Nến M5 Vừa Đóng Chốt Retest):"
-                    msg = f"""🚨 <b>[TỰ ĐỘNG BÁO KÈO VIP M5: VÀO LỆNH NGAY ĐẦU NẾN]</b> 🚨
+                    action_l = "LỆNH VÀO NGAY (M15 Đã Gãy Cấu Trúc + M5 Retest Kích Vol):"
+                    msg = f"""🚨 <b>[TỰ ĐỘNG BÁO KÈO VIP: ĐÃ PHÁ VỠ CẤU TRÚC M15 & KÍCH VOL M5]</b> 🚨
 ━━━━━━━━━━━━━━━━━━
 📊 Nguồn biểu đồ: <b>TradingView (OANDA:XAUUSD - Chuẩn MT5)</b>
 💰 Giá Vàng hiện tại: <b>${price_gold:,.2f}</b>
@@ -1395,12 +1499,12 @@ def auto_diamond_alert_worker():
    🧱 <b>Khối Bearish OB H1:</b> <code>[${plan_gold['b_ob_bot']:,.2f} - ${plan_gold['b_ob_top']:,.2f}]</code>
 📉 <b>Hỗ Trợ Khung H1:</b> <code>${plan_gold['swing_low']:,.2f}</code> ({plan_gold.get('sl_time', '')})
    🧱 <b>Khối Bullish OB H1:</b> <code>[${plan_gold['bull_ob_bot']:,.2f} - ${plan_gold['bull_ob_top']:,.2f}]</code>
-⚡ <b>Cấu trúc SMC:</b> <b>{plan_gold['setup_desc']}</b>
+⚡ <b>Cấu Trúc Khung M15:</b> <b>{plan_gold.get('m15_status')}</b> (Mốc BOS: <code>${plan_gold.get('m15_choch_level', 0):,.2f}</code>)
 ━━━━━━━━━━━━━━━━━━
 💎 <b>ĐỒNG PHA BIAS ĐA KHUNG (WINRATE CAO):</b>
 • <b>Bias Tuần (W1):</b> {plan_gold['w1_bias']}
 • <b>Bias Ngày (D1):</b> {plan_gold['d1_bias']}
-<i>🔥 Tín hiệu tuyệt đẹp: Đã hội tụ đủ nến M5 từ chối + KÍCH VOLUME theo đúng tôn chỉ KeyVolume!</i>
+<i>🔥 Tín hiệu tuyệt đẹp: M15 đã bẻ gãy cấu trúc (BOS) + Nến M5 retest kích Volume, TUYỆT ĐỐI KHÔNG CẢN TÀU!</i>
 ━━━━━━━━━━━━━━━━━━
 🚀 <b>KHUYẾN NGHỊ VÀO LỆNH: {s_emoji}</b>
 👉 <b>{action_l}</b>
@@ -1434,19 +1538,19 @@ def auto_diamond_alert_worker():
                     )
 
             # 5. QUÉT TỰ ĐỘNG BITCOIN (BTCUSDT)
-            # TÔN CHỈ CHỐNG SPAM: Nếu đang có lệnh BTC chạy -> TUYỆT ĐỐI KHÔNG BẮN THÊM KÈO MỚI!
+            # TÔN CHỈ CHỐNG SPAM & CHỐNG CẢN TÀU:
             has_active_btc = any(t.get('symbol') == 'BTCUSDT' for t in active_trades)
             dist_to_cản_btc = abs(plan_btc['current_price'] - plan_btc['entry_limit'])
 
-            if not has_active_btc and plan_btc.get('is_confirmed') and ('ĐÃ XÁC NHẬN' in plan_btc.get('confirm_badge', '')) and (dist_to_cản_btc <= 300.0):
+            if not has_active_btc and plan_btc.get('is_confirmed') and ('ĐÃ PHÁ VỠ CẤU TRÚC M15' in plan_btc.get('confirm_badge', '')) and (dist_to_cản_btc <= 300.0):
                 if now - LAST_ALERT_TIME['BTC'] > 1200:
                     price_btc = plan_btc['current_price']
                     entry_l = plan_btc['entry_limit']
                     entry_s = plan_btc['entry_stop']
                     s_emoji = "🔴 SHORT (BÁN)" if plan_btc['signal'] == 'SHORT' else "🟢 LONG (MUA)"
-                    action_l = "LỆNH VÀO NGAY (Nến M5 Vừa Đóng Chốt Retest):"
+                    action_l = "LỆNH VÀO NGAY (M15 Đã Gãy Cấu Trúc + M5 Retest Kích Vol):"
                     action_s = "LỆNH STOP ĐUA SÓNG:"
-                    msg = f"""🚨 <b>[TỰ ĐỘNG BÁO KÈO VIP M5: VÀO LỆNH NGAY ĐẦU NẾN]</b> 🚨
+                    msg = f"""🚨 <b>[TỰ ĐỘNG BÁO KÈO VIP: ĐÃ PHÁ VỠ CẤU TRÚC M15 & KÍCH VOL M5]</b> 🚨
 ━━━━━━━━━━━━━━━━━━
 💰 Giá BTC hiện tại: <b>${price_btc:,.1f}</b>
 🎯 <b>Trạng thái:</b> <b>{plan_btc.get('confirm_badge', 'ĐÃ XÁC NHẬN')}</b>
@@ -1454,12 +1558,12 @@ def auto_diamond_alert_worker():
    🧱 <b>Khối Bearish OB H1:</b> <code>[${plan_btc['b_ob_bot']:,.1f} - ${plan_btc['b_ob_top']:,.1f}]</code>
 📉 <b>Hỗ Trợ Khung H1:</b> <code>${plan_btc['swing_low']:,.1f}</code> ({plan_btc.get('sl_time', '')})
    🧱 <b>Khối Bullish OB H1:</b> <code>[${plan_btc['bull_ob_bot']:,.1f} - ${plan_btc['bull_ob_top']:,.1f}]</code>
-⚡ <b>Cấu trúc SMC:</b> <b>{plan_btc['setup_desc']}</b>
+⚡ <b>Cấu Trúc Khung M15:</b> <b>{plan_btc.get('m15_status')}</b> (Mốc BOS: <code>${plan_btc.get('m15_choch_level', 0):,.1f}</code>)
 ━━━━━━━━━━━━━━━━━━
 💎 <b>ĐỒNG PHA BIAS ĐA KHUNG (WINRATE CAO):</b>
 • <b>Bias Tuần (W1):</b> {plan_btc['w1_bias']}
 • <b>Bias Ngày (D1):</b> {plan_btc['d1_bias']}
-<i>🔥 Tín hiệu tuyệt đẹp: Đã hội tụ đủ nến M5 từ chối + KÍCH VOLUME theo đúng tôn chỉ KeyVolume!</i>
+<i>🔥 Tín hiệu tuyệt đẹp: M15 đã bẻ gãy cấu trúc (BOS) + Nến M5 retest kích Volume, TUYỆT ĐỐI KHÔNG CẢN TÀU!</i>
 ━━━━━━━━━━━━━━━━━━
 🚀 <b>KHUYẾN NGHỊ VÀO LỆNH: {s_emoji}</b>
 👉 <b>{action_l}:</b>
@@ -1476,6 +1580,19 @@ def auto_diamond_alert_worker():
 
 🛡️ <b>QUẢN LÝ VỐN (${CONFIG['ACCOUNT_BALANCE']:,.0f}):</b>
 • Rủi ro tối đa 2%: <b>$20.0</b> | Khối lượng: <b>$1,000.0</b> | Đòn bẩy: <b>5x</b>"""
+                    send_telegram(msg)
+                    LAST_ALERT_TIME['BTC'] = now
+                    record_new_vip_trade(
+                        asset='BTC',
+                        symbol='BTCUSDT',
+                        signal=plan_btc['signal'],
+                        entry_price=entry_l,
+                        entry_stop=entry_s,
+                        sl=plan_btc['sl'],
+                        tp1=plan_btc['tp1'],
+                        tp2=plan_btc['tp2'],
+                        sl_dist=abs(entry_l - plan_btc['sl'])
+                    )
                     send_telegram(msg)
                     LAST_ALERT_TIME['BTC'] = now
                     record_new_vip_trade(
