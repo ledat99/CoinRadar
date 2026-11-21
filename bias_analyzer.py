@@ -97,11 +97,137 @@ def get_market_bias():
             'desc': 'Không lấy được dữ liệu BTC Bias'
         }
 
+def check_choch_and_retest(df, mode='long'):
+    """
+    Kiểm tra cấu trúc thị trường SMC:
+    1. Có tạo CHoCH (Change of Character - Đổi cấu trúc đỉnh/đáy) gần đây không?
+    2. Đã có râu nến quay lại Test vùng cản bị phá vỡ hay chưa? (Tránh cản tàu / Breakout giả).
+    Returns:
+        dict: {'has_choch': bool, 'has_retest': bool, 'retest_level': float, 'breakout_level': float}
+    """
+    if len(df) < 20:
+        return {'has_choch': False, 'has_retest': False, 'retest_level': 0, 'breakout_level': 0}
+        
+    highs = df['high'].values
+    lows = df['low'].values
+    closes = df['close'].values
+    
 def quick_scan_market(mode='long', limit=5):
     """
     Quét siêu tốc các coin thanh khoản cao trên Binance Futures theo chiều TĂNG hoặc GIẢM.
     Trả về ngay kết quả Top coin đẹp nhất kèm Entry, SL, TP (R:R 1:2) và Dòng tiền.
     """
+    try:
+        tickers = binance_futures.fetch_tickers()
+        usdt_pairs = []
+        for sym, t in tickers.items():
+            if '/USDT:USDT' in sym and t.get('quoteVolume', 0) > 20000000: # Volume 24h > 20 Triệu USD
+                usdt_pairs.append({
+                    'symbol': sym.split(':')[0],
+                    'full_symbol': sym,
+                    'volume': t['quoteVolume'],
+                    'change': t.get('percentage', 0),
+                    'last': t['last']
+                })
+                
+        if mode == 'long':
+            usdt_pairs.sort(key=lambda x: x['change'], reverse=True)
+        else:
+            usdt_pairs.sort(key=lambda x: x['change'])
+            
+        candidates = usdt_pairs[:15]
+        results = []
+        
+        for c in candidates:
+            sym = c['full_symbol']
+            ohlcv = binance_futures.fetch_ohlcv(sym, '15m', limit=50)
+            if not ohlcv or len(ohlcv) < 30: continue
+            df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+            df['ema_20'] = ta.trend.EMAIndicator(close=df['close'], window=20).ema_indicator()
+            df['atr'] = ta.volatility.AverageTrueRange(high=df['high'], low=df['low'], close=df['close'], window=14).average_true_range()
+            df['rsi'] = ta.momentum.RSIIndicator(close=df['close'], window=14).rsi()
+            
+            last = df.iloc[-1]
+            atr = last['atr']
+            price = last['close']
+            
+            # KIỂM TRA CHoCH & RETEST RÂU NẾN
+            choch_info = check_choch_and_retest(df, mode=mode)
+            
+            if mode == 'long':
+                swing_low_wick = df['low'].tail(6).min()
+                ema_support = last['ema_20']
+                entry_limit = max(swing_low_wick, ema_support * 0.998)
+                if entry_limit >= price:
+                    entry_limit = price * 0.995
+                
+                # Buy Stop chỉ kích hoạt khi đã có CHoCH và râu test lại cản
+                entry_stop = choch_info['breakout_level'] * 1.002
+                stop_status = "ĐÃ TẠO CHoCH + TEST RÂU" if (choch_info['has_choch'] and choch_info['has_retest']) else ("ĐÃ TẠO CHoCH (Chờ test)" if choch_info['has_choch'] else "CHƯA CÓ CHoCH (Hạn chế Stop)")
+                
+                sl = min(swing_low_wick, entry_limit - (1.5 * atr))
+                risk_limit = entry_limit - sl
+                tp1 = entry_limit + (risk_limit * 2.0)
+                tp2 = entry_limit + (risk_limit * 3.5)
+                sl_pct = (risk_limit / entry_limit) * 100
+                score = (last['rsi'] - 40) + (c['change'] * 2) + (30 if choch_info['has_choch'] else 0)
+                
+                order_strategy = {
+                    'limit_label': 'BUY LIMIT (Đón Râu Hồi Test Cản)',
+                    'entry_limit': entry_limit,
+                    'stop_label': 'BUY STOP (Phá Vỡ Khi Đã Test)',
+                    'entry_stop': entry_stop,
+                    'stop_status': stop_status
+                }
+            else: # short
+                swing_high_wick = df['high'].tail(6).max()
+                ema_resistance = last['ema_20']
+                entry_limit = min(swing_high_wick, ema_resistance * 1.002)
+                if entry_limit <= price:
+                    entry_limit = price * 1.005
+                    
+                entry_stop = choch_info['breakout_level'] * 0.998
+                stop_status = "ĐÃ TẠO CHoCH + TEST RÂU" if (choch_info['has_choch'] and choch_info['has_retest']) else ("ĐÃ TẠO CHoCH (Chờ test)" if choch_info['has_choch'] else "CHƯA CÓ CHoCH (Hạn chế Stop)")
+                
+                sl = max(swing_high_wick, entry_limit + (1.5 * atr))
+                risk_limit = sl - entry_limit
+                tp1 = entry_limit - (risk_limit * 2.0)
+                tp2 = entry_limit - (risk_limit * 3.5)
+                sl_pct = (risk_limit / entry_limit) * 100
+                score = (60 - last['rsi']) + (abs(c['change']) * 2) + (30 if choch_info['has_choch'] else 0)
+                
+                order_strategy = {
+                    'limit_label': 'SELL LIMIT (Đón Râu Hồi Test Cản)',
+                    'entry_limit': entry_limit,
+                    'stop_label': 'SELL STOP (Phá Đáy Khi Đã Test)',
+                    'entry_stop': entry_stop,
+                    'stop_status': stop_status
+                }
+                
+            results.append({
+                'symbol': c['symbol'],
+                'type': 'LONG' if mode == 'long' else 'SHORT',
+                'market_price': price,
+                'entry_limit': entry_limit,
+                'entry_stop': entry_stop,
+                'limit_label': order_strategy['limit_label'],
+                'stop_label': order_strategy['stop_label'],
+                'stop_status': order_strategy['stop_status'],
+                'sl': sl,
+                'sl_pct': sl_pct,
+                'tp1': tp1,
+                'tp2': tp2,
+                'change_24h': c['change'],
+                'rsi': last['rsi'],
+                'vol_m': c['volume'] / 1000000,
+                'score': score
+            })
+            
+        results.sort(key=lambda x: x['score'], reverse=True)
+        return results[:limit]
+    except Exception as e:
+        print(f"Lỗi quick scan: {e}")
+        return []
     try:
         tickers = binance_futures.fetch_tickers()
         usdt_pairs = []

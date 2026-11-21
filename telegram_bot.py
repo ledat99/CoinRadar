@@ -160,13 +160,14 @@ def handle_scan(mode='long'):
         msg += f"""
 {i}. <b>{r['symbol']}</b> {emoji} (Vol 24h: ${r['vol_m']:.1f}M)
 • Giá thị trường: <b>{r['market_price']}</b> | RSI: <b>{r['rsi']:.1f}</b>
+🎯 <b>Trạng thái cấu trúc:</b> <i>{r.get('stop_status', 'Bình thường')}</i>
 👉 <b>{r['limit_label']}:</b> <code>{r['entry_limit']}</code>
 👉 <b>{r['stop_label']}:</b> <code>{r['entry_stop']}</code>
-🛡️ <b>Cắt lỗ (SL an toàn):</b> <code>{r['sl']:.4f}</code> (-{r['sl_pct']:.1f}%)
+🛡️ <b>Cắt lỗ (SL bảo vệ):</b> <code>{r['sl']:.4f}</code> (-{r['sl_pct']:.1f}%)
 🎯 <b>Chốt lời (TP1 - R:R 1:2):</b> <code>{r['tp1']:.4f}</code>
 🎯 <b>Chốt lời (TP2 - R:R 1:3.5):</b> <code>{r['tp2']:.4f}</code>"""
 
-    msg += "\n━━━━━━━━━━━━━━━━━━\n<i>💡 Mẹo: Ưu tiên đặt LIMIT đón nhịp quét râu nến về cản để có giá vốn tốt nhất và khoảng SL cực ngắn!</i>"
+    msg += "\n━━━━━━━━━━━━━━━━━━\n<i>🛡️ Lưu ý: Chỉ vào lệnh STOP khi trạng thái ghi nhận 'ĐÃ TẠO CHoCH + TEST RÂU' để tránh tuyệt đối việc cản tàu!</i>"
     
     with open('active_trades.json', 'w', encoding='utf-8') as f:
         json.dump(active_trades, f, indent=4)
