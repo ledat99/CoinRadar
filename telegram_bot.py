@@ -51,68 +51,74 @@ def get_main_keyboard():
     }
 
 # ==========================================
-# 1. TÍNH VOLUME PROFILE & CỐ ĐỊNH KẾ HOẠCH BITCOIN THEO KHUNG H4
+# 1. TÍNH VOLUME PROFILE (POC) CHUẨN XÁC SUẤT CAO CHO BITCOIN
 # ==========================================
 def calculate_btc_h4_plan():
     now = time.time()
-    # Nếu kế hoạch H4 còn hiệu lực trong vòng 4 tiếng (14400s) thì giữ nguyên điểm vào cố định!
     if PLAN_CACHE['BTC']['data'] and (now - PLAN_CACHE['BTC']['candle_time'] < 14400):
         return PLAN_CACHE['BTC']['data']
         
-    url = 'https://api.bybit.com/v5/market/kline?category=linear&symbol=BTCUSDT&interval=240&limit=30'
+    url = 'https://api.bybit.com/v5/market/kline?category=linear&symbol=BTCUSDT&interval=60&limit=48'
     req = urllib.request.Request(url, headers=HEADERS)
     with urllib.request.urlopen(req, timeout=10) as resp:
         data = json.loads(resp.read().decode())['result']['list']
         
     current_price = float(data[0][4])
-    change_24h = (float(data[0][4]) - float(data[5][1])) / float(data[5][1]) * 100.0
+    change_24h = (float(data[0][4]) - float(data[23][1])) / float(data[23][1]) * 100.0
     
-    # 1. Tính Volume Profile (POC) từ 30 nến H4
+    # Tính Volume Profile (POC) đa điểm từ 48 nến H1 (phiên 2 ngày)
     prices = []
-    vols = []
+    weights = []
     for k in data:
-        mid = (float(k[2]) + float(k[3])) / 2
-        prices.append(mid)
-        vols.append(float(k[5]))
-        
-    hist, bin_edges = np.histogram(prices, bins=25, weights=vols)
-    poc = (bin_edges[np.argmax(hist)] + bin_edges[np.argmax(hist)+1]) / 2
+        high = float(k[2])
+        low = float(k[3])
+        vol = float(k[5])
+        for p in np.linspace(low, high, 5):
+            prices.append(p)
+            weights.append(vol / 5.0)
+            
+    hist, bin_edges = np.histogram(prices, bins=35, weights=weights)
+    poc = round((bin_edges[np.argmax(hist)] + bin_edges[np.argmax(hist)+1]) / 2, 1)
     
-    # 2. Lấy cản râu nến H4 gần nhất
-    highs = [float(k[2]) for k in data[:6]]
-    lows = [float(k[3]) for k in data[:6]]
-    swing_high_h4 = max(highs)
-    swing_low_h4 = min(lows)
+    highs = [float(k[2]) for k in data[:12]]
+    lows = [float(k[3]) for k in data[:12]]
+    swing_high = round(max(highs), 1)
+    swing_low = round(min(lows), 1)
     
+    # Xu hướng so với POC: Dưới POC -> Canh Short hồi về POC; Trên POC -> Canh Long tại POC
     is_uptrend = current_price >= poc
     signal = "LONG" if is_uptrend else "SHORT"
     
     if signal == "SHORT":
-        # SELL LIMIT: Cố định tại cản râu nến cao nhất H4 hoặc vùng POC
-        entry_limit = round(min(swing_high_h4, poc) if min(swing_high_h4, poc) > current_price else swing_high_h4, 1)
-        # SELL STOP: Bán khi thủng đáy râu thấp nhất H4
-        entry_stop = round(swing_low_h4 * 0.998, 1)
-        sl = round(entry_limit * 1.025, 1) # SL 2.5%
+        # ENTRY CHUẨN THEO POC: Đón Short khi giá giật hồi về đúng vùng thanh khoản lớn POC
+        entry_limit = poc if poc > current_price else swing_high
+        # SELL STOP: Kích hoạt khi đâm thủng hỗ trợ râu nến thấp nhất
+        entry_stop = round(swing_low * 0.998, 1)
+        # SL linh hoạt đặt trên cản đỉnh râu + vùng đệm an toàn
+        sl = round(max(entry_limit * 1.018, swing_high + 250.0), 1)
         risk = sl - entry_limit
         tp1 = round(entry_limit - (risk * 2.0), 1)
         tp2 = round(entry_limit - (risk * 3.5), 1)
     else: # LONG
-        entry_limit = round(max(swing_low_h4, poc) if max(swing_low_h4, poc) < current_price else swing_low_h4, 1)
-        entry_stop = round(swing_high_h4 * 1.002, 1)
-        sl = round(entry_limit * 0.975, 1)
+        entry_limit = poc if poc < current_price else swing_low
+        entry_stop = round(swing_high * 1.002, 1)
+        sl = round(min(entry_limit * 0.982, swing_low - 250.0), 1)
         risk = entry_limit - sl
         tp1 = round(entry_limit + (risk * 2.0), 1)
         tp2 = round(entry_limit + (risk * 3.5), 1)
         
+    sl_pct = (risk / entry_limit) * 100.0
+    
     plan = {
         'signal': signal,
         'current_price': current_price,
-        'poc': round(poc, 1),
-        'swing_high': round(swing_high_h4, 1),
-        'swing_low': round(swing_low_h4, 1),
+        'poc': poc,
+        'swing_high': swing_high,
+        'swing_low': swing_low,
         'entry_limit': entry_limit,
         'entry_stop': entry_stop,
         'sl': sl,
+        'sl_pct': round(sl_pct, 2),
         'tp1': tp1,
         'tp2': tp2,
         'change_24h': change_24h
@@ -125,36 +131,34 @@ def handle_btc():
     try:
         plan = calculate_btc_h4_plan()
         s_emoji = "🟢 LONG" if plan['signal'] == 'LONG' else "🔴 SHORT"
-        action_l = "Bán Giá Cao Tại Cản Râu H4" if plan['signal'] == 'SHORT' else "Mua Giá Thấp Tại Hỗ Trợ Râu H4"
+        action_l = "Bán Giá Cao Khi Giá Hồi Về Vùng POC" if plan['signal'] == 'SHORT' else "Mua Giá Thấp Tại Vùng POC"
         action_s = "Bán Tháo Khi Thủng Đáy Râu H4" if plan['signal'] == 'SHORT' else "Mua Đuổi Khi Vượt Đỉnh Râu H4"
         
-        text = f"""👑 <b>[KẾ HOẠCH BITCOIN CỐ ĐỊNH THEO KHUNG H4]</b> 👑
+        text = f"""👑 <b>[KẾ HOẠCH BITCOIN CỐ ĐỊNH THEO VOLUME PROFILE (POC)]</b> 👑
 ━━━━━━━━━━━━━━━━━━
 💰 Giá hiện tại: <b>${plan['current_price']:,.1f}</b>
-🎯 Vùng POC (Thanh khoản Volume lớn nhất): <b>${plan['poc']:,.1f}</b>
-📊 Đỉnh râu H4: <b>${plan['swing_high']:,.1f}</b> | Đáy râu H4: <b>${plan['swing_low']:,.1f}</b>
+🎯 <b>Vùng POC Cốt Lõi (Khối lượng lớn nhất):</b> <code>${plan['poc']:,.1f}</code>
+📊 Đỉnh râu cản: <b>${plan['swing_high']:,.1f}</b> | Đáy râu hỗ trợ: <b>${plan['swing_low']:,.1f}</b>
 ━━━━━━━━━━━━━━━━━━
-🚀 <b>CHIẾN LƯỢC H4: {s_emoji}</b>
-👉 <b>1. LỆNH LIMIT CỐ ĐỊNH ({action_l}):</b>
+🚀 <b>CHIẾN LƯỢC: {s_emoji}</b>
+👉 <b>1. LỆNH LIMIT CHUẨN THEO POC ({action_l}):</b>
    <code>${plan['entry_limit']:,.1f}</code>
-👉 <b>2. LỆNH STOP KÍCH HOẠT ({action_s}):</b>
+👉 <b>2. LỆNH STOP PHÁ VỠ ({action_s}):</b>
    <code>${plan['entry_stop']:,.1f}</code>
 
-🛡️ <b>Cắt lỗ (SL H4):</b> <code>${plan['sl']:,.1f}</code>
+🛡️ <b>Cắt lỗ (SL Linh Hoạt Trên Cản Râu):</b> <code>${plan['sl']:,.1f}</code> (-{plan['sl_pct']}%)
 🎯 <b>Chốt lời 1 (TP1 - R:R 1:2):</b> <code>${plan['tp1']:,.1f}</code>
 🎯 <b>Chốt lời 2 (TP2 - R:R 1:3.5):</b> <code>${plan['tp2']:,.1f}</code>
 
 🛡️ <b>QUẢN LÝ VỐN (${CONFIG['ACCOUNT_BALANCE']:,.0f}):</b>
-• Rủi ro tối đa 2%: <b>$20.0</b>
-• Vị thế: <b>$1,000.0</b> | Đòn bẩy đề xuất: <b>5x</b>
-• Margin cần dùng: <b>$200.0</b>
-<i>💡 Lưu ý: Các mức giá Entry/SL này được CỐ ĐỊNH xuyên suốt phiên 4H, không bị thay đổi lắt nhắt!</i>"""
+• Rủi ro tối đa 2%: <b>$20.0</b> | Khối lượng: <b>$1,000.0</b> | Đòn bẩy: <b>5x</b>
+<i>💡 Điểm vào Entry được neo trực tiếp vào mức POC ${plan['poc']:,.1f} và giữ cố định trong phiên 4H!</i>"""
         send_telegram(text, reply_markup=get_main_keyboard())
     except Exception as e:
-        send_telegram(f"Lỗi BTC H4: {e}", reply_markup=get_main_keyboard())
+        send_telegram(f"Lỗi BTC POC: {e}", reply_markup=get_main_keyboard())
 
 # ==========================================
-# 2. CỐ ĐỊNH KẾ HOẠCH VÀNG (OANDA) THEO CẢN RÂU NẾN H4 & D1
+# 2. KẾ HOẠCH VÀNG (OANDA) - SL LINH HOẠT THEO CẤU TRÚC RÂU CẢN
 # ==========================================
 def calculate_gold_h4_plan():
     now = time.time()
@@ -165,7 +169,7 @@ def calculate_gold_h4_plan():
     payload = json.dumps({
         'symbols': {'tickers': ['OANDA:XAUUSD']},
         'columns': [
-            'close|240', 'high|240', 'low|240', 'EMA20|240',
+            'close|240', 'high|240', 'low|240', 'EMA20|240', 'ATR|240',
             'high', 'low', 'close', 'EMA20'
         ]
     }).encode()
@@ -177,33 +181,35 @@ def calculate_gold_h4_plan():
     h4_high = d[1]
     h4_low = d[2]
     h4_ema20 = d[3]
-    d1_high = d[4]
-    d1_low = d[5]
+    h4_atr = d[4]
     
     is_uptrend = h4_close >= h4_ema20
     signal = "LONG" if is_uptrend else "SHORT"
     
     if signal == "SHORT":
-        # SELL LIMIT CỐ ĐỊNH: Đón tại cản râu cao nhất nến H4
+        # ENTRY LIMIT: Đón tại vùng râu cản đỉnh H4 (vùng thanh khoản bán)
         entry_limit = round(h4_high, 2)
-        # SELL STOP: Bán tháo khi đâm thủng đáy râu thấp nhất nến H4
         entry_stop = round(h4_low - 1.5, 2)
-        sl = round(entry_limit + 20.0, 2) # SL đúng 20 giá
-        tp1 = round(entry_limit - 40.0, 2)
-        tp2 = round(entry_limit - 70.0, 2)
+        
+        # SL LINH HOẠT HỢP LÝ: Đặt trên râu nến cản đỉnh + đệm 3 đến 5 giá (dao động trong ngưỡng hợp lý ~15-25 giá)
+        sl = round(entry_limit + max(15.0, min(28.0, h4_high - h4_close + 5.0)), 2)
+        sl_dist = round(sl - entry_limit, 2)
+        tp1 = round(entry_limit - (sl_dist * 2.0), 2)
+        tp2 = round(entry_limit - (sl_dist * 3.5), 2)
         advice = (
-            "⚠️ CẮT LỖ SỚM: Nếu có nến H1/H4 đóng cửa vượt qua cản đỉnh $3,546.00 thì chủ động cắt sớm bằng tay!\n"
-            "💎 DCA GIA TĂNG LỢI NHUẬN: Khi giá thủng đáy $3,502.00 và có lãi > 20 giá, dời SL về Hòa vốn và nhồi thêm Lệnh 2 (Sell Stop)!"
+            f"⚠️ CẮT SỚM KHI XẤU: Nếu có nến H1 đóng cửa vượt cản ${entry_limit:,.2f} thì chủ động cắt lỗ sớm bằng tay để bảo vệ vốn!\n"
+            f"💎 DCA KHI ĐẸP: Khi giá rơi thủng đáy ${h4_low:,.2f} và có lãi > {sl_dist:.0f} giá, dời SL về Entry và nhồi thêm Lệnh 2 (Sell Stop)!"
         )
     else: # LONG
         entry_limit = round(h4_low, 2)
         entry_stop = round(h4_high + 1.5, 2)
-        sl = round(entry_limit - 20.0, 2)
-        tp1 = round(entry_limit + 40.0, 2)
-        tp2 = round(entry_limit + 70.0, 2)
+        sl = round(entry_limit - max(15.0, min(28.0, h4_close - h4_low + 5.0)), 2)
+        sl_dist = round(entry_limit - sl, 2)
+        tp1 = round(entry_limit + (sl_dist * 2.0), 2)
+        tp2 = round(entry_limit + (sl_dist * 3.5), 2)
         advice = (
-            "⚠️ CẮT LỖ SỚM: Nếu nến H1/H4 gãy cản đáy thì chủ động cắt sớm!\n"
-            "💎 DCA GIA TĂNG LỢI NHUẬN: Khi giá vượt đỉnh và có lãi > 20 giá, dời SL về Hòa vốn và nhồi thêm Lệnh 2 (Buy Stop)!"
+            f"⚠️ CẮT SỚM KHI XẤU: Nếu có nến H1 đóng cửa gãy hỗ trợ ${entry_limit:,.2f} thì chủ động cắt sớm bằng tay!\n"
+            f"💎 DCA KHI ĐẸP: Khi giá tăng vượt đỉnh ${h4_high:,.2f} và có lãi > {sl_dist:.0f} giá, dời SL về Entry và nhồi thêm Lệnh 2 (Buy Stop)!"
         )
         
     plan = {
@@ -214,6 +220,7 @@ def calculate_gold_h4_plan():
         'entry_limit': entry_limit,
         'entry_stop': entry_stop,
         'sl': sl,
+        'sl_dist': sl_dist,
         'tp1': tp1,
         'tp2': tp2,
         'advice': advice
@@ -229,29 +236,29 @@ def handle_gold():
         action_l = "LỆNH 1: Bán Giá Cao Tại Cản Râu H4" if plan['signal'] == 'SHORT' else "LỆNH 1: Mua Giá Thấp Tại Đáy Râu H4"
         action_s = "LỆNH 2: Bán Phá Đáy Xác Nhận Sóng Xả H4" if plan['signal'] == 'SHORT' else "LỆNH 2: Mua Vượt Đỉnh H4"
         
-        text = f"""🥇 <b>[KẾ HOẠCH VÀNG (OANDA) CỐ ĐỊNH THEO KHUNG H4]</b> 🥇
+        text = f"""🥇 <b>[KẾ HOẠCH VÀNG (OANDA) - SL LINH HOẠT THEO CẢN RÂU]</b> 🥇
 ━━━━━━━━━━━━━━━━━━
 📊 Nguồn biểu đồ: <b>TradingView (OANDA:XAUUSD)</b>
 💰 Giá Vàng hiện tại: <b>${plan['current_price']:,.2f}</b>
 📈 Cản đỉnh râu H4: <b>${plan['h4_high']:,.2f}</b> | Đáy râu H4: <b>${plan['h4_low']:,.2f}</b>
 ━━━━━━━━━━━━━━━━━━
-🚀 <b>CHIẾN LƯỢC H4: {s_emoji}</b>
+🚀 <b>CHIẾN LƯỢC: {s_emoji}</b>
 👉 <b>{action_l}:</b>
    <code>${plan['entry_limit']:,.2f}</code>
 👉 <b>{action_s}:</b>
    <code>${plan['entry_stop']:,.2f}</code>
 
-🛡️ <b>Cắt lỗ (SL Chuẩn 20 Giá):</b> <code>${plan['sl']:,.2f}</code>
-🎯 <b>Chốt lời 1 (TP1 - Ăn 40 Giá):</b> <code>${plan['tp1']:,.2f}</code>
-🎯 <b>Chốt lời 2 (TP2 - Ăn 70 Giá):</b> <code>${plan['tp2']:,.2f}</code>
+🛡️ <b>Cắt lỗ (SL Linh Hoạt Ngoài Cản Râu {plan['sl_dist']:.1f} Giá):</b>
+   <code>${plan['sl']:,.2f}</code>
+🎯 <b>Chốt lời 1 (TP1 - Ăn {plan['sl_dist']*2:.1f} Giá):</b> <code>${plan['tp1']:,.2f}</code>
+🎯 <b>Chốt lời 2 (TP2 - Ăn {plan['sl_dist']*3.5:.1f} Giá):</b> <code>${plan['tp2']:,.2f}</code>
 
 🧠 <b>KẾ HOẠCH XỬ LÝ LỆNH CHỦ ĐỘNG:</b>
 {plan['advice']}
 
 🛡️ <b>QUẢN LÝ VỐN VÀNG (${CONFIG['ACCOUNT_BALANCE']:,.0f}):</b>
-• Rủi ro tối đa 2%: <b>$20.0</b> | Đòn bẩy đề xuất: <b>5x</b>
-• Margin cần dùng: <b>$500.0</b>
-<i>💡 Mức giá Entry $3,544.40 & SL này được giữ CỐ ĐỊNH trong suốt nến 4H để bạn yên tâm vào lệnh!</i>"""
+• Rủi ro tối đa 2%: <b>$20.0</b> | Khối lượng: <b>$2,500.0</b> | Đòn bẩy: <b>5x</b>
+<i>💡 Điểm vào và SL được tính toán dựa trên cấu trúc râu nến cản thực tế, nằm trong ngưỡng an toàn hợp lý!</i>"""
         send_telegram(text, reply_markup=get_main_keyboard())
     except Exception as e:
         send_telegram(f"Lỗi Vàng H4: {e}", reply_markup=get_main_keyboard())
