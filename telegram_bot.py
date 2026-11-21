@@ -127,12 +127,12 @@ def handle_check():
         send_telegram(f"Lỗi kiểm tra lệnh: {e}", reply_markup=get_main_keyboard())
 
 def handle_scan(mode='long'):
-    action_text = "TĂNG (LONG)" if mode == 'long' else "GIẢM (SHORT)"
-    send_telegram(f"🔍 <b>Đang quét siêu tốc các coin {action_text} có thanh khoản lớn & R:R tốt...</b>")
-    
+    # Không gửi tin nhắn đệm 'Đang quét...' nữa để tránh spam nhiều tin nhắn
+    from bias_analyzer import quick_scan_market
     results = quick_scan_market(mode=mode, limit=3)
     if not results:
-        send_telegram("⚠️ Thị trường đang giằng co mạnh, chưa có coin nào thỏa mãn R:R 1:2 tối ưu.")
+        action_vn = "TĂNG (LONG)" if mode == 'long' else "GIẢM (SHORT)"
+        send_telegram(f"⚠️ Hiện tại thị trường đang nén biên độ, chưa có coin nào đạt chuẩn {action_vn} có CHoCH & Test cản an toàn.")
         return
         
     active_trades = []
@@ -160,14 +160,14 @@ def handle_scan(mode='long'):
         msg += f"""
 {i}. <b>{r['symbol']}</b> {emoji} (Vol 24h: ${r['vol_m']:.1f}M)
 • Giá thị trường: <b>{r['market_price']}</b> | RSI: <b>{r['rsi']:.1f}</b>
-🎯 <b>Trạng thái cấu trúc:</b> <i>{r.get('stop_status', 'Bình thường')}</i>
+🎯 <b>Trạng thái:</b> <i>{r.get('stop_status', 'Bình thường')}</i>
 👉 <b>{r['limit_label']}:</b> <code>{r['entry_limit']}</code>
 👉 <b>{r['stop_label']}:</b> <code>{r['entry_stop']}</code>
-🛡️ <b>Cắt lỗ (SL bảo vệ):</b> <code>{r['sl']:.4f}</code> (-{r['sl_pct']:.1f}%)
-🎯 <b>Chốt lời (TP1 - R:R 1:2):</b> <code>{r['tp1']:.4f}</code>
-🎯 <b>Chốt lời (TP2 - R:R 1:3.5):</b> <code>{r['tp2']:.4f}</code>"""
+🛡️ <b>Cắt lỗ (SL):</b> <code>{r['sl']:.4f}</code> (-{r['sl_pct']:.1f}%)
+🎯 <b>Chốt lời (TP1):</b> <code>{r['tp1']:.4f}</code> [R:R 1:2]
+🎯 <b>Chốt lời (TP2):</b> <code>{r['tp2']:.4f}</code> [R:R 1:3.5]"""
 
-    msg += "\n━━━━━━━━━━━━━━━━━━\n<i>🛡️ Lưu ý: Chỉ vào lệnh STOP khi trạng thái ghi nhận 'ĐÃ TẠO CHoCH + TEST RÂU' để tránh tuyệt đối việc cản tàu!</i>"
+    msg += "\n━━━━━━━━━━━━━━━━━━\n<i>💡 Chỉ gửi đúng 1 tin nhắn duy nhất & đã tự động lưu để theo dõi TP/SL!</i>"
     
     with open('active_trades.json', 'w', encoding='utf-8') as f:
         json.dump(active_trades, f, indent=4)

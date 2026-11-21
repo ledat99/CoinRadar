@@ -1,0 +1,52 @@
+[
+    {
+        "symbol": "LTC/USDT:USDT",
+        "type": "LONG",
+        "entry": 51.43,
+        "exit": 50.1237,
+        "status": "LOSS",
+        "pnl_percent": -2.5399572234104615,
+        "closed_at": "2026-11-21 10:36:21",
+        "date": "2026-11-21"
+    },
+    {
+        "symbol": "ARB/USDT:USDT",
+        "type": "LONG",
+        "entry": 0.16839,
+        "exit": 0.16430039999999999,
+        "status": "LOSS",
+        "pnl_percent": -2.4286477819348096,
+        "closed_at": "2026-11-21 10:36:22",
+        "date": "2026-11-21"
+    },
+    {
+        "symbol": "LAB/USDT:USDT",
+        "type": "LONG",
+        "entry": 0.04606,
+        "exit": 0.044391599999999996,
+        "status": "LOSS",
+        "pnl_percent": -3.622231871471994,
+        "closed_at": "2026-11-21 10:36:23",
+        "date": "2026-11-21"
+    },
+    {
+        "symbol": "ENSO/USDT",
+        "type": "LONG",
+        "entry": 0.4928,
+        "exit": 0.46800017954216855,
+        "status": "LOSS",
+        "pnl_percent": -5.032431099397619,
+        "closed_at": "2026-11-21 10:36:24",
+        "date": "2026-11-21"
+    },
+    {
+        "symbol": "SKDD/USDT",
+        "type": "LONG",
+        "entry": 14.894,
+        "exit": 15.393575738023655,
+        "status": "WIN",
+        "pnl_percent": 3.3542079899533688,
+        "closed_at": "2026-11-21 10:36:25",
+        "date": "2026-11-21"
+    }
+]
