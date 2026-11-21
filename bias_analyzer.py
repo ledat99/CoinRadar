@@ -195,14 +195,14 @@ def quick_scan_market(mode='long', limit=3):
         return []
 
 def get_oanda_gold_tradingview():
-    """Lấy dữ liệu thời gian thực từ TradingView OANDA:XAUUSD"""
+    """Lấy dữ liệu thời gian thực từ TradingView OANDA:XAUUSD khung H4 & D1"""
     import urllib.request
     url = 'https://scanner.tradingview.com/cfd/scan'
     payload = json.dumps({
         'symbols': {'tickers': ['OANDA:XAUUSD']},
         'columns': [
-            'close|15', 'open|15', 'high|15', 'low|15', 'volume|15',
-            'RSI|15', 'ATR|15', 'EMA20|15', 'EMA50|15'
+            'close', 'open', 'high', 'low', 'volume', 'RSI', 'ATR', 'EMA20', 'EMA50',
+            'close|240', 'open|240', 'high|240', 'low|240', 'volume|240', 'RSI|240', 'ATR|240', 'EMA20|240', 'EMA50|240'
         ]
     }).encode()
     headers = {'User-Agent': 'Mozilla/5.0'}
@@ -211,45 +211,60 @@ def get_oanda_gold_tradingview():
         data = json.loads(resp.read().decode())
         row = data['data'][0]['d']
         return {
-            'close': row[0],
-            'open': row[1],
-            'high': row[2],
-            'low': row[3],
-            'volume': row[4],
-            'rsi': row[5],
-            'atr': row[6],
-            'ema_20': row[7],
-            'ema_50': row[8]
+            'd1_close': row[0],
+            'd1_high': row[2],
+            'd1_low': row[3],
+            'd1_rsi': row[5],
+            'd1_atr': row[6],
+            'd1_ema20': row[7],
+            'd1_ema50': row[8],
+            # Khung H4 (240m)
+            'close': row[9],
+            'open': row[10],
+            'high': row[11],
+            'low': row[12],
+            'volume': row[13],
+            'rsi': row[14],
+            'atr': row[15],
+            'ema_20': row[16],
+            'ema_50': row[17]
         }
 
-def analyze_major_asset(symbol='BTC/USDT', risk_capital_percent=2.0, account_balance=1000.0, timeframe='15m'):
-    """Phân tích Vàng OANDA hoặc BTC theo Bias xu hướng"""
+def analyze_major_asset(symbol='BTC/USDT', risk_capital_percent=2.0, account_balance=1000.0, timeframe='4h'):
+    """Phân tích Vàng OANDA hoặc BTC theo Khung Lớn H4 & D1 chuẩn xác suất cao"""
     try:
         if 'PAXG' in symbol or 'XAU' in symbol or 'GOLD' in symbol:
             tv_data = get_oanda_gold_tradingview()
             price = tv_data['close']
-            atr = tv_data['atr']
-            rsi = tv_data['rsi']
-            ema_20 = tv_data['ema_20']
-            ema_50 = tv_data['ema_50']
+            atr_h4 = tv_data['atr']
+            rsi_h4 = tv_data['rsi']
+            ema_20_h4 = tv_data['ema_20']
+            ema_50_h4 = tv_data['ema_50']
             
-            is_uptrend = price >= ema_50
+            # Xu hướng theo D1 & H4
+            is_uptrend = price >= ema_50_h4
             signal = "LONG" if is_uptrend else "SHORT"
             
-            if signal == "LONG":
-                entry_limit = max(tv_data['low'], ema_20)
-                entry_stop = tv_data['high'] + 1.0
-                sl = entry_limit - (1.8 * atr)
-                sl_dist = entry_limit - sl
-                tp1 = entry_limit + (sl_dist * 2.0)
-                tp2 = entry_limit + (sl_dist * 3.5)
-            else:
-                entry_limit = min(tv_data['high'], ema_20)
-                entry_stop = tv_data['low'] - 1.0
-                sl = entry_limit + (1.8 * atr)
+            if signal == "SHORT":
+                # Kèo SHORT: 
+                # 1. SELL LIMIT GIÁ CAO: Đón râu hồi lên cản EMA20 H4 hoặc đỉnh râu nến H4
+                entry_limit = round(max(price * 1.008, min(tv_data['high'] * 1.005, ema_20_h4)), 2)
+                # 2. SELL STOP PHÁ ĐÁY: Đặt bán đuổi khi giá đâm thủng đáy râu nến thấp nhất H4
+                entry_stop = round(tv_data['low'] - 2.0, 2)
+                sl = round(entry_limit + (1.5 * atr_h4), 2)
                 sl_dist = sl - entry_limit
-                tp1 = entry_limit - (sl_dist * 2.0)
-                tp2 = entry_limit - (sl_dist * 3.5)
+                tp1 = round(entry_limit - (sl_dist * 2.0), 2)
+                tp2 = round(entry_limit - (sl_dist * 3.5), 2)
+            else: # LONG
+                # Kèo LONG:
+                # 1. BUY LIMIT GIÁ THẤP: Đón râu hồi về hỗ trợ EMA20 H4 hoặc đáy râu nến H4
+                entry_limit = round(min(price * 0.992, max(tv_data['low'] * 0.995, ema_20_h4)), 2)
+                # 2. BUY STOP VƯỢT ĐỈNH: Đặt mua khi giá phá thủng đỉnh râu nến cao nhất H4
+                entry_stop = round(tv_data['high'] + 2.0, 2)
+                sl = round(entry_limit - (1.5 * atr_h4), 2)
+                sl_dist = entry_limit - sl
+                tp1 = round(entry_limit + (sl_dist * 2.0), 2)
+                tp2 = round(entry_limit + (sl_dist * 3.5), 2)
                 
             sl_percent = (sl_dist / entry_limit) * 100
             max_loss_usd = account_balance * (risk_capital_percent / 100.0)
@@ -260,7 +275,8 @@ def analyze_major_asset(symbol='BTC/USDT', risk_capital_percent=2.0, account_bal
 
             return {
                 'has_signal': True,
-                'symbol': 'OANDA:XAUUSD (TradingView)',
+                'symbol': 'OANDA:XAUUSD (TradingView H4/D1)',
+                'timeframe': 'H4 & D1',
                 'type': signal,
                 'market_price': price,
                 'entry_limit': entry_limit,
@@ -276,14 +292,14 @@ def analyze_major_asset(symbol='BTC/USDT', risk_capital_percent=2.0, account_bal
                 'suggested_leverage': f"{suggested_leverage}x",
                 'margin_percent': margin_percent,
                 'margin_usd': margin_needed,
-                'rsi': rsi,
-                'volume': tv_data['volume'],
-                'trend': "UPTREND (Thiên Long)" if is_uptrend else "DOWNTREND (Thiên Short)"
+                'rsi': rsi_h4,
+                'd1_trend': "D1 GIẢM" if tv_data['d1_close'] < tv_data['d1_ema20'] else "D1 TĂNG",
+                'trend': "DOWNTREND H4 (Ưu tiên SHORT)" if not is_uptrend else "UPTREND H4 (Ưu tiên LONG)"
             }
 
-        # NẾU LÀ BITCOIN
+        # NẾU LÀ BITCOIN -> KHUNG H4 & D1
         target_symbol = f"{symbol}:USDT" if ':USDT' not in symbol else symbol
-        ohlcv = binance_futures.fetch_ohlcv(target_symbol, timeframe, limit=60)
+        ohlcv = binance_futures.fetch_ohlcv(target_symbol, '4h', limit=60)
         df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
         df['ema_20'] = ta.trend.EMAIndicator(close=df['close'], window=20).ema_indicator()
         df['ema_50'] = ta.trend.EMAIndicator(close=df['close'], window=50).ema_indicator()
@@ -291,25 +307,28 @@ def analyze_major_asset(symbol='BTC/USDT', risk_capital_percent=2.0, account_bal
         df['rsi'] = ta.momentum.RSIIndicator(close=df['close'], window=14).rsi()
         
         last = df.iloc[-1]
-        price = last['close']
-        atr = last['atr']
-        is_uptrend = price >= last['ema_50']
+        price = float(last['close'])
+        atr = float(last['atr'])
+        ema_20 = float(last['ema_20'])
+        is_uptrend = price >= float(last['ema_50'])
         signal = "LONG" if is_uptrend else "SHORT"
         
-        if signal == "LONG":
-            entry_limit = max(df['low'].tail(5).min(), last['ema_20'])
-            entry_stop = df['high'].tail(5).max() * 1.002
-            sl = entry_limit - (1.8 * atr)
-            sl_dist = entry_limit - sl
-            tp1 = entry_limit + (sl_dist * 2.0)
-            tp2 = entry_limit + (sl_dist * 3.5)
-        else:
-            entry_limit = min(df['high'].tail(5).max(), last['ema_20'])
-            entry_stop = df['low'].tail(5).min() * 0.998
-            sl = entry_limit + (1.8 * atr)
+        if signal == "SHORT":
+            # SELL LIMIT giá cao: đón râu hồi lên cản EMA20 H4
+            entry_limit = round(max(price * 1.01, min(float(df['high'].tail(5).max()), ema_20)), 1)
+            # SELL STOP: bán tháo khi thủng đáy râu thấp nhất H4
+            entry_stop = round(float(df['low'].tail(5).min()) * 0.998, 1)
+            sl = round(entry_limit + (1.5 * atr), 1)
             sl_dist = sl - entry_limit
-            tp1 = entry_limit - (sl_dist * 2.0)
-            tp2 = entry_limit - (sl_dist * 3.5)
+            tp1 = round(entry_limit - (sl_dist * 2.0), 1)
+            tp2 = round(entry_limit - (sl_dist * 3.5), 1)
+        else:
+            entry_limit = round(min(price * 0.99, max(float(df['low'].tail(5).min()), ema_20)), 1)
+            entry_stop = round(float(df['high'].tail(5).max()) * 1.002, 1)
+            sl = round(entry_limit - (1.5 * atr), 1)
+            sl_dist = entry_limit - sl
+            tp1 = round(entry_limit + (sl_dist * 2.0), 1)
+            tp2 = round(entry_limit + (sl_dist * 3.5), 1)
             
         sl_percent = (sl_dist / entry_limit) * 100
         max_loss_usd = account_balance * (risk_capital_percent / 100.0)
@@ -321,8 +340,9 @@ def analyze_major_asset(symbol='BTC/USDT', risk_capital_percent=2.0, account_bal
         return {
             'has_signal': True,
             'symbol': target_symbol.split(':')[0],
+            'timeframe': 'H4 & D1',
             'type': signal,
-            'entry': price,
+            'market_price': price,
             'entry_limit': entry_limit,
             'entry_stop': entry_stop,
             'sl': sl,
@@ -336,7 +356,8 @@ def analyze_major_asset(symbol='BTC/USDT', risk_capital_percent=2.0, account_bal
             'suggested_leverage': f"{suggested_leverage}x",
             'margin_percent': margin_percent,
             'margin_usd': margin_needed,
-            'rsi': last['rsi']
+            'rsi': float(last['rsi']),
+            'trend': "DOWNTREND H4 (Ưu tiên SHORT)" if not is_uptrend else "UPTREND H4 (Ưu tiên LONG)"
         }
     except Exception as e:
         print(f"Lỗi asset: {e}")

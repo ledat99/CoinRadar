@@ -47,74 +47,72 @@ def get_main_keyboard():
     }
 
 def handle_btc():
-    send_telegram("⏳ Đang phân tích Market Bias & Xu hướng Bitcoin...")
     bias = get_market_bias()
     sig = analyze_major_asset('BTC/USDT', risk_capital_percent=CONFIG['RISK_PER_TRADE'], account_balance=CONFIG['ACCOUNT_BALANCE'])
     
-    emoji_bias = "🟢" if bias['bias'] == 'BULLISH' else ("🔴" if bias['bias'] == 'BEARISH' else "⚪")
+    if not sig:
+        send_telegram("⚠️ Không thể tải dữ liệu Bitcoin lúc này.")
+        return
+        
+    s_emoji = "🟢 LONG" if sig['type'] == 'LONG' else "🔴 SHORT"
+    action_limit_desc = "Bán Giá Cao Đón Râu Hồi EMA20" if sig['type'] == 'SHORT' else "Mua Giá Thấp Đón Râu Hỗ Trợ"
+    action_stop_desc = "Bán Đuổi Phá Đáy H4" if sig['type'] == 'SHORT' else "Mua Đuổi Phá Đỉnh H4"
     
-    text = f"""👑 <b>[CHIẾN LƯỢC BITCOIN (BTC/USDT)]</b> 👑
+    text = f"""👑 <b>[CHIẾN LƯỢC BITCOIN (BTC/USDT) - H4 & D1]</b> 👑
 ━━━━━━━━━━━━━━━━━━
-💰 Giá hiện tại: <b>${bias['btc_price']:,.2f}</b>
-🎯 Market Bias: <b>{bias['bias']}</b> {emoji_bias}
-📈 Đánh giá: <i>{bias['desc']}</i>
-📊 RSI: H1: <b>{bias['h1_rsi']:.1f}</b> | H4: <b>{bias['h4_rsi']:.1f}</b>
-🌊 Điểm dòng tiền (Flow): <b>{bias['flow_score']}/100</b>
-━━━━━━━━━━━━━━━━━━"""
+💰 Giá hiện tại: <b>${sig['market_price']:,.1f}</b>
+🎯 Xu hướng H4: <b>{sig['trend']}</b>
+📊 RSI H4: <b>{sig['rsi']:.1f}</b>
+━━━━━━━━━━━━━━━━━━
+🚀 <b>CHIẾN LƯỢC: {s_emoji}</b>
+👉 <b>1. LỆNH LIMIT ({action_limit_desc}):</b>
+   <code>${sig['entry_limit']:,.1f}</code>
+👉 <b>2. LỆNH STOP ({action_stop_desc}):</b>
+   <code>${sig['entry_stop']:,.1f}</code>
 
-    if sig and sig['has_signal']:
-        s_emoji = "🟢 LONG" if sig['type'] == 'LONG' else "🔴 SHORT"
-        text += f"""
-🚀 <b>TÍN HIỆU ĐƯỢC KÍCH HOẠT: {s_emoji}</b>
-• Entry: <b>${sig['entry']:,.2f}</b>
-• Cắt lỗ (SL): <b>${sig['sl']:,.2f}</b> (-{sig['sl_percent']:.2f}%)
-• Chốt lời 1 (TP1 - R:R 1:2): <b>${sig['tp1']:,.2f}</b>
-• Chốt lời 2 (TP2 - R:R 1:3): <b>${sig['tp2']:,.2f}</b>
+🛡️ <b>Cắt lỗ (SL H4):</b> <code>${sig['sl']:,.1f}</code> (-{sig['sl_percent']:.2f}%)
+🎯 <b>Chốt lời 1 (TP1 - R:R 1:2):</b> <code>${sig['tp1']:,.1f}</code>
+🎯 <b>Chốt lời 2 (TP2 - R:R 1:3.5):</b> <code>${sig['tp2']:,.1f}</code>
 
-🛡️ <b>QUẢN LÝ VỐN CHUẨN (Vốn mẫu: ${CONFIG['ACCOUNT_BALANCE']:,.0f}):</b>
-• Rủi ro tối đa mỗi lệnh: <b>{sig['risk_percent']}% (${CONFIG['ACCOUNT_BALANCE']*sig['risk_percent']/100:.1f})</b>
-• Khối lượng vị thế (Size): <b>${sig['position_size_usd']:,.1f}</b>
-• Đòn bẩy khuyến nghị: <b>{sig['suggested_leverage']}</b>
-• Ký quỹ (Margin): <b>${sig['margin_usd']:,.1f} (~{sig['margin_percent']:.1f}% tài khoản)</b>"""
-    else:
-        text += f"\n\n⏳ <b>Khuyến nghị:</b> Hiện tại chưa có điểm vào lệnh R:R tối ưu trên khung 15m. Hãy kiên nhẫn chờ nến hồi về kiểm tra EMA hoặc theo dõi nến đóng cửa."
+🛡️ <b>QUẢN LÝ VỐN CHUẨN (${CONFIG['ACCOUNT_BALANCE']:,.0f}):</b>
+• Rủi ro tối đa 2%: <b>${CONFIG['ACCOUNT_BALANCE']*sig['risk_percent']/100:.1f}</b>
+• Khối lượng vị thế: <b>${sig['position_size_usd']:,.1f}</b> | Đòn bẩy: <b>{sig['suggested_leverage']}</b>
+• Margin cần dùng: <b>${sig['margin_usd']:,.1f} (~{sig['margin_percent']:.1f}% vốn)</b>"""
         
     send_telegram(text, reply_markup=get_main_keyboard())
 
 def handle_gold():
-    send_telegram("⏳ Đang phân tích biểu đồ OANDA:XAUUSD trực tiếp từ TradingView...")
     sig = analyze_major_asset('XAU/USDT', risk_capital_percent=CONFIG['RISK_PER_TRADE'], account_balance=CONFIG['ACCOUNT_BALANCE'])
     
     if not sig:
         send_telegram("⚠️ Không thể tải dữ liệu Vàng (OANDA:XAUUSD) lúc này.")
         return
         
-    text = f"""🥇 <b>[CHIẾN LƯỢC VÀNG THẾ GIỚI (OANDA:XAUUSD)]</b> 🥇
+    s_emoji = "🟢 LONG" if sig['type'] == 'LONG' else "🔴 SHORT"
+    action_limit_desc = "Bán Giá Cao Đón Râu Hồi EMA20" if sig['type'] == 'SHORT' else "Mua Giá Thấp Đón Râu Hỗ Trợ"
+    action_stop_desc = "Bán Đuổi Phá Đáy H4" if sig['type'] == 'SHORT' else "Mua Đuổi Phá Đỉnh H4"
+    
+    text = f"""🥇 <b>[CHIẾN LƯỢC VÀNG THẾ GIỚI (OANDA:XAUUSD) - H4 & D1]</b> 🥇
 ━━━━━━━━━━━━━━━━━━
 📊 Nguồn biểu đồ: <b>TradingView (OANDA)</b>
-💰 Giá Vàng hiện tại: <b>${sig.get('price', sig.get('entry', 0)):,.2f}</b>
-📈 RSI M15: <b>{sig['rsi']:.1f}</b>
-🌊 Tick Volume M15: <b>{sig.get('volume', 0):,}</b>
-━━━━━━━━━━━━━━━━━━"""
+💰 Giá Vàng hiện tại: <b>${sig['market_price']:,.2f}</b>
+📈 Xu hướng D1: <b>{sig.get('d1_trend')}</b> | H4: <b>{sig.get('trend')}</b>
+📊 RSI H4: <b>{sig['rsi']:.1f}</b>
+━━━━━━━━━━━━━━━━━━
+🚀 <b>CHIẾN LƯỢC: {s_emoji}</b>
+👉 <b>1. LỆNH LIMIT ({action_limit_desc}):</b>
+   <code>${sig['entry_limit']:,.2f}</code>
+👉 <b>2. LỆNH STOP ({action_stop_desc}):</b>
+   <code>${sig['entry_stop']:,.2f}</code>
 
-    if sig['has_signal']:
-        s_emoji = "🟢 LONG" if sig['type'] == 'LONG' else "🔴 SHORT"
-        text += f"""
-🚀 <b>TÍN HIỆU VÀNG: {s_emoji}</b>
-• Giá hiện tại: <b>${sig['market_price']:,.2f}</b>
-👉 <b>Vùng LIMIT đón râu:</b> <code>${sig['entry_limit']:,.2f}</code>
-👉 <b>Điểm STOP phá cản:</b> <code>${sig['entry_stop']:,.2f}</code>
-• Cắt lỗ (SL): <b>${sig['sl']:,.2f}</b> (-{sig['sl_percent']:.2f}%)
-• Chốt lời 1 (TP1 - R:R 1:2): <b>${sig['tp1']:,.2f}</b>
-• Chốt lời 2 (TP2 - R:R 1:3.5): <b>${sig['tp2']:,.2f}</b>
+🛡️ <b>Cắt lỗ (SL H4):</b> <code>${sig['sl']:,.2f}</code> (-{sig['sl_percent']:.2f}%)
+🎯 <b>Chốt lời 1 (TP1 - R:R 1:2):</b> <code>${sig['tp1']:,.2f}</code>
+🎯 <b>Chốt lời 2 (TP2 - R:R 1:3.5):</b> <code>${sig['tp2']:,.2f}</code>
 
-🛡️ <b>QUẢN LÝ VỐN (Vốn mẫu: ${CONFIG['ACCOUNT_BALANCE']:,.0f}):</b>
-• Rủi ro: <b>{sig['risk_percent']}% (${CONFIG['ACCOUNT_BALANCE']*sig['risk_percent']/100:.1f})</b>
-• Quy mô vị thế: <b>${sig['position_size_usd']:,.1f}</b>
-• Đòn bẩy đề xuất: <b>{sig['suggested_leverage']}</b>
-• Ký quỹ (Margin): <b>${sig['margin_usd']:,.1f}</b>"""
-    else:
-        text += f"\n\n📈 Xu hướng tổng thể: <b>{sig.get('trend')}</b>\n👉 Gợi ý vùng Limit đón râu nến (EMA20): <code>${sig.get('suggested_limit', 0):,.2f}</code>\n⏳ Đang theo dõi nén biên độ quanh hỗ trợ / kháng cự."
+🛡️ <b>QUẢN LÝ VỐN VÀNG (${CONFIG['ACCOUNT_BALANCE']:,.0f}):</b>
+• Rủi ro tối đa 2%: <b>${CONFIG['ACCOUNT_BALANCE']*sig['risk_percent']/100:.1f}</b>
+• Khối lượng vị thế: <b>${sig['position_size_usd']:,.1f}</b> | Đòn bẩy: <b>{sig['suggested_leverage']}</b>
+• Margin cần dùng: <b>${sig['margin_usd']:,.1f} (~{sig['margin_percent']:.1f}% vốn)</b>"""
         
     send_telegram(text, reply_markup=get_main_keyboard())
 
