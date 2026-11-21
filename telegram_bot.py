@@ -328,8 +328,8 @@ def calculate_btc_h4_plan():
             if risk < 300.0:
                 sl = round(entry_limit + 400.0, 1)
                 risk = sl - entry_limit
-            tp1 = round(entry_limit - (risk * 2.0), 1)
-            tp2 = round(entry_limit - (risk * 3.5), 1)
+            tp1 = round(entry_limit - (risk * 1.2), 1)
+            tp2 = round(entry_limit - (risk * 2.5), 1)
         else: # LONG
             entry_stop = round(swing_high * 1.002, 1)
             conf = m5_info['confirmed_bull_rejection']
@@ -358,8 +358,8 @@ def calculate_btc_h4_plan():
             if risk < 300.0:
                 sl = round(entry_limit - 400.0, 1)
                 risk = entry_limit - sl
-            tp1 = round(entry_limit + (risk * 2.0), 1)
-            tp2 = round(entry_limit + (risk * 3.5), 1)
+            tp1 = round(entry_limit + (risk * 1.2), 1)
+            tp2 = round(entry_limit + (risk * 2.5), 1)
 
         sl_pct = (risk / entry_limit) * 100.0
         dist_to_entry = round(abs(current_price - entry_limit), 1)
@@ -443,8 +443,8 @@ def handle_btc():
    <code>${plan['entry_stop']:,.1f}</code>
 
 🛡️ <b>Cắt lỗ (SL Ngoài Râu M5 / Chóp OB H1):</b> <code>${plan['sl']:,.1f}</code> (-{plan['sl_pct']}%)
-🎯 <b>Chốt lời 1 (TP1 - R:R 1:2):</b> <code>${plan['tp1']:,.1f}</code>
-🎯 <b>Chốt lời 2 (TP2 - R:R 1:3.5):</b> <code>${plan['tp2']:,.1f}</code>
+🎯 <b>Chốt lời 1 (TP1 - R:R 1:1.2 | Chốt 50% & Dời SL Hoà):</b> <code>${plan['tp1']:,.1f}</code>
+🎯 <b>Chốt lời 2 (TP2 - R:R 1:2.5 | Gồng Theo Sóng Lớn):</b> <code>${plan['tp2']:,.1f}</code>
 
 🧠 <b>KẾ HOẠCH XỬ LÝ LỆNH CHỦ ĐỘNG:</b>
 {plan['advice']}
@@ -634,8 +634,8 @@ def calculate_gold_h4_plan():
                 sl = round(entry_limit + 25.0, 2)
                 sl_dist = round(sl - entry_limit, 2)
                 
-            tp1 = round(entry_limit - (sl_dist * 2.0), 2)
-            tp2 = round(entry_limit - (sl_dist * 3.5), 2)
+            tp1 = round(entry_limit - (sl_dist * 1.2), 2)
+            tp2 = round(entry_limit - (sl_dist * 2.5), 2)
         else: # LONG
             entry_stop = round(major_res + 1.2, 2)
             conf = m5_info['confirmed_bull_rejection']
@@ -678,8 +678,8 @@ def calculate_gold_h4_plan():
                 sl = round(entry_limit - 25.0, 2)
                 sl_dist = round(entry_limit - sl, 2)
                 
-            tp1 = round(entry_limit + (sl_dist * 2.0), 2)
-            tp2 = round(entry_limit + (sl_dist * 3.5), 2)
+            tp1 = round(entry_limit + (sl_dist * 1.2), 2)
+            tp2 = round(entry_limit + (sl_dist * 2.5), 2)
             
     except Exception as e:
         # Fallback khẩn cấp nếu scanner bị timeout
@@ -801,8 +801,8 @@ def handle_gold():
 
 🛡️ <b>Cắt lỗ (SL Ngoài Râu M5 / Chóp OB H1 ~{plan['sl_dist']:.1f} Giá):</b>
    <code>${plan['sl']:,.2f}</code>
-🎯 <b>Chốt lời 1 (TP1 - Ăn {plan['sl_dist']*2:.1f} Giá | R:R 1:2):</b> <code>${plan['tp1']:,.2f}</code>
-🎯 <b>Chốt lời 2 (TP2 - Ăn {plan['sl_dist']*3.5:.1f} Giá | R:R 1:3.5):</b> <code>${plan['tp2']:,.2f}</code>
+🎯 <b>Chốt lời 1 (TP1 - Ăn {plan['sl_dist']*1.2:.1f} Giá | R:R 1:1.2 - Chốt 50% & Dời Hoà):</b> <code>${plan['tp1']:,.2f}</code>
+🎯 <b>Chốt lời 2 (TP2 - Ăn {plan['sl_dist']*2.5:.1f} Giá | R:R 1:2.5 - Gồng Về Cản):</b> <code>${plan['tp2']:,.2f}</code>
 
 🧠 <b>KẾ HOẠCH XỬ LÝ LỆNH CHỦ ĐỘNG:</b>
 {plan['advice']}
@@ -1056,8 +1056,8 @@ def auto_diamond_alert_worker():
 
 🛡️ <b>Cắt lỗ (SL Ngoài Râu M5):</b>
    <code>${plan_gold['sl']:,.2f}</code> (~{plan_gold['sl_dist']:.1f} Giá)
-🎯 <b>Chốt lời 1 (TP1 - R:R 1:2):</b> <code>${plan_gold['tp1']:,.2f}</code>
-🎯 <b>Chốt lời 2 (TP2 - R:R 1:3.5):</b> <code>${plan_gold['tp2']:,.2f}</code>
+🎯 <b>Chốt lời 1 (TP1 - R:R 1:1.2 | Chốt 50% & Dời Hoà):</b> <code>${plan_gold['tp1']:,.2f}</code>
+🎯 <b>Chốt lời 2 (TP2 - R:R 1:2.5 | Gồng Về Cản):</b> <code>${plan_gold['tp2']:,.2f}</code>
 
 🧠 <b>Kế hoạch xử lý:</b>
 {plan_gold['advice']}
@@ -1100,8 +1100,8 @@ def auto_diamond_alert_worker():
    <code>${entry_s:,.1f}</code>
 
 🛡️ <b>Cắt lỗ (SL Ngoài Râu M5):</b> <code>${plan_btc['sl']:,.1f}</code> (-{plan_btc['sl_pct']}%)
-🎯 <b>Chốt lời 1 (TP1 - R:R 1:2):</b> <code>${plan_btc['tp1']:,.1f}</code>
-🎯 <b>Chốt lời 2 (TP2 - R:R 1:3.5):</b> <code>${plan_btc['tp2']:,.1f}</code>
+🎯 <b>Chốt lời 1 (TP1 - R:R 1:1.2 | Chốt 50% & Dời Hoà):</b> <code>${plan_btc['tp1']:,.1f}</code>
+🎯 <b>Chốt lời 2 (TP2 - R:R 1:2.5 | Gồng Theo Sóng):</b> <code>${plan_btc['tp2']:,.1f}</code>
 
 🧠 <b>Kế hoạch xử lý:</b>
 {plan_btc['advice']}
