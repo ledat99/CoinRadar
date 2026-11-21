@@ -102,13 +102,13 @@ def calculate_btc_h4_plan():
         hist, bin_edges = np.histogram(prices, bins=25, weights=weights)
         poc_m15 = round((bin_edges[np.argmax(hist)] + bin_edges[np.argmax(hist)+1]) / 2, 1)
 
-        # 3. Cản râu nến M15/H4 & Phát hiện Quét Thanh Khoản (Sweep)
+        # 3. Cản râu nến M15/H1/H4 - TÌM CẢN TO THẬT SỰ, KHÔNG BÁN/MUA LƯNG CHỪNG
         highs = [float(k[2]) for k in m15_klines]
         lows = [float(k[3]) for k in m15_klines]
         swing_high = round(max(highs), 1)
         swing_low = round(min(lows), 1)
 
-        # Quét râu M15 trong các nến gần nhất (bắt các pha giật râu như lúc 13h15 đáy $55,100)
+        # Phát hiện Bẫy Quét Râu (Sweep) / Mô hình 2 Đáy / 2 Đỉnh trên M15
         sweep_bull = None
         sweep_bear = None
         for k in m15_klines[:8]:
@@ -122,64 +122,69 @@ def calculate_btc_h4_plan():
                 elif upper_wick / c_range > 0.45 and not sweep_bear:
                     sweep_bear = {'high': c_high, 'close': c_close, 'wick': upper_wick}
 
-        # Ưu tiên xu hướng:
-        # Nếu có Quét Râu Đáy mạnh (như pha rút chân 13h15) -> Ưu tiên LONG bắt nhịp tăng tốc
-        # Nếu có Quét Râu Đỉnh mạnh hoặc đồng pha W1/D1 -> Ưu tiên SHORT
-        if sweep_bull and not sweep_bear:
+        # Kiểm tra mô hình 2 Đáy (Double Bottom) trên M15:
+        # Nếu nến gần nhất tạo đáy cao hơn hoặc bằng đáy quét trước đó và đóng nến tăng
+        is_double_bottom = (current_price > swing_low + 200.0) and (sweep_bull is not None)
+
+        # XÁC ĐỊNH HƯỚNG ĐÁNH (KHÔNG ÉP THEO TREND NGÀY NẾU M15 CÓ ĐẢO CHIỀU UY TÍN)
+        if sweep_bull or is_double_bottom:
             signal = "LONG"
-            setup_desc = f"Quét Râu Đáy M15 tại ${sweep_bull['low']:,.1f} (Rút râu {sweep_bull['wick']:.0f} giá) -> Bứt Tốc"
-        elif sweep_bear and not sweep_bull:
+            setup_desc = f"Mô Hình 2 Đáy / Quét Râu Đáy tại ${swing_low:,.1f} + Bullish CHoCH"
+            diamond_note = "⭐ ĐẢO CHIỀU UY TÍN: Có 2 Đáy & Quét Râu Đáy rõ ràng, không bắt đáy vô cớ!"
+        elif sweep_bear:
             signal = "SHORT"
-            setup_desc = f"Quét Râu Đỉnh M15 tại ${sweep_bear['high']:,.1f} (Rút râu {sweep_bear['wick']:.0f} giá) -> Đảo Chiều Giảm"
+            setup_desc = f"Quét Râu Đỉnh / 2 Đỉnh tại Cản To ${swing_high:,.1f} + Bearish CHoCH"
+            diamond_note = "⭐ CẢN TO THẬT SỰ: Chạm đỉnh râu bị từ chối mạnh, thuận lực xả vĩ mô!"
         elif w1_bear and d1_bear:
             signal = "SHORT"
-            setup_desc = f"Quét Râu Test Đỉnh M15 tại ${swing_high:,.1f} + CHoCH Giảm"
-        elif not w1_bear and not d1_bear:
-            signal = "LONG"
-            setup_desc = f"Quét Râu Test Đáy M15 tại ${swing_low:,.1f} + CHoCH Tăng"
+            setup_desc = f"Đồng Pha Giảm Tuần/Ngày - Kiên nhẫn chờ hồi về Cản To ${swing_high:,.1f}"
+            diamond_note = "⭐ ĐỒNG PHA TUẦN + NGÀY (CẢN TO): Chờ hồi test cản to, tuyệt đối không bán lưng chừng!"
         else:
             signal = "SHORT" if d1_bear else "LONG"
-            setup_desc = f"Cấu Trúc SMC M15 tại ${swing_high:,.1f}"
-
-        is_diamond = (w1_bear and d1_bear and signal == "SHORT") or (not w1_bear and not d1_bear and signal == "LONG")
-        diamond_note = "⭐ ĐỒNG PHA TUẦN + NGÀY (SETUP KIM CƯƠNG): BTC rất dễ đâm một mạch theo xu hướng chính!" if is_diamond else "⚡ Lưu ý quản lý vốn chặt chẽ theo từng phiên."
+            setup_desc = f"Cấu Trúc SMC M15 tại Cản ${swing_high:,.1f}"
+            diamond_note = "⚡ Quản lý vốn theo từng mốc cản."
 
         if signal == "SHORT":
-            # ENTRY LIMIT: Đón nhịp rút chân kiểm tra lại POC M15 hoặc cản râu hồi
-            entry_limit = poc_m15 if poc_m15 > current_price else round(current_price * 1.006, 1)
-            if entry_limit > swing_high - 50.0:
-                entry_limit = round(swing_high - 100.0, 1)
-                
-            # SELL STOP: Đặt ngay dưới đáy swing_low để bắt trọn sóng xả đâm 1 mạch nếu BTC không thèm test!
+            # ENTRY LIMIT: Neo chặt tại CẢN TO THẬT SỰ (đỉnh swing_high hoặc POC), không bán lưng chừng
+            c_to = swing_high
+            entry_limit = round(max(poc_m15, c_to - 100.0), 1)
+            # SELL STOP: Đặt phá vỡ đáy để ăn trọn sóng xả đâm 1 mạch nếu không hồi
             entry_stop = round(swing_low * 0.998, 1)
             
-            # SL: Đặt trên cản râu đỉnh swing_high + đệm an toàn
-            sl = round(max(entry_limit * 1.015, swing_high + 150.0), 1)
+            # SL: Đặt trên chóp cản to thật sự + đệm an toàn
+            sl = round(c_to + 180.0, 1)
             risk = sl - entry_limit
+            if risk < 300.0:
+                sl = round(entry_limit + 400.0, 1)
+                risk = sl - entry_limit
             tp1 = round(entry_limit - (risk * 2.0), 1)
             tp2 = round(entry_limit - (risk * 3.5), 1)
             
-            setup_desc = f"Quét Râu Test Đỉnh M15 tại ${swing_high:,.1f} + CHoCH Giảm"
             advice = (
-                f"⚠️ <b>CẮT SỚM KHI XẤU:</b> Nếu có nến M15/H1 đóng cửa vượt cản đỉnh <b>${swing_high:,.1f}</b> -> Chủ động cắt sớm bằng tay!\n"
-                f"💎 <b>DCA NHỒI KHI ĐẸP:</b> BTC quán tính rất mạnh! Nếu không khớp Lệnh 1 Limit mà đâm thẳng 1 mạch phá đáy <b>${entry_stop:,.1f}</b>, Lệnh 2 Sell Stop sẽ tự động khớp để không bị lỡ tàu. Khi lãi > {risk*0.7:.0f} giá, dời SL về Hoà Vốn!"
+                f"⚠️ <b>KHÔNG BÁN LƯNG CHỪNG:</b> Chỉ vào lệnh Limit khi giá hồi lên đúng <b>Cản To ${c_to:,.1f}</b> hoặc POC M15!\n"
+                f"💎 <b>ĐUA SÓNG ĐÂM 1 MẠCH:</b> Nếu BTC lao thẳng không test phá đáy <b>${entry_stop:,.1f}</b>, Lệnh 2 Sell Stop sẽ tự kích hoạt để không bị lỡ tàu!"
             )
         else: # LONG
-            entry_limit = poc_m15 if poc_m15 < current_price else round(current_price * 0.994, 1)
-            if entry_limit < swing_low + 50.0:
-                entry_limit = round(swing_low + 100.0, 1)
+            # ENTRY LIMIT: Neo chặt tại HỖ TRỢ TO / ĐÁY 2 (không bắt đáy vô cớ)
+            h_to = swing_low
+            entry_limit = round(min(poc_m15, h_to + 250.0), 1)
+            if entry_limit < h_to + 50.0:
+                entry_limit = round(h_to + 120.0, 1)
                 
             entry_stop = round(swing_high * 1.002, 1)
             
-            sl = round(min(entry_limit * 0.985, swing_low - 150.0), 1)
+            # SL: Đặt dưới đáy mô hình 2 đáy / râu quét an toàn
+            sl = round(h_to - 180.0, 1)
             risk = entry_limit - sl
+            if risk < 300.0:
+                sl = round(entry_limit - 400.0, 1)
+                risk = entry_limit - sl
             tp1 = round(entry_limit + (risk * 2.0), 1)
             tp2 = round(entry_limit + (risk * 3.5), 1)
             
-            setup_desc = f"Quét Râu Test Đáy M15 tại ${swing_low:,.1f} + CHoCH Tăng"
             advice = (
-                f"⚠️ <b>CẮT SỚM KHI XẤU:</b> Nếu có nến M15/H1 đóng cửa gãy hỗ trợ <b>${swing_low:,.1f}</b> -> Chủ động cắt sớm bằng tay!\n"
-                f"💎 <b>DCA NHỒI KHI ĐẸP:</b> BTC quán tính rất mạnh! Nếu không khớp Lệnh 1 Limit mà bứt phá thẳng 1 mạch qua đỉnh <b>${entry_stop:,.1f}</b>, Lệnh 2 Buy Stop sẽ tự động khớp để không bị lỡ tàu. Khi lãi > {risk*0.7:.0f} giá, dời SL về Hoà Vốn!"
+                f"⚠️ <b>ĐẢO CHIỀU CÓ CHoCH:</b> Có xác nhận mô hình 2 Đáy / Quét râu đáy, không bắt đáy lung tung! SL dưới đáy ${h_to:,.1f}.\n"
+                f"💎 <b>ĐUA SÓNG BỨT TỐC:</b> Nếu BTC tăng thốc 1 mạch qua đỉnh <b>${entry_stop:,.1f}</b> (như nhịp 3k giá), Lệnh 2 Buy Stop sẽ tự khớp bắt trọn con sóng!"
             )
 
         sl_pct = (risk / entry_limit) * 100.0
@@ -305,35 +310,42 @@ def calculate_gold_h4_plan():
         h4_low = round(data['low|240'], 2)
         h4_ema20 = round(data['EMA20|240'], 2)
         
+        # CẢN TO THẬT SỰ (TUYỆT ĐỐI KHÔNG BÁN LƯNG CHỪNG):
+        major_res = max(h1_high, h4_high)
+        major_sup = min(h1_low, h4_low)
+        
         # 3. Vùng POC M15 OANDA (Volume Profile M15)
         poc_gold_m15 = round((m15_high + m15_low + m15_ema20) / 3.0, 2)
         
-        # 4. Phát hiện Bẫy Quét Thanh Khoản & Râu Nến Test trên M15/M5
-        is_bear_sweep = (m5_high >= prev_m5_high and current_gold < m5_high - 1.5) or (current_gold < m15_ema20 and current_gold < h4_ema20)
+        # 4. Phát hiện Bẫy Quét Râu / Mô hình 2 Đáy / 2 Đỉnh trên M15
+        is_double_bottom = (current_gold > major_sup + 6.0) and (m15_low > major_sup) and (current_gold > m15_ema20)
+        is_at_major_res = (current_gold >= major_res - 4.0) or (m5_high >= major_res - 1.0)
         
-        # Ưu tiên tuyệt đối theo Bias Tuần & Ngày
-        if w1_bear and d1_bear:
-            signal = "SHORT"
-        elif not w1_bear and not d1_bear:
+        # XÁC ĐỊNH HƯỚNG ĐÁNH (KHÔNG ÉP THEO TREND NGÀY NẾU M15 CÓ ĐẢO CHIỀU UY TÍN)
+        if is_double_bottom and not is_at_major_res:
             signal = "LONG"
+            setup_desc = f"Mô Hình 2 Đáy M15 tại Hỗ Trợ To ${major_sup:,.2f} + Bullish CHoCH"
+            diamond_note = "⭐ ĐẢO CHIỀU UY TÍN: Có mô hình 2 Đáy từ cản to, không bắt đáy vô cớ!"
+        elif is_at_major_res or (current_gold < h4_ema20):
+            signal = "SHORT"
+            setup_desc = f"Cản To H4/H1 tại ${major_res:,.2f} + Quét Râu Đỉnh / CHoCH Giảm"
+            diamond_note = "⭐ CẢN TO THẬT SỰ: Chạm vùng cản cứng H4, tuyệt đối không bán lưng chừng!"
         else:
-            signal = "SHORT" if (current_gold < h4_ema20 or is_bear_sweep) else "LONG"
-            
-        is_diamond = (w1_bear and d1_bear and signal == "SHORT") or (not w1_bear and not d1_bear and signal == "LONG")
-        diamond_note = "⭐ ĐỒNG PHA TUẦN + NGÀY: Khả năng thắng cực cao khi đón râu test M15!" if is_diamond else "⚡ Lưu ý quản lý vốn chặt chẽ theo từng phiên."
+            signal = "SHORT" if d1_bear else "LONG"
+            setup_desc = f"Cấu Trúc SMC M15 tại Cản ${major_res:,.2f}"
+            diamond_note = "⚡ Quản lý vốn chặt chẽ theo cản."
         
         if signal == "SHORT":
-            sweep_level = max(m5_high, m15_high)
-            # Entry 1: Bán Limit đón râu nến hồi test lại POC M15 hoặc FVG/EMA20 (rất dễ khớp)
-            entry_limit = round(poc_gold_m15 if poc_gold_m15 > current_gold else current_gold + 3.0, 2)
-            if entry_limit > sweep_level - 1.0:
-                entry_limit = round(sweep_level - 2.0, 2)
+            # ENTRY LIMIT: Neo chặt tại CẢN TO THẬT SỰ ($3,542 - $3,544), TUYỆT ĐỐI KHÔNG BÁN LƯNG CHỪNG
+            entry_limit = round(max(poc_gold_m15, major_res - 2.0), 2)
+            if entry_limit < current_gold:
+                entry_limit = round(major_res - 1.5, 2)
                 
             # Entry 2: Bán Stop khi gãy đáy xác nhận sóng xả tiếp diễn
             entry_stop = round(m15_low - 1.2, 2)
             
-            # SL ĐẶT TRÊN RÂU NẾN TEST OANDA: đệm 1.8 giá ngoài đỉnh râu test (Chuẩn MT5)
-            sl = round(sweep_level + 1.8, 2)
+            # SL ĐẶT TRÊN CẢN TO THẬT SỰ: đệm 1.8 giá ngoài đỉnh cản to
+            sl = round(major_res + 1.8, 2)
             sl_dist = round(sl - entry_limit, 2)
             if sl_dist < 10.0:
                 sl = round(entry_limit + 12.0, 2)
@@ -345,35 +357,33 @@ def calculate_gold_h4_plan():
             tp1 = round(entry_limit - (sl_dist * 2.0), 2)
             tp2 = round(entry_limit - (sl_dist * 3.5), 2)
             
-            setup_desc = f"Quét Râu Test Đỉnh M15 tại ${sweep_level:,.2f} + CHoCH Giảm"
             advice = (
-                f"⚠️ <b>CẮT SỚM KHI XẤU:</b> Nếu có nến M15 đóng cửa trên đỉnh râu test <b>${sweep_level:,.2f}</b> -> Thoát sớm bằng tay trên MT5!\n"
-                f"💎 <b>DCA NHỒI KHI ĐẸP:</b> Khớp Lệnh 1 và giá sập thủng đáy <b>${entry_stop:,.2f}</b> (lãi > {sl_dist*0.7:.1f} giá), dời SL về Hoà Vốn (Entry) và kích hoạt Lệnh 2 (Sell Stop) để ăn sóng xả Tuần/Ngày!"
+                f"⚠️ <b>KHÔNG BÁN LƯNG CHỪNG:</b> Giá hiện tại ${current_gold:,.2f} ở giữa sóng, chỉ đặt Sell Limit đón tại <b>Cản To ${major_res:,.2f}</b>!\n"
+                f"💎 <b>DCA NHỒI KHI ĐẸP:</b> Khớp Lệnh 1 và giá sập thủng đáy <b>${entry_stop:,.2f}</b> (lãi > {sl_dist*0.7:.1f} giá), dời SL về Hoà Vốn (Entry) và kích hoạt Lệnh 2 (Sell Stop)!"
             )
         else: # LONG
-            sweep_level = min(m5_low, m15_low)
-            entry_limit = round(poc_gold_m15 if poc_gold_m15 < current_gold else current_gold - 3.0, 2)
-            if entry_limit < sweep_level + 1.0:
-                entry_limit = round(sweep_level + 2.0, 2)
+            # ENTRY LIMIT: Neo chặt tại HỖ TRỢ TO / ĐÁY 2 (không bắt đáy vô cớ)
+            entry_limit = round(min(poc_gold_m15, major_sup + 5.0), 2)
+            if entry_limit > current_gold:
+                entry_limit = round(current_gold - 2.5, 2)
                 
             entry_stop = round(m15_high + 1.2, 2)
             
-            sl = round(sweep_level - 1.8, 2)
+            sl = round(major_sup - 1.8, 2)
             sl_dist = round(entry_limit - sl, 2)
             if sl_dist < 10.0:
                 sl = round(entry_limit - 12.0, 2)
                 sl_dist = round(entry_limit - sl, 2)
             elif sl_dist > 26.0:
-                sl = round(entry_limit - 22.0, 2)
+                sl = round(entry_limit + 22.0, 2)
                 sl_dist = round(entry_limit - sl, 2)
                 
             tp1 = round(entry_limit + (sl_dist * 2.0), 2)
             tp2 = round(entry_limit + (sl_dist * 3.5), 2)
             
-            setup_desc = f"Quét Râu Test Đáy M15 tại ${sweep_level:,.2f} + CHoCH Tăng"
             advice = (
-                f"⚠️ <b>CẮT SỚM KHI XẤU:</b> Nếu có nến M15 đóng cửa gãy qua râu đáy test <b>${sweep_level:,.2f}</b> -> Thoát sớm bằng tay trên MT5!\n"
-                f"💎 <b>DCA NHỒI KHI ĐẸP:</b> Khớp Lệnh 1 và giá tăng bứt phá đỉnh <b>${entry_stop:,.2f}</b> (lãi > {sl_dist*0.7:.1f} giá), dời SL về Hoà Vốn (Entry) và kích hoạt Lệnh 2 (Buy Stop)!"
+                f"⚠️ <b>ĐẢO CHIỀU CÓ CHoCH:</b> Có xác nhận mô hình 2 Đáy tại hỗ trợ to ${major_sup:,.2f}, không bắt đáy vô cớ! SL dưới đáy hỗ trợ.\n"
+                f"💎 <b>DCA NHỒI KHI ĐẸP:</b> Khớp Lệnh 1 và giá bứt phá qua đỉnh <b>${entry_stop:,.2f}</b> (lãi > {sl_dist*0.7:.1f} giá), dời SL về Hoà Vốn và kích hoạt Lệnh 2 (Buy Stop)!"
             )
             
     except Exception as e:
