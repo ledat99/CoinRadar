@@ -368,6 +368,7 @@ def get_main_keyboard():
         "keyboard": [
             [{"text": "📈 Tìm Coin TĂNG (LONG)"}, {"text": "📉 Tìm Coin GIẢM (SHORT)"}],
             [{"text": "👑 Phân Tích BTC"}, {"text": "🥇 Phân Tích VÀNG (XAU)"}],
+            [{"text": "⚡ Tuyệt Chiêu H4 Lưỡng Lự"}],
             [{"text": "🔍 Kiểm Tra Lệnh & Báo Cáo Ngày"}, {"text": "⚙️ Menu Hỗ Trợ"}]
         ],
         "resize_keyboard": True
@@ -1183,6 +1184,194 @@ def handle_gold():
         send_telegram(f"Lỗi phân tích Vàng: {e}", reply_markup=get_main_keyboard())
 
 # ==========================================
+# 3. TUYỆT CHIÊU H4 LƯỠNG LỰ: BREAKOUT BUY STOP / SELL STOP
+# ==========================================
+def calculate_h4_breakout_plan(symbol='BTCUSDT', is_gold=False):
+    """
+    Tính toán Tuyệt Chiêu H4 Lưỡng Lự (Breakout Buy Stop & Sell Stop):
+    - Tự động nhận diện nến Doji, Inside Bar, Con Xoay Spinning Top khung H4
+    - Xác định Hộp Nén H4 [Low - High] và điểm Equilibrium 50%
+    - Thiết lập Entry Buy Stop, Sell Stop, SL, TP1 (R:R 1:1.5), TP2 (R:R 1:3.0)
+    """
+    try:
+        delta = 0.0
+        if is_gold:
+            # Đồng bộ giá Vàng theo OANDA:XAUUSD
+            plan_gold = calculate_gold_h4_plan()
+            curr_gold_ref = plan_gold['current_price']
+            url = 'https://api.bybit.com/v5/market/kline?category=linear&symbol=XAUUSDT&interval=240&limit=5'
+            req = urllib.request.Request(url, headers=HEADERS)
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                klines = json.loads(resp.read().decode())['result']['list']
+            bybit_close = float(klines[0][4])
+            delta = curr_gold_ref - bybit_close
+            curr_p = curr_gold_ref
+        else:
+            url = 'https://api.bybit.com/v5/market/kline?category=linear&symbol=BTCUSDT&interval=240&limit=5'
+            req = urllib.request.Request(url, headers=HEADERS)
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                klines = json.loads(resp.read().decode())['result']['list']
+            curr_p = float(klines[0][4])
+
+        c0, c1, c2 = klines[0], klines[1], klines[2]
+        
+        h1 = float(c1[2]) + delta
+        l1 = float(c1[3]) + delta
+        o1 = float(c1[1]) + delta
+        cl1 = float(c1[4]) + delta
+        
+        h2 = float(c2[2]) + delta
+        l2 = float(c2[3]) + delta
+        
+        rng1 = h1 - l1
+        body1 = abs(cl1 - o1)
+        up_wick1 = h1 - max(o1, cl1)
+        low_wick1 = min(o1, cl1) - l1
+        
+        is_inside = (h1 <= h2) and (l1 >= l2)
+        is_doji = (body1 <= rng1 * 0.45) and (up_wick1 >= rng1 * 0.18) and (low_wick1 >= rng1 * 0.18)
+        is_spinning = (body1 <= rng1 * 0.5) and (up_wick1 >= rng1 * 0.15) and (low_wick1 >= rng1 * 0.15)
+        
+        if is_inside:
+            pattern = "Nến Inside Bar (Nén Trong Nến Trước)"
+            note = "Sức nén cực mạnh, thị trường sắp bùng nổ theo hướng phá vỡ!"
+        elif is_doji:
+            pattern = "Nến Doji / Con Xoay (Lưỡng Lự Cực Độ)"
+            note = "Phe Mua và Bán giằng co bất phân thắng bại, râu nến 2 đầu cân bằng."
+        elif is_spinning:
+            pattern = "Nến Lưỡng Lự Spinning Top"
+            note = "Biên độ nén hẹp, phe Mua và Bán đang tích lũy năng lượng."
+        else:
+            pattern = "Hộp Biên Độ H4 Gần Nhất"
+            note = "Vùng tích lũy biên độ nến H4 trước khi tạo xu hướng mới."
+
+        dec = 2 if is_gold else 1
+        unit = "Giá" if is_gold else "USD"
+        buffer = 0.6 if is_gold else 50.0
+
+        box_high = round(h1, dec)
+        box_low = round(l1, dec)
+        box_mid = round((box_high + box_low) / 2.0, dec)
+        box_rng = round(box_high - box_low, dec)
+
+        # Kịch bản BUY STOP (Vượt đỉnh H4)
+        buy_entry = round(box_high + buffer, dec)
+        if is_gold:
+            buy_sl = round(box_low - 0.5, dec) if box_rng <= 15.0 else round(box_mid - 0.5, dec)
+        else:
+            buy_sl = round(box_low - 50.0, dec) if box_rng <= 1200.0 else round(box_mid - 50.0, dec)
+        buy_risk = round(buy_entry - buy_sl, dec)
+        buy_tp1 = round(buy_entry + (buy_risk * 1.5), dec)
+        buy_tp2 = round(buy_entry + (buy_risk * 3.0), dec)
+
+        # Kịch bản SELL STOP (Sập đáy H4)
+        sell_entry = round(box_low - buffer, dec)
+        if is_gold:
+            sell_sl = round(box_high + 0.5, dec) if box_rng <= 15.0 else round(box_mid + 0.5, dec)
+        else:
+            sell_sl = round(box_high + 50.0, dec) if box_rng <= 1200.0 else round(box_mid + 50.0, dec)
+        sell_risk = round(sell_sl - sell_entry, dec)
+        sell_tp1 = round(sell_entry - (sell_risk * 1.5), dec)
+        sell_tp2 = round(sell_entry - (sell_risk * 3.0), dec)
+
+        # Trạng thái giá hiện tại so với Hộp H4
+        if curr_p >= box_high:
+            status = "🚀 ĐÃ BÙNG NỔ VƯỢT ĐỈNH H4"
+            status_desc = f"Giá (${curr_p:,.{dec}f}) đã phá vỡ đỉnh H4 (${box_high:,.{dec}f}). Nếu đã khớp Buy Stop, gồng tiếp về TP1/TP2!"
+        elif curr_p <= box_low:
+            status = "📉 ĐÃ SẬP THỦNG ĐÁY H4"
+            status_desc = f"Giá (${curr_p:,.{dec}f}) đã phá vỡ đáy H4 (${box_low:,.{dec}f}). Nếu đã khớp Sell Stop, gồng tiếp về TP1/TP2!"
+        else:
+            status = "⏳ ĐANG NÉN TRONG HỘP H4 (CÀI SẴN 2 ĐẦU STOP)"
+            status_desc = f"Giá (${curr_p:,.{dec}f}) đang tích lũy nén trong hộp H4 [${box_low:,.{dec}f} - ${box_high:,.{dec}f}]. Thời điểm vàng để cài sẵn cả 2 đầu!"
+
+        return {
+            'symbol': 'XAUUSD' if is_gold else 'BTCUSDT',
+            'is_gold': is_gold,
+            'curr_p': curr_p,
+            'pattern': pattern,
+            'note': note,
+            'box_high': box_high,
+            'box_low': box_low,
+            'box_mid': box_mid,
+            'box_rng': box_rng,
+            'buy_entry': buy_entry,
+            'buy_sl': buy_sl,
+            'buy_risk': buy_risk,
+            'buy_tp1': buy_tp1,
+            'buy_tp2': buy_tp2,
+            'sell_entry': sell_entry,
+            'sell_sl': sell_sl,
+            'sell_risk': sell_risk,
+            'sell_tp1': sell_tp1,
+            'sell_tp2': sell_tp2,
+            'status': status,
+            'status_desc': status_desc,
+            'dec': dec,
+            'unit': unit
+        }
+    except Exception as e:
+        print(f"Lỗi calculate_h4_breakout_plan: {e}")
+        raise e
+
+def handle_h4_breakout():
+    try:
+        p_gold = calculate_h4_breakout_plan(symbol='XAUUSD', is_gold=True)
+        p_btc = calculate_h4_breakout_plan(symbol='BTCUSDT', is_gold=False)
+        
+        text = f"""⚡ <b>[TUYỆT CHIÊU BREAKOUT NẾN H4 LƯỠNG LỰ]</b> ⚡
+━━━━━━━━━━━━━━━━━━
+💡 <b>Nguyên lý cốt lõi:</b> Khi cây nến H4 xuất hiện dạng <i>Lưỡng Lự (Doji, Con Xoay, Inside Bar)</i>, thị trường tích lũy nén giá cực độ. Phá vỡ theo hướng nào sẽ bung sóng cực mạnh theo hướng đó!
+
+🥇 <b>1. VÀNG (OANDA:XAUUSD - Chuẩn MT5)</b>
+• 💰 Giá hiện tại: <code>${p_gold['curr_p']:,.2f}</code>
+• 📦 Hình thái H4: <b>{p_gold['pattern']}</b>
+• 🧱 Hộp nén H4: <code>[${p_gold['box_low']:,.2f} - ${p_gold['box_high']:,.2f}]</code> (Biên độ {p_gold['box_rng']} Giá)
+• ⚖️ Cân bằng 50%: <code>${p_gold['box_mid']:,.2f}</code>
+• 🎯 Trạng thái: <b>{p_gold['status']}</b>
+
+🟢 <b>KỊCH BẢN BUY STOP (Phá Đỉnh H4):</b>
+👉 <b>Entry Buy Stop:</b> <code>${p_gold['buy_entry']:,.2f}</code>
+🛡️ <b>Stop Loss:</b> <code>${p_gold['buy_sl']:,.2f}</code> (~{p_gold['buy_risk']} Giá)
+🎯 <b>TP1 (R:R 1:1.5 | Chốt 50% & Dời Hoà):</b> <code>${p_gold['buy_tp1']:,.2f}</code>
+🎯 <b>TP2 (R:R 1:3.0 | Gồng Trọn Sóng Bung):</b> <code>${p_gold['buy_tp2']:,.2f}</code>
+
+🔴 <b>KỊCH BẢN SELL STOP (Phá Đáy H4):</b>
+👉 <b>Entry Sell Stop:</b> <code>${p_gold['sell_entry']:,.2f}</code>
+🛡️ <b>Stop Loss:</b> <code>${p_gold['sell_sl']:,.2f}</code> (~{p_gold['sell_risk']} Giá)
+🎯 <b>TP1 (R:R 1:1.5 | Chốt 50% & Dời Hoà):</b> <code>${p_gold['sell_tp1']:,.2f}</code>
+🎯 <b>TP2 (R:R 1:3.0 | Gồng Trọn Sóng Bung):</b> <code>${p_gold['sell_tp2']:,.2f}</code>
+
+━━━━━━━━━━━━━━━━━━
+👑 <b>2. BITCOIN (BTCUSDT)</b>
+• 💰 Giá hiện tại: <code>${p_btc['curr_p']:,.1f}</code>
+• 📦 Hình thái H4: <b>{p_btc['pattern']}</b>
+• 🧱 Hộp nén H4: <code>[${p_btc['box_low']:,.1f} - ${p_btc['box_high']:,.1f}]</code> (Biên độ {p_btc['box_rng']:,.1f} USD)
+• ⚖️ Cân bằng 50%: <code>${p_btc['box_mid']:,.1f}</code>
+• 🎯 Trạng thái: <b>{p_btc['status']}</b>
+
+🟢 <b>KỊCH BẢN BUY STOP (Phá Đỉnh H4):</b>
+👉 <b>Entry Buy Stop:</b> <code>${p_btc['buy_entry']:,.1f}</code>
+🛡️ <b>Stop Loss:</b> <code>${p_btc['buy_sl']:,.1f}</code> (~{p_btc['buy_risk']:,.1f} USD)
+🎯 <b>TP1 (R:R 1:1.5 | Chốt 50% & Dời Hoà):</b> <code>${p_btc['buy_tp1']:,.1f}</code>
+🎯 <b>TP2 (R:R 1:3.0 | Gồng Trọn Sóng Bung):</b> <code>${p_btc['buy_tp2']:,.1f}</code>
+
+🔴 <b>KỊCH BẢN SELL STOP (Phá Đáy H4):</b>
+👉 <b>Entry Sell Stop:</b> <code>${p_btc['sell_entry']:,.1f}</code>
+🛡️ <b>Stop Loss:</b> <code>${p_btc['sell_sl']:,.1f}</code> (~{p_btc['sell_risk']:,.1f} USD)
+🎯 <b>TP1 (R:R 1:1.5 | Chốt 50% & Dời Hoà):</b> <code>${p_btc['sell_tp1']:,.1f}</code>
+🎯 <b>TP2 (R:R 1:3.0 | Gồng Trọn Sóng Bung):</b> <code>${p_btc['sell_tp2']:,.1f}</code>
+
+━━━━━━━━━━━━━━━━━━
+🧠 <b>CHIẾN THUẬT ĐẶT LỆNH 2 ĐẦU:</b>
+1. Khi giá đang nén trong hộp H4: Cài sẵn đồng thời cả 2 lệnh chờ <b>BUY STOP</b> và <b>SELL STOP</b>.
+2. <b>Khi 1 đầu khớp lệnh:</b> Ngay lập tức <b>HỦY</b> lệnh chờ ở đầu còn lại!
+3. <b>Khi giá đạt mốc TP1:</b> Chốt 50% khối lượng, đồng thời dời Stop Loss về giá Entry (Hoà vốn - Risk Free) để gồng tiếp về TP2!"""
+        send_telegram(text, reply_markup=get_main_keyboard())
+    except Exception as e:
+        send_telegram(f"Lỗi kiểm tra H4 Breakout: {e}", reply_markup=get_main_keyboard())
+
+# ==========================================
 # 3. QUÉT COIN THEO PHIÊN 1H - CỐ ĐỊNH ENTRY
 # ==========================================
 def scan_coins_bybit(mode='long', limit=3):
@@ -1354,6 +1543,8 @@ def run_bot():
                         send_telegram("Chọn một tính năng bên dưới:", reply_markup=get_main_keyboard())
                     elif text in ["/check", "check", "🔍 Kiểm Tra Lệnh & Báo Cáo Ngày"]:
                         handle_check_vip_trades()
+                    elif text in ["/h4", "⚡ Tuyệt Chiêu H4 Lưỡng Lự", "h4", "H4", "breakout", "Breakout"]:
+                        handle_h4_breakout()
                     elif text in ["/btc", "👑 Phân Tích BTC", "btc", "BTC"]:
                         handle_btc()
                     elif text in ["/gold", "🥇 Phân Tích VÀNG (XAU)", "gold", "vang", "Vàng"]:
