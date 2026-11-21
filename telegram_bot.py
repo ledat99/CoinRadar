@@ -42,25 +42,28 @@ def get_main_keyboard():
     }
 
 # ==========================================
-# 1. QUÉT COIN TRỰC TIẾP QUA BINANCE REST API (SIÊU NHẸ & KHÔNG PHỤ THUỘC CCXT)
+# 1. QUÉT COIN TRỰC TIẾP QUA BYBIT REST API (KHÔNG BỊ CHẶN IP DATACENTER / 418)
 # ==========================================
 def scan_coins_direct(mode='long', limit=3):
-    url = 'https://fapi.binance.com/fapi/v1/ticker/24hr'
+    url = 'https://api.bybit.com/v5/market/tickers?category=linear'
     req = urllib.request.Request(url, headers=HEADERS)
     with urllib.request.urlopen(req, timeout=10) as resp:
         data = json.loads(resp.read().decode())
+        tickers = data['result']['list']
         
     usdt_tickers = []
-    for d in data:
+    for d in tickers:
         sym = d['symbol']
+        vol = float(d.get('turnover24h', 0))
         # Chỉ lấy coin USDT và thanh khoản > $15 Triệu USD
-        if sym.endswith('USDT') and float(d.get('quoteVolume', 0)) > 15000000:
+        if sym.endswith('USDT') and vol > 15000000:
+            change_pct = float(d.get('price24hPcnt', 0)) * 100.0
             usdt_tickers.append({
                 'symbol': sym.replace('USDT', '/USDT'),
                 'raw_sym': sym,
                 'price': float(d['lastPrice']),
-                'change': float(d['priceChangePercent']),
-                'vol_m': float(d['quoteVolume']) / 1000000
+                'change': change_pct,
+                'vol_m': vol / 1000000
             })
             
     if mode == 'long':
@@ -73,24 +76,23 @@ def scan_coins_direct(mode='long', limit=3):
     
     for c in candidates:
         price = c['price']
-        # Tính toán mức đón râu nến & cắt lỗ an toàn
         if mode == 'long':
-            entry_limit = round(price * 0.992, 5) # Đón râu hồi thấp hơn giá hiện tại 0.8%
-            entry_stop = round(price * 1.008, 5)  # Mua đuổi khi phá cản trên 0.8%
-            sl = round(entry_limit * 0.975, 5)    # SL 2.5%
+            entry_limit = round(price * 0.992, 5)
+            entry_stop = round(price * 1.008, 5)
+            sl = round(entry_limit * 0.975, 5)
             sl_pct = 2.5
-            tp1 = round(entry_limit * 1.05, 5)    # TP1: +5.0% (R:R 1:2)
-            tp2 = round(entry_limit * 1.0875, 5)  # TP2: +8.75% (R:R 1:3.5)
+            tp1 = round(entry_limit * 1.05, 5)
+            tp2 = round(entry_limit * 1.0875, 5)
             status = "🟢 BIAS TĂNG (Volume Khủng)"
             limit_lbl = "BUY LIMIT (Đón Râu Hồi)"
             stop_lbl = "BUY STOP (Phá Cản Tiếp Diễn)"
         else: # short
-            entry_limit = round(price * 1.008, 5) # Đón râu giật hồi cao hơn giá hiện tại 0.8%
-            entry_stop = round(price * 0.992, 5)  # Bán đuổi thủng đáy 0.8%
-            sl = round(entry_limit * 1.025, 5)    # SL 2.5%
+            entry_limit = round(price * 1.008, 5)
+            entry_stop = round(price * 0.992, 5)
+            sl = round(entry_limit * 1.025, 5)
             sl_pct = 2.5
-            tp1 = round(entry_limit * 0.95, 5)    # TP1: +5.0%
-            tp2 = round(entry_limit * 0.9125, 5)  # TP2: +8.75%
+            tp1 = round(entry_limit * 0.95, 5)
+            tp2 = round(entry_limit * 0.9125, 5)
             status = "🔴 BIAS GIẢM (Lực Xả Mạnh)"
             limit_lbl = "SELL LIMIT (Đón Râu Cản)"
             stop_lbl = "SELL STOP (Phá Đáy Tiếp Diễn)"
@@ -141,18 +143,19 @@ def handle_scan(mode='long'):
         send_telegram(f"Lỗi quét: {e}", reply_markup=get_main_keyboard())
 
 # ==========================================
-# 2. PHÂN TÍCH BITCOIN TRỰC TIẾP
+# 2. PHÂN TÍCH BITCOIN TRỰC TIẾP QUA BYBIT (KHÔNG BỊ 418 IP BLOCK)
 # ==========================================
 def handle_btc():
     try:
-        url = 'https://fapi.binance.com/fapi/v1/ticker/24hr?symbol=BTCUSDT'
+        url = 'https://api.bybit.com/v5/market/tickers?category=linear&symbol=BTCUSDT'
         req = urllib.request.Request(url, headers=HEADERS)
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read().decode())
+            item = data['result']['list'][0]
             
-        price = float(data['lastPrice'])
-        change = float(data['priceChangePercent'])
-        vol = float(data['quoteVolume']) / 1000000
+        price = float(item['lastPrice'])
+        change = float(item.get('price24hPcnt', 0)) * 100.0
+        vol = float(item.get('turnover24h', 0)) / 1000000
         
         is_uptrend = change >= 0
         s_emoji = "🟢 LONG" if is_uptrend else "🔴 SHORT"
