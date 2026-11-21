@@ -102,19 +102,44 @@ def calculate_btc_h4_plan():
         hist, bin_edges = np.histogram(prices, bins=25, weights=weights)
         poc_m15 = round((bin_edges[np.argmax(hist)] + bin_edges[np.argmax(hist)+1]) / 2, 1)
 
-        # 3. Cản râu nến M15/H4
+        # 3. Cản râu nến M15/H4 & Phát hiện Quét Thanh Khoản (Sweep)
         highs = [float(k[2]) for k in m15_klines]
         lows = [float(k[3]) for k in m15_klines]
         swing_high = round(max(highs), 1)
         swing_low = round(min(lows), 1)
 
-        # Ưu tiên xu hướng theo Bias Tuần & Ngày
-        if w1_bear and d1_bear:
+        # Quét râu M15 trong các nến gần nhất (bắt các pha giật râu như lúc 13h15 đáy $55,100)
+        sweep_bull = None
+        sweep_bear = None
+        for k in m15_klines[:8]:
+            c_open, c_high, c_low, c_close = float(k[1]), float(k[2]), float(k[3]), float(k[4])
+            c_range = c_high - c_low
+            lower_wick = min(c_open, c_close) - c_low
+            upper_wick = c_high - max(c_open, c_close)
+            if c_range > 350.0:
+                if lower_wick / c_range > 0.45 and not sweep_bull:
+                    sweep_bull = {'low': c_low, 'close': c_close, 'wick': lower_wick}
+                elif upper_wick / c_range > 0.45 and not sweep_bear:
+                    sweep_bear = {'high': c_high, 'close': c_close, 'wick': upper_wick}
+
+        # Ưu tiên xu hướng:
+        # Nếu có Quét Râu Đáy mạnh (như pha rút chân 13h15) -> Ưu tiên LONG bắt nhịp tăng tốc
+        # Nếu có Quét Râu Đỉnh mạnh hoặc đồng pha W1/D1 -> Ưu tiên SHORT
+        if sweep_bull and not sweep_bear:
+            signal = "LONG"
+            setup_desc = f"Quét Râu Đáy M15 tại ${sweep_bull['low']:,.1f} (Rút râu {sweep_bull['wick']:.0f} giá) -> Bứt Tốc"
+        elif sweep_bear and not sweep_bull:
             signal = "SHORT"
+            setup_desc = f"Quét Râu Đỉnh M15 tại ${sweep_bear['high']:,.1f} (Rút râu {sweep_bear['wick']:.0f} giá) -> Đảo Chiều Giảm"
+        elif w1_bear and d1_bear:
+            signal = "SHORT"
+            setup_desc = f"Quét Râu Test Đỉnh M15 tại ${swing_high:,.1f} + CHoCH Giảm"
         elif not w1_bear and not d1_bear:
             signal = "LONG"
+            setup_desc = f"Quét Râu Test Đáy M15 tại ${swing_low:,.1f} + CHoCH Tăng"
         else:
             signal = "SHORT" if d1_bear else "LONG"
+            setup_desc = f"Cấu Trúc SMC M15 tại ${swing_high:,.1f}"
 
         is_diamond = (w1_bear and d1_bear and signal == "SHORT") or (not w1_bear and not d1_bear and signal == "LONG")
         diamond_note = "⭐ ĐỒNG PHA TUẦN + NGÀY (SETUP KIM CƯƠNG): BTC rất dễ đâm một mạch theo xu hướng chính!" if is_diamond else "⚡ Lưu ý quản lý vốn chặt chẽ theo từng phiên."
