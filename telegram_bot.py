@@ -25,6 +25,11 @@ PLAN_CACHE = {
     'COINS_SHORT': {'time': 0, 'data': []}
 }
 
+LAST_ALERT_TIME = {
+    'GOLD': 0,
+    'BTC': 0
+}
+
 def send_telegram(text, reply_markup=None):
     url = f"https://api.telegram.org/bot{CONFIG['TELEGRAM_BOT_TOKEN']}/sendMessage"
     payload = {
@@ -611,7 +616,102 @@ def run_bot():
         except Exception as e:
             time.sleep(3)
 
+def auto_diamond_alert_worker():
+    """Quét tự động ngầm mỗi 3 phút - Phát hiện Setup Kim Cương (Đồng pha Tuần/Ngày & Test POC) là tự động bắn Telegram"""
+    time.sleep(20) # Chờ bot khởi động ổn định 20 giây
+    while True:
+        try:
+            now = time.time()
+            
+            # 1. QUÉT TỰ ĐỘNG VÀNG (OANDA:XAUUSD - Chuẩn MT5)
+            if now - LAST_ALERT_TIME['GOLD'] > 3600: # Cooldown 1 tiếng mỗi thông báo
+                plan_gold = calculate_gold_h4_plan()
+                if "ĐỒNG PHA TUẦN + NGÀY" in plan_gold.get('diamond_note', ''):
+                    price_gold = plan_gold['current_price']
+                    entry_gold = plan_gold['entry_limit']
+                    # Nếu giá đang trong vùng retest POC M15 hoặc râu test (cách entry < 4 giá)
+                    if abs(price_gold - entry_gold) <= 4.0:
+                        s_emoji = "🔴 SHORT (BÁN)" if plan_gold['signal'] == 'SHORT' else "🟢 LONG (MUA)"
+                        action_l = "LỆNH VÀO NGAY (Vùng POC M15):" if plan_gold['signal'] == 'SHORT' else "LỆNH VÀO NGAY (Vùng POC M15):"
+                        msg = f"""🚨 <b>[TỰ ĐỘNG BÁO KÈO: SETUP KIM CƯƠNG VÀNG XAUUSD]</b> 🚨
+━━━━━━━━━━━━━━━━━━
+📊 Nguồn biểu đồ: <b>TradingView (OANDA:XAUUSD - Chuẩn MT5)</b>
+💰 Giá Vàng hiện tại: <b>${price_gold:,.2f}</b> (Đang trong vùng Retest POC M15!)
+🎯 <b>Vùng POC M15 (Thanh khoản):</b> <code>${plan_gold['poc_m15']:,.2f}</code>
+⚡ <b>Cấu trúc SMC:</b> <b>{plan_gold['setup_desc']}</b>
+━━━━━━━━━━━━━━━━━━
+💎 <b>ĐỒNG PHA BIAS ĐA KHUNG (WINRATE CAO):</b>
+• <b>Bias Tuần (W1):</b> {plan_gold['w1_bias']}
+• <b>Bias Ngày (D1):</b> {plan_gold['d1_bias']}
+<i>🔥 Tín hiệu rất đẹp: Giá vừa giật râu test cản/3 đỉnh xong, vào lệnh ngay!</i>
+━━━━━━━━━━━━━━━━━━
+🚀 <b>KHUYẾN NGHỊ VÀO LỆNH: {s_emoji}</b>
+👉 <b>{action_l}</b>
+   <code>${entry_gold:,.2f}</code>
+👉 <b>LỆNH STOP NHỒI SÓNG TIẾP DIỄN:</b>
+   <code>${plan_gold['entry_stop']:,.2f}</code>
+
+🛡️ <b>Cắt lỗ (SL Trên Râu Test M15):</b>
+   <code>${plan_gold['sl']:,.2f}</code> (~{plan_gold['sl_dist']:.1f} Giá)
+🎯 <b>Chốt lời 1 (TP1 - R:R 1:2):</b> <code>${plan_gold['tp1']:,.2f}</code>
+🎯 <b>Chốt lời 2 (TP2 - R:R 1:3.5):</b> <code>${plan_gold['tp2']:,.2f}</code>
+
+🧠 <b>Kế hoạch xử lý:</b>
+{plan_gold['advice']}
+
+🛡️ <b>QUẢN LÝ VỐN VÀNG MT5 (${CONFIG['ACCOUNT_BALANCE']:,.0f}):</b>
+• Rủi ro tối đa 2%: <b>$20.0</b> (tương đương 0.01 - 0.02 lot trên MT5)"""
+                        send_telegram(msg)
+                        LAST_ALERT_TIME['GOLD'] = now
+
+            # 2. QUÉT TỰ ĐỘNG BITCOIN (BTCUSDT)
+            if now - LAST_ALERT_TIME['BTC'] > 3600:
+                plan_btc = calculate_btc_h4_plan()
+                if "ĐỒNG PHA TUẦN + NGÀY" in plan_btc.get('diamond_note', ''):
+                    price_btc = plan_btc['current_price']
+                    entry_l = plan_btc['entry_limit']
+                    entry_s = plan_btc['entry_stop']
+                    # Nếu giá đang test lại POC M15 hoặc chuẩn bị phá vỡ Lệnh 2 Stop
+                    if abs(price_btc - entry_l) <= price_btc * 0.008 or abs(price_btc - entry_s) <= price_btc * 0.005:
+                        s_emoji = "🔴 SHORT (BÁN)" if plan_btc['signal'] == 'SHORT' else "🟢 LONG (MUA)"
+                        action_l = "LỆNH 1: Bán Limit Đón Râu Hồi Retest POC M15" if plan_btc['signal'] == 'SHORT' else "LỆNH 1: Mua Limit Đón Râu Hồi Retest POC M15"
+                        action_s = "LỆNH 2: Bán Stop Phá Đáy - Bắt Trọn Cú Xả Đâm 1 Mạch" if plan_btc['signal'] == 'SHORT' else "LỆNH 2: Mua Stop Phá Đỉnh - Bắt Trọn Cú Bơm Đâm 1 Mạch"
+                        msg = f"""🚨 <b>[TỰ ĐỘNG BÁO KÈO: SETUP KIM CƯƠNG BITCOIN]</b> 🚨
+━━━━━━━━━━━━━━━━━━
+💰 Giá BTC hiện tại: <b>${price_btc:,.1f}</b> (Đang tiếp cận điểm kích hoạt!)
+🎯 <b>Vùng POC M15 (Volume cốt lõi):</b> <code>${plan_btc['poc']:,.1f}</code>
+⚡ <b>Cấu trúc SMC:</b> <b>{plan_btc['setup_desc']}</b>
+━━━━━━━━━━━━━━━━━━
+💎 <b>ĐỒNG PHA BIAS ĐA KHUNG (WINRATE CAO):</b>
+• <b>Bias Tuần (W1):</b> {plan_btc['w1_bias']}
+• <b>Bias Ngày (D1):</b> {plan_btc['d1_bias']}
+<i>🔥 BTC quán tính cực mạnh, khi xuôi sóng vĩ mô thường đâm một mạch không test!</i>
+━━━━━━━━━━━━━━━━━━
+🚀 <b>KHUYẾN NGHỊ VÀO LỆNH: {s_emoji}</b>
+👉 <b>{action_l}:</b>
+   <code>${entry_l:,.1f}</code>
+👉 <b>{action_s}:</b>
+   <code>${entry_s:,.1f}</code>
+
+🛡️ <b>Cắt lỗ (SL Ngoài Cản Râu M15/H4):</b> <code>${plan_btc['sl']:,.1f}</code> (-{plan_btc['sl_pct']}%)
+🎯 <b>Chốt lời 1 (TP1 - R:R 1:2):</b> <code>${plan_btc['tp1']:,.1f}</code>
+🎯 <b>Chốt lời 2 (TP2 - R:R 1:3.5):</b> <code>${plan_btc['tp2']:,.1f}</code>
+
+🧠 <b>Kế hoạch xử lý:</b>
+{plan_btc['advice']}
+
+🛡️ <b>QUẢN LÝ VỐN (${CONFIG['ACCOUNT_BALANCE']:,.0f}):</b>
+• Rủi ro tối đa 2%: <b>$20.0</b> | Khối lượng: <b>$1,000.0</b> | Đòn bẩy: <b>5x</b>"""
+                        send_telegram(msg)
+                        LAST_ALERT_TIME['BTC'] = now
+
+        except Exception as e:
+            print(f"Lỗi worker quét tự động: {e}")
+            
+        time.sleep(180) # Quét lại mỗi 3 phút
+
 if __name__ == '__main__':
     threading.Thread(target=start_health_server, daemon=True).start()
     threading.Thread(target=self_ping_worker, daemon=True).start()
+    threading.Thread(target=auto_diamond_alert_worker, daemon=True).start()
     run_bot()
