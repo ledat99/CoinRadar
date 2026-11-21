@@ -170,19 +170,115 @@ def quick_scan_market(mode='long', limit=5):
         print(f"Lỗi quick scan: {e}")
         return []
 
+def get_oanda_gold_tradingview():
+    """
+    Lấy dữ liệu thời gian thực trực tiếp từ biểu đồ OANDA:XAUUSD trên TradingView:
+    Bao gồm: Giá Close, Open, High, Low, Volume, RSI M15, ATR M15, EMA20 M15, EMA50 M15.
+    """
+    import urllib.request
+    import json
+    url = 'https://scanner.tradingview.com/cfd/scan'
+    payload = json.dumps({
+        'symbols': {'tickers': ['OANDA:XAUUSD']},
+        'columns': [
+            'close|15', 'open|15', 'high|15', 'low|15', 'volume|15',
+            'RSI|15', 'ATR|15', 'EMA20|15', 'EMA50|15', 'Recommend.All|15'
+        ]
+    }).encode()
+    headers = {'User-Agent': 'Mozilla/5.0'}
+    req = urllib.request.Request(url, data=payload, headers=headers)
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        data = json.loads(resp.read().decode())
+        row = data['data'][0]['d']
+        return {
+            'close': row[0],
+            'open': row[1],
+            'high': row[2],
+            'low': row[3],
+            'volume': row[4],
+            'rsi': row[5],
+            'atr': row[6],
+            'ema_20': row[7],
+            'ema_50': row[8],
+            'recommendation': row[9]
+        }
+
 def analyze_major_asset(symbol='BTC/USDT', risk_capital_percent=2.0, account_balance=1000.0, timeframe='15m'):
     """
-    Phân tích chuyên sâu cho các tài sản lớn (BTC/USDT hoặc XAU/USDT - Vàng thế giới).
+    Phân tích chuyên sâu cho các tài sản lớn:
+    - Vàng: Lấy trực tiếp từ biểu đồ OANDA:XAUUSD trên TradingView.
+    - BTC: Lấy từ Binance Futures BTC/USDT.
     Tính toán chính xác Entry, SL, TP (R:R 1:2 & 1:3), và Khối lượng vào lệnh (% Vốn).
     """
     try:
-        # Nếu là phân tích vàng, ưu tiên dùng XAU/USDT:USDT (Hợp đồng Vàng thế giới volume > 4 Tỷ USD/ngày)
-        target_symbol = symbol
+        # NẾU LÀ VÀNG -> LẤY TỪ OANDA:XAUUSD TRADINGVIEW
         if 'PAXG' in symbol or 'XAU' in symbol or 'GOLD' in symbol:
-            target_symbol = 'XAU/USDT:USDT'
-        elif ':USDT' not in target_symbol:
-            target_symbol = f"{symbol}:USDT"
+            try:
+                tv_data = get_oanda_gold_tradingview()
+                price = tv_data['close']
+                atr = tv_data['atr']
+                rsi = tv_data['rsi']
+                ema_20 = tv_data['ema_20']
+                ema_50 = tv_data['ema_50']
+                
+                signal = None
+                if price > ema_20 and ema_20 > ema_50 and 48 <= rsi <= 68:
+                    signal = "LONG"
+                    sl = price - (1.8 * atr)
+                    sl_dist = price - sl
+                    tp1 = price + (sl_dist * 2.0)
+                    tp2 = price + (sl_dist * 3.0)
+                elif price < ema_20 and ema_20 < ema_50 and 32 <= rsi <= 52:
+                    signal = "SHORT"
+                    sl = price + (1.8 * atr)
+                    sl_dist = sl - price
+                    tp1 = price - (sl_dist * 2.0)
+                    tp2 = price - (sl_dist * 3.0)
+                    
+                if not signal:
+                    return {
+                        'has_signal': False,
+                        'symbol': 'OANDA:XAUUSD (TradingView)',
+                        'price': price,
+                        'rsi': rsi,
+                        'volume': tv_data['volume'],
+                        'trend': "UPTREND" if price > ema_50 else "DOWNTREND",
+                        'ema_20': ema_20,
+                        'ema_50': ema_50
+                    }
+                    
+                sl_percent = (sl_dist / price) * 100
+                max_loss_usd = account_balance * (risk_capital_percent / 100.0)
+                position_size_usd = (max_loss_usd / (sl_percent / 100.0))
+                suggested_leverage = min(20, max(2, int(position_size_usd / account_balance)))
+                margin_needed = position_size_usd / suggested_leverage
+                margin_percent = (margin_needed / account_balance) * 100.0
 
+                return {
+                    'has_signal': True,
+                    'symbol': 'OANDA:XAUUSD (TradingView)',
+                    'type': signal,
+                    'entry': price,
+                    'sl': sl,
+                    'sl_percent': sl_percent,
+                    'tp1': tp1,
+                    'tp2': tp2,
+                    'rr_tp1': "1:2.0",
+                    'rr_tp2': "1:3.0",
+                    'risk_percent': risk_capital_percent,
+                    'position_size_usd': position_size_usd,
+                    'suggested_leverage': f"{suggested_leverage}x",
+                    'margin_percent': margin_percent,
+                    'margin_usd': margin_needed,
+                    'rsi': rsi,
+                    'volume': tv_data['volume']
+                }
+            except Exception as e:
+                print(f"Lỗi lấy OANDA TradingView: {e}")
+                # Fallback qua Binance Futures nếu TV nghẽn mạng
+
+        # NẾU LÀ BITCOIN / COIN KHÁC -> BINANCE FUTURES
+        target_symbol = f"{symbol}:USDT" if ':USDT' not in symbol else symbol
         ohlcv = binance_futures.fetch_ohlcv(target_symbol, timeframe, limit=120)
         if not ohlcv or len(ohlcv) < 60:
             # Fallback nếu cần

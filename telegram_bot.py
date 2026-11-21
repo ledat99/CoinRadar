@@ -82,18 +82,19 @@ def handle_btc():
     send_telegram(text, reply_markup=get_main_keyboard())
 
 def handle_gold():
-    send_telegram("⏳ Đang phân tích thị trường Vàng thế giới (XAU/USDT - Volume > 4 Tỷ USD)...")
+    send_telegram("⏳ Đang phân tích biểu đồ OANDA:XAUUSD trực tiếp từ TradingView...")
     sig = analyze_major_asset('XAU/USDT', risk_capital_percent=CONFIG['RISK_PER_TRADE'], account_balance=CONFIG['ACCOUNT_BALANCE'])
     
     if not sig:
-        send_telegram("⚠️ Không thể tải dữ liệu Vàng (XAU/USDT) lúc này.")
+        send_telegram("⚠️ Không thể tải dữ liệu Vàng (OANDA:XAUUSD) lúc này.")
         return
         
-    text = f"""🥇 <b>[CHIẾN LƯỢC VÀNG THẾ GIỚI (XAU/USDT)]</b> 🥇
+    text = f"""🥇 <b>[CHIẾN LƯỢC VÀNG THẾ GIỚI (OANDA:XAUUSD)]</b> 🥇
 ━━━━━━━━━━━━━━━━━━
-💰 Giá Vàng thế giới: <b>${sig.get('price', sig.get('entry', 0)):,.2f}</b>
-📊 RSI M15: <b>{sig['rsi']:.1f}</b>
-🌊 Thanh khoản: <b>Khủng (> $4 Tỷ USD / 24h)</b>
+📊 Nguồn biểu đồ: <b>TradingView (OANDA)</b>
+💰 Giá Vàng hiện tại: <b>${sig.get('price', sig.get('entry', 0)):,.2f}</b>
+📈 RSI M15: <b>{sig['rsi']:.1f}</b>
+🌊 Tick Volume M15: <b>{sig.get('volume', 0):,}</b>
 ━━━━━━━━━━━━━━━━━━"""
 
     if sig['has_signal']:
