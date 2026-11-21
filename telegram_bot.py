@@ -60,67 +60,79 @@ def get_main_keyboard():
 # ==========================================
 # 1. KẾ HOẠCH BITCOIN: ĐỒNG PHA BIAS TUẦN/NGÀY + ENTRY POC M15 & STOP ĐUA SÓNG
 # ==========================================
-def find_smc_swings_and_ob(klines_desc):
+def find_smc_swings_and_ob(klines_desc, is_gold=False):
     """
     Xác định đỉnh/đáy cấu trúc uy tín (Major Swing Point) và Khối Lệnh Order Block (OB)
-    chuẩn SMC & Wyckoff trên khung H1 (loại bỏ hoàn toàn nhiễu của các khung nhỏ):
-    - Major Swing High: Đỉnh cao nhất trong phạm vi sóng tối thiểu 7 nến (+/- 3 nến), kèm lọc Inside Bar.
-    - Major Swing Low: Đáy thấp nhất trong phạm vi sóng tối thiểu 7 nến (+/- 3 nến), kèm lọc Inside Bar.
-    - Đảm bảo SH và SL là 2 mốc cản lớn khác biệt (khoảng cách tối thiểu 3 nến, không lấy 2 nến kề nhau).
-    - Khối Bearish OB H1: Cây nến tăng (xanh) cuối cùng tại vùng đỉnh trước cú xả mạnh.
-    - Khối Bullish OB H1: Cây nến giảm (đỏ) cuối cùng tại vùng đáy trước cú hồi mạnh.
+    chuẩn SMC & FX Dream KeyVolume trên khung H1 (loại bỏ hoàn toàn nhiễu M15):
+    - ĐẶC ĐIỂM CỐT LÕI (FX DREAM): Khối OB không phụ thuộc vào thời gian gần hay xa, quan trọng là TÍNH HỢP LỆ (UNMITIGATED):
+      1. Khối Bearish OB (Kháng cự): Phải nằm TRÊN giá hiện tại, chưa bị cây nến nào đóng cửa phá vỡ đỉnh (Unmitigated).
+      2. Khối Bullish OB (Hỗ trợ): Phải nằm DƯỚI giá hiện tại, chưa bị cây nến nào đóng cửa xuyên thủng đáy (Unmitigated).
+      3. Biên độ OB hợp lý: Từ chóp râu ngoài cùng đến thân nến (dày 2.5 - 6.0 giá Vàng, hoặc 150 - 400 giá BTC), tuyệt đối không ôm trọn cả con sóng hàng chục giá!
     """
     chrono = list(reversed(klines_desc))
     n = len(chrono)
+    if n < 6:
+        return {'time': 'H1', 'high': 0, 'low': 0, 'filter': 'Mặc định'}, {'top': 0, 'bottom': 0, 'mid': 0}, {'time': 'H1', 'high': 0, 'low': 0, 'filter': 'Mặc định'}, {'top': 0, 'bottom': 0, 'mid': 0}
+        
+    curr_p = float(chrono[-1][4])
     
-    sh_cands = []
-    sl_cands = []
-    
-    for i in range(3, n - 3):
+    # 1. Tìm tất cả các Swing Highs và Swing Lows trong 60 nến H1
+    sh_list = []
+    sl_list = []
+    for i in range(2, n - 2):
         h = float(chrono[i][2])
         l = float(chrono[i][3])
-        if all(h >= float(chrono[j][2]) for j in range(i - 3, i + 4)):
+        if all(h >= float(chrono[j][2]) for j in range(max(0, i - 2), min(n, i + 3))):
             t = datetime.datetime.fromtimestamp(int(chrono[i][0])/1000, tz=TZ_VN).strftime('%H:%M %d/%m')
-            sh_cands.append({'idx': i, 'time': t, 'high': h, 'low': l, 'open': float(chrono[i][1]), 'close': float(chrono[i][4]), 'filter': 'Major H1 Swing'})
-        if all(l <= float(chrono[j][3]) for j in range(i - 3, i + 4)):
+            sh_list.append({'idx': i, 'time': t, 'high': h, 'low': l, 'open': float(chrono[i][1]), 'close': float(chrono[i][4]), 'vol': float(chrono[i][5]), 'filter': 'H1 Unmitigated OB'})
+        if all(l <= float(chrono[j][3]) for j in range(max(0, i - 2), min(n, i + 3))):
             t = datetime.datetime.fromtimestamp(int(chrono[i][0])/1000, tz=TZ_VN).strftime('%H:%M %d/%m')
-            sl_cands.append({'idx': i, 'time': t, 'high': h, 'low': l, 'open': float(chrono[i][1]), 'close': float(chrono[i][4]), 'filter': 'Major H1 Swing'})
-            
-    valid_sh = sh_cands[-1] if sh_cands else {'idx': n-1, 'time': 'H1', 'high': float(chrono[-1][2]), 'low': float(chrono[-1][3]), 'open': float(chrono[-1][1]), 'close': float(chrono[-1][4]), 'filter': 'Mặc định'}
-    valid_sl = sl_cands[-1] if sl_cands else {'idx': n-1, 'time': 'H1', 'high': float(chrono[-1][2]), 'low': float(chrono[-1][3]), 'open': float(chrono[-1][1]), 'close': float(chrono[-1][4]), 'filter': 'Mặc định'}
-    
-    # Đảm bảo SH và SL là 2 mốc cản lớn khác biệt (khoảng cách tối thiểu 3 nến, không lấy 2 nến kề nhau)
-    if abs(valid_sh.get('idx', 0) - valid_sl.get('idx', 0)) < 3:
-        if valid_sh.get('idx', 0) > valid_sl.get('idx', 0) and len(sh_cands) > 1:
-            valid_sh = sh_cands[-2]
-        elif valid_sl.get('idx', 0) > valid_sh.get('idx', 0) and len(sl_cands) > 1:
-            valid_sl = sl_cands[-2]
+            sl_list.append({'idx': i, 'time': t, 'high': h, 'low': l, 'open': float(chrono[i][1]), 'close': float(chrono[i][4]), 'vol': float(chrono[i][5]), 'filter': 'H1 Unmitigated OB'})
 
-    # Bearish OB H1: Cây nến tăng (xanh) cuối cùng tại đỉnh trước cú xả mạnh
-    sh_idx = valid_sh.get('idx', n-1)
-    b_c = chrono[sh_idx]
-    for k in range(sh_idx, max(0, sh_idx - 4), -1):
-        if float(chrono[k][4]) >= float(chrono[k][1]): # nến xanh
-            b_c = chrono[k]
-            break
-    b_ob_top = float(b_c[2])
-    b_ob_bot = min(float(b_c[1]), float(b_c[4]))
-    if b_ob_top == b_ob_bot:
-        b_ob_bot = round(b_ob_top * 0.997, 2)
-    bearish_ob = {'top': b_ob_top, 'bottom': b_ob_bot, 'mid': round((b_ob_top + b_ob_bot) / 2.0, 2), 'time': valid_sh['time'], 'filter': valid_sh['filter']}
+    # 2. Lọc Bearish OB hợp lệ (Unmitigated: Nằm trên giá hiện tại & Chưa bị phá đỉnh)
+    unmitigated_sh = []
+    for sh in reversed(sh_list):
+        if sh['high'] > curr_p:
+            broken = any(float(chrono[k][4]) > sh['high'] for k in range(sh['idx'] + 1, n))
+            if not broken:
+                unmitigated_sh.append(sh)
 
-    # Bullish OB H1: Cây nến giảm (đỏ) cuối cùng tại đáy trước cú hồi
-    sl_idx = valid_sl.get('idx', n-1)
-    bl_c = chrono[sl_idx]
-    for k in range(sl_idx, max(0, sl_idx - 4), -1):
-        if float(chrono[k][4]) <= float(chrono[k][1]): # nến đỏ
-            bl_c = chrono[k]
-            break
-    bull_ob_bot = float(bl_c[3])
-    bull_ob_top = max(float(bl_c[1]), float(bl_c[4]))
-    if bull_ob_top == bull_ob_bot:
-        bull_ob_top = round(bull_ob_bot * 1.003, 2)
-    bullish_ob = {'top': bull_ob_top, 'bottom': bull_ob_bot, 'mid': round((bull_ob_top + bull_ob_bot) / 2.0, 2), 'time': valid_sl['time'], 'filter': valid_sl['filter']}
+    # 3. Lọc Bullish OB hợp lệ (Unmitigated: Nằm dưới giá hiện tại & Chưa bị phá đáy)
+    unmitigated_sl = []
+    for sl in reversed(sl_list):
+        if sl['low'] < curr_p:
+            broken = any(float(chrono[k][4]) < sl['low'] for k in range(sl['idx'] + 1, n))
+            if not broken:
+                unmitigated_sl.append(sl)
+
+    valid_sh = unmitigated_sh[0] if unmitigated_sh else (sh_list[-1] if sh_list else {'time': 'H1', 'high': curr_p * 1.01, 'open': curr_p, 'close': curr_p, 'filter': 'Mặc định'})
+    valid_sl = unmitigated_sl[0] if unmitigated_sl else (sl_list[-1] if sl_list else {'time': 'H1', 'low': curr_p * 0.99, 'open': curr_p, 'close': curr_p, 'filter': 'Mặc định'})
+
+    # Tính khối Bearish OB H1 (Đỉnh râu đến thân nến, khống chế độ dày hợp lý)
+    b_ob_top = valid_sh['high']
+    b_body = max(valid_sh['open'], valid_sh['close']) if valid_sh['close'] < valid_sh['open'] else min(valid_sh['open'], valid_sh['close'])
+    max_w = 6.0 if is_gold else 400.0
+    min_w = 2.5 if is_gold else 150.0
+    if (b_ob_top - b_body) > max_w:
+        b_ob_bot = round(b_ob_top - max_w, 2 if is_gold else 1)
+    elif (b_ob_top - b_body) < min_w:
+        b_ob_bot = round(b_ob_top - min_w, 2 if is_gold else 1)
+    else:
+        b_ob_bot = round(b_body, 2 if is_gold else 1)
+    b_ob_mid = round((b_ob_top + b_ob_bot) / 2.0, 2 if is_gold else 1)
+    bearish_ob = {'top': b_ob_top, 'bottom': b_ob_bot, 'mid': b_ob_mid, 'time': valid_sh['time'], 'filter': valid_sh.get('filter', 'H1 Unmitigated OB')}
+
+    # Tính khối Bullish OB H1 (Đáy râu đến thân nến, khống chế độ dày hợp lý)
+    bull_ob_bot = valid_sl['low']
+    bull_body = min(valid_sl['open'], valid_sl['close']) if valid_sl['close'] > valid_sl['open'] else max(valid_sl['open'], valid_sl['close'])
+    if (bull_body - bull_ob_bot) > max_w:
+        bull_ob_top = round(bull_ob_bot + max_w, 2 if is_gold else 1)
+    elif (bull_body - bull_ob_bot) < min_w:
+        bull_ob_top = round(bull_ob_bot + min_w, 2 if is_gold else 1)
+    else:
+        bull_ob_top = round(bull_body, 2 if is_gold else 1)
+    bull_ob_mid = round((bull_ob_bot + bull_ob_top) / 2.0, 2 if is_gold else 1)
+    bullish_ob = {'top': bull_ob_top, 'bottom': bull_ob_bot, 'mid': bull_ob_mid, 'time': valid_sl['time'], 'filter': valid_sl.get('filter', 'H1 Unmitigated OB')}
 
     return valid_sh, bearish_ob, valid_sl, bullish_ob
 
@@ -239,7 +251,7 @@ def calculate_btc_h4_plan():
         d1_bias = "🔴 GIẢM (BEARISH)" if d1_bear else "🟢 TĂNG (BULLISH)"
 
         # 2. Cấu Trúc SMC & Order Block (OB H1 Chuẩn - Khung Lớn Không Nhiễu)
-        valid_sh, bearish_ob, valid_sl, bullish_ob = find_smc_swings_and_ob(h1_klines)
+        valid_sh, bearish_ob, valid_sl, bullish_ob = find_smc_swings_and_ob(h1_klines, is_gold=False)
         swing_high = round(valid_sh['high'], 1)
         sh_time = valid_sh['time']
         sh_filter = valid_sh['filter']
@@ -434,6 +446,12 @@ def calculate_gold_h4_plan():
     if PLAN_CACHE['GOLD']['data'] and (now - PLAN_CACHE['GOLD']['candle_time'] < 3600):
         return PLAN_CACHE['GOLD']['data']
         
+    confirm_badge = "⏳ ĐANG CHỜ XÁC NHẬN (CHƯA VÀO LỆNH)"
+    is_bear_confirmed = False
+    is_bull_confirmed = False
+    m5_entry_high = 3547.0
+    m5_entry_low = 3508.0
+
     try:
         # Lấy dữ liệu đa khung thời gian từ TradingView cho OANDA:XAUUSD
         url = 'https://scanner.tradingview.com/cfd/scan'
@@ -471,7 +489,7 @@ def calculate_gold_h4_plan():
         with urllib.request.urlopen(req_g, timeout=8) as r:
             gold_h1_klines = json.loads(r.read().decode())['result']['list']
 
-        sh_raw, b_ob_raw, sl_raw, bull_ob_raw = find_smc_swings_and_ob(gold_h1_klines)
+        sh_raw, b_ob_raw, sl_raw, bull_ob_raw = find_smc_swings_and_ob(gold_h1_klines, is_gold=True)
         delta = current_gold - float(gold_h1_klines[0][4])
         
         major_res = round(sh_raw['high'] + delta, 2)
@@ -520,7 +538,18 @@ def calculate_gold_h4_plan():
             m5_entry_high = round(m5_info['m5_high'] + delta, 2)
             m5_entry_low = round(m5_info['m5_low'] + delta, 2)
         except Exception:
-            m5_info = {'has_multi_tops': False, 'has_multi_bottoms': False, 'upper_wicks_count': 0, 'lower_wicks_count': 0}
+            m5_info = {
+                'has_multi_tops': False,
+                'has_multi_bottoms': False,
+                'upper_wicks_count': 0,
+                'lower_wicks_count': 0,
+                'is_confirmed_entry_bear': False,
+                'is_confirmed_entry_bull': False,
+                'confirmed_bear_rejection': None,
+                'confirmed_bull_rejection': None,
+                'm5_high': m5_high,
+                'm5_low': m15_low
+            }
             m5_entry_high = m5_high
             m5_entry_low = m15_low
 
@@ -632,16 +661,21 @@ def calculate_gold_h4_plan():
         entry_stop = 3505.0
         major_res = 3547.0
         b_ob_top = 3547.0
-        b_ob_bot = 3537.0
-        b_ob_mid = 3542.0
+        b_ob_bot = 3542.0
+        b_ob_mid = 3544.5
         major_sup = 3508.0
-        bull_ob_top = 3528.0
+        bull_ob_top = 3514.0
         bull_ob_bot = 3508.0
-        bull_ob_mid = 3518.0
+        bull_ob_mid = 3511.0
         sh_time = "H1"
-        sh_filter = "Mặc định"
+        sh_filter = "H1 Unmitigated OB"
         sl_time = "H1"
-        sl_filter = "Mặc định"
+        sl_filter = "H1 Unmitigated OB"
+        confirm_badge = "⏳ ĐANG CHỜ XÁC NHẬN (CHƯA VÀO LỆNH)"
+        is_bear_confirmed = False
+        is_bull_confirmed = False
+        m5_entry_high = 3547.0
+        m5_entry_low = 3508.0
         test_bear_wick = False
         sl = 3550.0
         sl_dist = 7.0
