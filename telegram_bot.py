@@ -64,10 +64,11 @@ def find_smc_swings_and_ob(klines_desc, is_gold=False):
     """
     Xác định đỉnh/đáy cấu trúc uy tín (Major Swing Point) và Khối Lệnh Order Block (OB)
     chuẩn SMC & FX Dream KeyVolume trên khung H1 (loại bỏ hoàn toàn nhiễu M15):
-    - ĐẶC ĐIỂM CỐT LÕI (FX DREAM): Khối OB không phụ thuộc vào thời gian gần hay xa, quan trọng là TÍNH HỢP LỆ (UNMITIGATED):
-      1. Khối Bearish OB (Kháng cự): Phải nằm TRÊN giá hiện tại, chưa bị cây nến nào đóng cửa phá vỡ đỉnh (Unmitigated).
-      2. Khối Bullish OB (Hỗ trợ): Phải nằm DƯỚI giá hiện tại, chưa bị cây nến nào đóng cửa xuyên thủng đáy (Unmitigated).
-      3. Biên độ OB hợp lý: Từ chóp râu ngoài cùng đến thân nến (dày 2.5 - 6.0 giá Vàng, hoặc 150 - 400 giá BTC), tuyệt đối không ôm trọn cả con sóng hàng chục giá!
+    - ĐẶC ĐIỂM CỐT LÕI (FX DREAM): Khối OB là vùng giá CHẠY MẠNH (DISPLACEMENT) CHƯA QUAY LẠI TEST hợp lưu với Swing High/Low:
+      1. Khối Bearish OB (Kháng cự H1): Cú xả mạnh (>= 15 giá Vàng, >= 800 giá BTC) từ đỉnh Swing High chưa từng bị quay lại test.
+         Vùng OB là vùng chân sóng / hỗ trợ bị bẻ gãy (BOS) trước cú xả (ví dụ 3571 - 3577 của ngày 20/11).
+      2. Khối Bullish OB (Hỗ trợ H1): Cú bơm mạnh (>= 15 giá Vàng, >= 800 giá BTC) từ đáy Swing Low chưa từng bị quay lại test.
+      3. Biên độ OB hợp lý: dày 2.5 - 6.0 giá Vàng, hoặc 150 - 400 giá BTC.
     """
     chrono = list(reversed(klines_desc))
     n = len(chrono)
@@ -75,64 +76,81 @@ def find_smc_swings_and_ob(klines_desc, is_gold=False):
         return {'time': 'H1', 'high': 0, 'low': 0, 'filter': 'Mặc định'}, {'top': 0, 'bottom': 0, 'mid': 0}, {'time': 'H1', 'high': 0, 'low': 0, 'filter': 'Mặc định'}, {'top': 0, 'bottom': 0, 'mid': 0}
         
     curr_p = float(chrono[-1][4])
-    
-    # 1. Tìm tất cả các Swing Highs và Swing Lows trong 60 nến H1
-    sh_list = []
-    sl_list = []
-    for i in range(2, n - 2):
-        h = float(chrono[i][2])
-        l = float(chrono[i][3])
-        if all(h >= float(chrono[j][2]) for j in range(max(0, i - 2), min(n, i + 3))):
-            t = datetime.datetime.fromtimestamp(int(chrono[i][0])/1000, tz=TZ_VN).strftime('%H:%M %d/%m')
-            sh_list.append({'idx': i, 'time': t, 'high': h, 'low': l, 'open': float(chrono[i][1]), 'close': float(chrono[i][4]), 'vol': float(chrono[i][5]), 'filter': 'H1 Unmitigated OB'})
-        if all(l <= float(chrono[j][3]) for j in range(max(0, i - 2), min(n, i + 3))):
-            t = datetime.datetime.fromtimestamp(int(chrono[i][0])/1000, tz=TZ_VN).strftime('%H:%M %d/%m')
-            sl_list.append({'idx': i, 'time': t, 'high': h, 'low': l, 'open': float(chrono[i][1]), 'close': float(chrono[i][4]), 'vol': float(chrono[i][5]), 'filter': 'H1 Unmitigated OB'})
+    min_disp = 15.0 if is_gold else 800.0
 
-    # 2. Lọc Bearish OB hợp lệ (Unmitigated: Nằm trên giá hiện tại & Chưa bị phá đỉnh)
-    unmitigated_sh = []
-    for sh in reversed(sh_list):
-        if sh['high'] > curr_p:
-            broken = any(float(chrono[k][4]) > sh['high'] for k in range(sh['idx'] + 1, n))
-            if not broken:
-                unmitigated_sh.append(sh)
+    # 1. Tìm Major Bearish OB có cú xả mạnh (Displacement) và CHƯA BỊ TEST LẠI (Unmitigated)
+    major_bear_obs = []
+    for i in range(len(chrono) - 3, 2, -1):
+        c = chrono[i]
+        h = float(c[2])
+        if h > curr_p:
+            # Kiểm tra đỉnh Swing High (cao hơn 2 nến trước và 2 nến sau)
+            is_peak = all(h >= float(chrono[j][2]) for j in range(max(0, i - 2), min(n, i + 3)))
+            if is_peak:
+                future_low = min(float(chrono[j][3]) for j in range(i + 1, min(n, i + 10)))
+                drop = h - future_low
+                if drop >= min_disp:
+                    # Kiểm tra chưa bị đóng cửa vượt đỉnh
+                    if not any(float(chrono[k][4]) > h for k in range(i + 1, n)):
+                        t = datetime.datetime.fromtimestamp(int(c[0])/1000, tz=TZ_VN).strftime('%H:%M %d/%m')
+                        # Vùng OB: Chân sóng / hỗ trợ bị bẻ gãy (BOS) trước cú xả
+                        prev_bars = chrono[max(0, i - 6): i]
+                        if prev_bars:
+                            base_support = min(float(b[3]) for b in prev_bars)
+                            base_close = min(float(b[4]) for b in prev_bars)
+                            ob_bot = round(max(base_support, base_close - 3.0), 2 if is_gold else 1)
+                            ob_top = round(ob_bot + (6.0 if is_gold else 400.0), 2 if is_gold else 1)
+                        else:
+                            ob_top = round(h, 2 if is_gold else 1)
+                            ob_bot = round(h - (6.0 if is_gold else 400.0), 2 if is_gold else 1)
+                        
+                        # Kiểm tra xem từ sau cú xả (i+3 trở đi) giá có chạm lại vùng này chưa
+                        retested = any(float(chrono[m][2]) >= ob_bot for m in range(i + 3, n))
+                        if not retested:
+                            major_bear_obs.append({
+                                'time': t, 'high': h, 'ob_bot': ob_bot, 'ob_top': ob_top,
+                                'mid': round((ob_top + ob_bot) / 2.0, 2 if is_gold else 1),
+                                'filter': 'H1 Major Unmitigated OB'
+                            })
 
-    # 3. Lọc Bullish OB hợp lệ (Unmitigated: Nằm dưới giá hiện tại & Chưa bị phá đáy)
-    unmitigated_sl = []
-    for sl in reversed(sl_list):
-        if sl['low'] < curr_p:
-            broken = any(float(chrono[k][4]) < sl['low'] for k in range(sl['idx'] + 1, n))
-            if not broken:
-                unmitigated_sl.append(sl)
+    # 2. Tìm Major Bullish OB có cú bơm mạnh (Displacement) và CHƯA BỊ TEST LẠI (Unmitigated)
+    major_bull_obs = []
+    for i in range(len(chrono) - 3, 2, -1):
+        c = chrono[i]
+        l = float(c[3])
+        if l < curr_p:
+            is_trough = all(l <= float(chrono[j][3]) for j in range(max(0, i - 2), min(n, i + 3)))
+            if is_trough:
+                future_high = max(float(chrono[j][2]) for j in range(i + 1, min(n, i + 10)))
+                pump = future_high - l
+                if pump >= min_disp:
+                    if not any(float(chrono[k][4]) < l for k in range(i + 1, n)):
+                        t = datetime.datetime.fromtimestamp(int(c[0])/1000, tz=TZ_VN).strftime('%H:%M %d/%m')
+                        ob_bot = round(l, 2 if is_gold else 1)
+                        ob_top = round(l + (6.0 if is_gold else 400.0), 2 if is_gold else 1)
+                        major_bull_obs.append({
+                            'time': t, 'low': l, 'ob_bot': ob_bot, 'ob_top': ob_top,
+                            'mid': round((ob_top + ob_bot) / 2.0, 2 if is_gold else 1),
+                            'filter': 'H1 Major Unmitigated OB'
+                        })
 
-    valid_sh = unmitigated_sh[0] if unmitigated_sh else (sh_list[-1] if sh_list else {'time': 'H1', 'high': curr_p * 1.01, 'open': curr_p, 'close': curr_p, 'filter': 'Mặc định'})
-    valid_sl = unmitigated_sl[0] if unmitigated_sl else (sl_list[-1] if sl_list else {'time': 'H1', 'low': curr_p * 0.99, 'open': curr_p, 'close': curr_p, 'filter': 'Mặc định'})
-
-    # Tính khối Bearish OB H1 (Đỉnh râu đến thân nến, khống chế độ dày hợp lý)
-    b_ob_top = valid_sh['high']
-    b_body = max(valid_sh['open'], valid_sh['close']) if valid_sh['close'] < valid_sh['open'] else min(valid_sh['open'], valid_sh['close'])
-    max_w = 6.0 if is_gold else 400.0
-    min_w = 2.5 if is_gold else 150.0
-    if (b_ob_top - b_body) > max_w:
-        b_ob_bot = round(b_ob_top - max_w, 2 if is_gold else 1)
-    elif (b_ob_top - b_body) < min_w:
-        b_ob_bot = round(b_ob_top - min_w, 2 if is_gold else 1)
+    # Nếu tìm được Major OB theo Displacement thì ưu tiên lấy Major OB gần nhất trên/dưới giá
+    if major_bear_obs:
+        valid_sh_data = major_bear_obs[0]
+        valid_sh = {'time': valid_sh_data['time'], 'high': valid_sh_data['high'], 'filter': valid_sh_data['filter']}
+        bearish_ob = {'top': valid_sh_data['ob_top'], 'bottom': valid_sh_data['ob_bot'], 'mid': valid_sh_data['mid'], 'time': valid_sh_data['time'], 'filter': valid_sh_data['filter']}
     else:
-        b_ob_bot = round(b_body, 2 if is_gold else 1)
-    b_ob_mid = round((b_ob_top + b_ob_bot) / 2.0, 2 if is_gold else 1)
-    bearish_ob = {'top': b_ob_top, 'bottom': b_ob_bot, 'mid': b_ob_mid, 'time': valid_sh['time'], 'filter': valid_sh.get('filter', 'H1 Unmitigated OB')}
+        # Fallback
+        valid_sh = {'time': 'H1', 'high': round(curr_p + (20.0 if is_gold else 1000.0), 2 if is_gold else 1), 'filter': 'Mặc định'}
+        bearish_ob = {'top': valid_sh['high'], 'bottom': round(valid_sh['high'] - (6.0 if is_gold else 400.0), 2 if is_gold else 1), 'mid': round(valid_sh['high'] - (3.0 if is_gold else 200.0), 2 if is_gold else 1), 'time': 'H1', 'filter': 'Mặc định'}
 
-    # Tính khối Bullish OB H1 (Đáy râu đến thân nến, khống chế độ dày hợp lý)
-    bull_ob_bot = valid_sl['low']
-    bull_body = min(valid_sl['open'], valid_sl['close']) if valid_sl['close'] > valid_sl['open'] else max(valid_sl['open'], valid_sl['close'])
-    if (bull_body - bull_ob_bot) > max_w:
-        bull_ob_top = round(bull_ob_bot + max_w, 2 if is_gold else 1)
-    elif (bull_body - bull_ob_bot) < min_w:
-        bull_ob_top = round(bull_ob_bot + min_w, 2 if is_gold else 1)
+    if major_bull_obs:
+        valid_sl_data = major_bull_obs[0]
+        valid_sl = {'time': valid_sl_data['time'], 'low': valid_sl_data['low'], 'filter': valid_sl_data['filter']}
+        bullish_ob = {'top': valid_sl_data['ob_top'], 'bottom': valid_sl_data['ob_bot'], 'mid': valid_sl_data['mid'], 'time': valid_sl_data['time'], 'filter': valid_sl_data['filter']}
     else:
-        bull_ob_top = round(bull_body, 2 if is_gold else 1)
-    bull_ob_mid = round((bull_ob_bot + bull_ob_top) / 2.0, 2 if is_gold else 1)
-    bullish_ob = {'top': bull_ob_top, 'bottom': bull_ob_bot, 'mid': bull_ob_mid, 'time': valid_sl['time'], 'filter': valid_sl.get('filter', 'H1 Unmitigated OB')}
+        valid_sl = {'time': 'H1', 'low': round(curr_p - (20.0 if is_gold else 1000.0), 2 if is_gold else 1), 'filter': 'Mặc định'}
+        bullish_ob = {'top': round(valid_sl['low'] + (6.0 if is_gold else 400.0), 2 if is_gold else 1), 'bottom': valid_sl['low'], 'mid': round(valid_sl['low'] + (3.0 if is_gold else 200.0), 2 if is_gold else 1), 'time': 'H1', 'filter': 'Mặc định'}
 
     return valid_sh, bearish_ob, valid_sl, bullish_ob
 
@@ -354,7 +372,7 @@ def calculate_btc_h4_plan():
             'diamond_note': diamond_note,
             'setup_desc': setup_desc,
             'confirm_badge': confirm_badge,
-            'is_confirmed': is_bear_confirmed or is_bull_confirmed,
+            'is_confirmed': is_bear_confirmed if signal == 'SHORT' else is_bull_confirmed,
             'poc': poc_m15,
             'hvn_lower': hvn_lower,
             'hvn_upper': hvn_upper,
@@ -590,21 +608,29 @@ def calculate_gold_h4_plan():
             else:
                 # CHƯA CÓ XÁC NHẬN -> CHỜ, KHÔNG CHẠM LÀ VÀO
                 confirm_badge = "⏳ ĐANG CHỜ XÁC NHẬN (CHƯA VÀO LỆNH)"
-                entry_limit = round(max(b_ob_bot, min(poc_gold_m15, b_ob_mid)), 2)
-                sl = round(major_res + 2.2, 2)
+                entry_limit = round(b_ob_bot, 2)
+                sl = round(max(b_ob_top + 6.0, major_res + 2.5), 2)
                 sl_dist = round(sl - entry_limit, 2)
-                advice = (
-                    f"⚠️ <b>TÔN CHỈ FX KEYVOLUME (TUYỆT ĐỐI KHÔNG CHẠM LÀ VÀO):</b>\n"
-                    f"• Giá đang tiếp cận Khối Bearish OB H1 [${b_ob_bot:,.2f} - ${b_ob_top:,.2f}], nhưng <b>CHƯA CÓ nến M5 rút râu kèm KÍCH VOLUME</b> xác nhận!\n"
-                    f"• Kiên nhẫn đứng ngoài quan sát! Chỉ bấm lệnh khi xuất hiện cây nến M5 rút râu mạnh + Volume tăng vọt từ chối tại cản!\n"
-                    f"💎 <b>DCA NHỒI KHI ĐẸP:</b> Khớp Lệnh 1 và giá sập thủng đáy <b>${entry_stop:,.2f}</b>, dời SL về Hoà Vốn (Entry) và kích hoạt Lệnh 2 (Sell Stop)!"
-                )
+                if current_gold < b_ob_bot - 10.0:
+                    advice = (
+                        f"⚠️ <b>LÝ THUYẾT GIÁ (FX DREAM - TUYỆT ĐỐI KHÔNG BÁN LƯNG CHỪNG):</b>\n"
+                        f"• Giá hiện tại <b>${current_gold:,.2f}</b> đang ở vùng chợ mỏng (LVN) / lưng chừng, cách Khối Bearish OB H1 [${b_ob_bot:,.2f} - ${b_ob_top:,.2f}] ({sh_time}) hơn {abs(current_gold - b_ob_bot):.1f} giá!\n"
+                        f"• <b>Kế hoạch:</b> Đặt sẵn Limit đón tại cạnh Khối Bearish OB <b>${entry_limit:,.2f}</b>. Khi giá hồi lên cản to H1, bắt buộc phải có nến M5 rút râu + Kích Volume xác nhận mới vào lệnh!\n"
+                        f"💎 <b>DCA NHỒI KHI ĐẸP:</b> Khớp Lệnh 1 và giá sập thủng đáy <b>${entry_stop:,.2f}</b>, dời SL về Hoà Vốn (Entry) và kích hoạt Lệnh 2 (Sell Stop)!"
+                    )
+                else:
+                    advice = (
+                        f"⚠️ <b>TÔN CHỈ FX KEYVOLUME (TUYỆT ĐỐI KHÔNG CHẠM LÀ VÀO):</b>\n"
+                        f"• Giá đang tiếp cận Khối Bearish OB H1 [${b_ob_bot:,.2f} - ${b_ob_top:,.2f}], nhưng <b>CHƯA CÓ nến M5 rút râu kèm KÍCH VOLUME</b> xác nhận!\n"
+                        f"• Kiên nhẫn đứng ngoài quan sát! Chỉ bấm lệnh khi xuất hiện cây nến M5 rút râu mạnh + Volume tăng vọt từ chối tại cản!\n"
+                        f"💎 <b>DCA NHỒI KHI ĐẸP:</b> Khớp Lệnh 1 và giá sập thủng đáy <b>${entry_stop:,.2f}</b>, dời SL về Hoà Vốn (Entry) và kích hoạt Lệnh 2 (Sell Stop)!"
+                    )
             
             if sl_dist < 6.0:
                 sl = round(entry_limit + 8.0, 2)
                 sl_dist = round(sl - entry_limit, 2)
-            elif sl_dist > 25.0:
-                sl = round(entry_limit + 20.0, 2)
+            elif sl_dist > 35.0:
+                sl = round(entry_limit + 25.0, 2)
                 sl_dist = round(sl - entry_limit, 2)
                 
             tp1 = round(entry_limit - (sl_dist * 2.0), 2)
@@ -626,21 +652,29 @@ def calculate_gold_h4_plan():
                 )
             else:
                 confirm_badge = "⏳ ĐANG CHỜ XÁC NHẬN (CHƯA VÀO LỆNH)"
-                entry_limit = round(min(bull_ob_top, max(poc_gold_m15, bull_ob_mid)), 2)
-                sl = round(major_sup - 2.2, 2)
+                entry_limit = round(bull_ob_top, 2)
+                sl = round(min(bull_ob_bot - 6.0, major_sup - 2.5), 2)
                 sl_dist = round(entry_limit - sl, 2)
-                advice = (
-                    f"⚠️ <b>TÔN CHỈ FX KEYVOLUME (TUYỆT ĐỐI KHÔNG CHẠM LÀ VÀO):</b>\n"
-                    f"• Giá đang ở vùng Khối Bullish OB H1 [${bull_ob_bot:,.2f} - ${bull_ob_top:,.2f}], nhưng <b>CHƯA CÓ nến M5 rút chân kèm KÍCH VOLUME</b> xác nhận!\n"
-                    f"• Kiên nhẫn chờ cây nến M5 rút chân kèm Volume lớn để xác nhận trước khi vào lệnh!\n"
-                    f"💎 <b>DCA NHỒI KHI ĐẸP:</b> Khớp Lệnh 1 và giá bứt phá qua đỉnh <b>${entry_stop:,.2f}</b>, dời SL về Hoà Vốn và kích hoạt Lệnh 2 (Buy Stop)!"
-                )
+                if current_gold > bull_ob_top + 10.0:
+                    advice = (
+                        f"⚠️ <b>LÝ THUYẾT GIÁ (FX DREAM - TUYỆT ĐỐI KHÔNG MUA LƯNG CHỪNG):</b>\n"
+                        f"• Giá hiện tại <b>${current_gold:,.2f}</b> đang ở vùng chợ mỏng (LVN) / lưng chừng, cách Khối Bullish OB H1 [${bull_ob_bot:,.2f} - ${bull_ob_top:,.2f}] ({sl_time}) hơn {abs(current_gold - bull_ob_top):.1f} giá!\n"
+                        f"• <b>Kế hoạch:</b> Đặt sẵn Limit đón tại cạnh Khối Bullish OB <b>${entry_limit:,.2f}</b>. Khi giá đạp về cản to H1, bắt buộc phải có nến M5 rút chân + Kích Volume xác nhận mới vào lệnh!\n"
+                        f"💎 <b>DCA NHỒI KHI ĐẸP:</b> Khớp Lệnh 1 và giá bứt phá qua đỉnh <b>${entry_stop:,.2f}</b>, dời SL về Hoà Vốn và kích hoạt Lệnh 2 (Buy Stop)!"
+                    )
+                else:
+                    advice = (
+                        f"⚠️ <b>TÔN CHỈ FX KEYVOLUME (TUYỆT ĐỐI KHÔNG CHẠM LÀ VÀO):</b>\n"
+                        f"• Giá đang ở vùng Khối Bullish OB H1 [${bull_ob_bot:,.2f} - ${bull_ob_top:,.2f}], nhưng <b>CHƯA CÓ nến M5 rút chân kèm KÍCH VOLUME</b> xác nhận!\n"
+                        f"• Kiên nhẫn chờ cây nến M5 rút chân kèm Volume lớn để xác nhận trước khi vào lệnh!\n"
+                        f"💎 <b>DCA NHỒI KHI ĐẸP:</b> Khớp Lệnh 1 và giá bứt phá qua đỉnh <b>${entry_stop:,.2f}</b>, dời SL về Hoà Vốn và kích hoạt Lệnh 2 (Buy Stop)!"
+                    )
             
             if sl_dist < 6.0:
                 sl = round(entry_limit - 8.0, 2)
                 sl_dist = round(entry_limit - sl, 2)
-            elif sl_dist > 25.0:
-                sl = round(entry_limit + 20.0, 2)
+            elif sl_dist > 35.0:
+                sl = round(entry_limit - 25.0, 2)
                 sl_dist = round(entry_limit - sl, 2)
                 
             tp1 = round(entry_limit + (sl_dist * 2.0), 2)
@@ -710,11 +744,11 @@ def calculate_gold_h4_plan():
         'bull_ob_bot': bull_ob_bot,
         'bull_ob_mid': bull_ob_mid,
         'confirm_badge': confirm_badge,
-        'is_confirmed': is_bear_confirmed or is_bull_confirmed,
+        'is_confirmed': is_bear_confirmed if signal == 'SHORT' else is_bull_confirmed,
         'test_bear_wick': is_bear_confirmed,
         'm5_high': m5_entry_high,
         'm5_low': m5_entry_low,
-        'm5_pattern': 'Rút Râu + Kích Volume' if (is_bear_confirmed or is_bull_confirmed) else 'Đang Chờ Kích Vol',
+        'm5_pattern': 'Rút Râu + Kích Volume' if (is_bear_confirmed if signal == 'SHORT' else is_bull_confirmed) else 'Đang Chờ Kích Vol',
         'setup_desc': setup_desc,
         'entry_limit': entry_limit,
         'entry_stop': entry_stop,
@@ -972,8 +1006,12 @@ def auto_diamond_alert_worker():
             # 1. QUÉT TỰ ĐỘNG VÀNG (OANDA:XAUUSD - Chuẩn MT5)
             if now - LAST_ALERT_TIME['GOLD'] > 3600: # Cooldown 1 tiếng mỗi thông báo
                 plan_gold = calculate_gold_h4_plan()
-                # TÔN CHỈ KEYVOLUME: CHỈ BẮN KÈO KHI ĐÃ CÓ XÁC NHẬN NẾN RÚT RÂU + KÍCH VOLUME!
-                if plan_gold.get('is_confirmed'):
+                # TÔN CHỈ KEYVOLUME: CHỈ BẮN KÈO KHI:
+                # 1. ĐÃ ĐƯỢC XÁC NHẬN NẾN + VOLUME M5 (is_confirmed is True)
+                # 2. confirm_badge chứa 'ĐÃ XÁC NHẬN'
+                # 3. Giá đang nằm trong hoặc sát vùng OB (cách OB <= 8.0 giá), không bắn khi giá ở lưng chừng!
+                dist_to_cản = abs(plan_gold['current_price'] - plan_gold['entry_limit'])
+                if plan_gold.get('is_confirmed') and ('ĐÃ XÁC NHẬN' in plan_gold.get('confirm_badge', '')) and (dist_to_cản <= 8.0):
                     price_gold = plan_gold['current_price']
                     entry_gold = plan_gold['entry_limit']
                     s_emoji = "🔴 SHORT (BÁN)" if plan_gold['signal'] == 'SHORT' else "🟢 LONG (MUA)"
@@ -1016,8 +1054,12 @@ def auto_diamond_alert_worker():
             # 2. QUÉT TỰ ĐỘNG BITCOIN (BTCUSDT)
             if now - LAST_ALERT_TIME['BTC'] > 3600:
                 plan_btc = calculate_btc_h4_plan()
-                # TÔN CHỈ KEYVOLUME: CHỈ BẮN KÈO KHI ĐÃ CÓ XÁC NHẬN NẾN RÚT RÂU + KÍCH VOLUME!
-                if plan_btc.get('is_confirmed'):
+                # TÔN CHỈ KEYVOLUME: CHỈ BẮN KÈO KHI:
+                # 1. ĐÃ ĐƯỢC XÁC NHẬN NẾN + VOLUME M5 (is_confirmed is True)
+                # 2. confirm_badge chứa 'ĐÃ XÁC NHẬN'
+                # 3. Giá đang nằm trong hoặc sát vùng OB (cách OB <= 300.0 giá)
+                dist_to_cản = abs(plan_btc['current_price'] - plan_btc['entry_limit'])
+                if plan_btc.get('is_confirmed') and ('ĐÃ XÁC NHẬN' in plan_btc.get('confirm_badge', '')) and (dist_to_cản <= 300.0):
                     price_btc = plan_btc['current_price']
                     entry_l = plan_btc['entry_limit']
                     entry_s = plan_btc['entry_stop']
