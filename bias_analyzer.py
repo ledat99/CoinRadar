@@ -246,25 +246,38 @@ def analyze_major_asset(symbol='BTC/USDT', risk_capital_percent=2.0, account_bal
             signal = "LONG" if is_uptrend else "SHORT"
             
             if signal == "SHORT":
-                # Kèo SHORT: 
-                # 1. SELL LIMIT GIÁ CAO: Đón râu hồi lên cản EMA20 H4 hoặc đỉnh râu nến H4
-                entry_limit = round(max(price * 1.008, min(tv_data['high'] * 1.005, ema_20_h4)), 2)
-                # 2. SELL STOP PHÁ ĐÁY: Đặt bán đuổi khi giá đâm thủng đáy râu nến thấp nhất H4
-                entry_stop = round(tv_data['low'] - 2.0, 2)
-                sl = round(entry_limit + (1.5 * atr_h4), 2)
-                sl_dist = sl - entry_limit
-                tp1 = round(entry_limit - (sl_dist * 2.0), 2)
-                tp2 = round(entry_limit - (sl_dist * 3.5), 2)
-            else: # LONG
-                # Kèo LONG:
-                # 1. BUY LIMIT GIÁ THẤP: Đón râu hồi về hỗ trợ EMA20 H4 hoặc đáy râu nến H4
-                entry_limit = round(min(price * 0.992, max(tv_data['low'] * 0.995, ema_20_h4)), 2)
-                # 2. BUY STOP VƯỢT ĐỈNH: Đặt mua khi giá phá thủng đỉnh râu nến cao nhất H4
-                entry_stop = round(tv_data['high'] + 2.0, 2)
-                sl = round(entry_limit - (1.5 * atr_h4), 2)
-                sl_dist = entry_limit - sl
-                tp1 = round(entry_limit + (sl_dist * 2.0), 2)
-                tp2 = round(entry_limit + (sl_dist * 3.5), 2)
+                # Kèo SHORT VÀNG:
+                # 1. LỆNH 1 (SELL LIMIT đón râu hồi cản giá cao)
+                entry_limit = round(max(price + 10.0, min(tv_data['high'] * 1.002, ema_20_h4)), 2)
+                # 2. LỆNH 2 (SELL STOP phá đáy nến H4 xác nhận lực xả)
+                entry_stop = round(tv_data['low'] - 1.5, 2)
+                
+                # SL VÀNG CHUẨN: Tối đa 20 - 25 giá từ Entry Limit (bảo toàn vốn tối đa)
+                sl_dist = 20.0
+                sl = round(entry_limit + sl_dist, 2)
+                tp1 = round(entry_limit - 40.0, 2) # R:R 1:2 (ăn 40 giá)
+                tp2 = round(entry_limit - 70.0, 2) # R:R 1:3.5 (ăn 70 giá)
+                
+                # Chiến lược chủ động khi thị trường biến động
+                advice_market = (
+                    "⚠️ CẮT LỖ SỚM: Nếu có nến H1/H4 đóng cửa vượt trên cản $3,570.00 thì chủ động cắt lỗ tay, không cần chờ quét SL $20 giá!\n"
+                    "💎 DCA GIA TĂNG LỢI NHUẬN: Khi giá giảm phá thủng đáy $3,502.00 và có lãi > 20 giá, dời SL về Entry (Hòa vốn) và DCA nhồi thêm Lệnh 2 (Sell Stop)!"
+                )
+            else: # LONG VÀNG
+                # 1. LỆNH 1 (BUY LIMIT đón râu hồi hỗ trợ giá thấp)
+                entry_limit = round(min(price - 10.0, max(tv_data['low'] * 0.998, ema_20_h4)), 2)
+                # 2. LỆNH 2 (BUY STOP phá cản đỉnh H4)
+                entry_stop = round(tv_data['high'] + 1.5, 2)
+                
+                sl_dist = 20.0
+                sl = round(entry_limit - sl_dist, 2)
+                tp1 = round(entry_limit + 40.0, 2)
+                tp2 = round(entry_limit + 70.0, 2)
+                
+                advice_market = (
+                    "⚠️ CẮT LỖ SỚM: Nếu có nến H1/H4 đóng cửa gãy hỗ trợ quan trọng thì chủ động thoát sớm!\n"
+                    "💎 DCA GIA TĂNG LỢI NHUẬN: Khi giá tăng vượt đỉnh và có lãi > 20 giá, dời SL về Entry và DCA nhồi thêm Lệnh 2 (Buy Stop)!"
+                )
                 
             sl_percent = (sl_dist / entry_limit) * 100
             max_loss_usd = account_balance * (risk_capital_percent / 100.0)
@@ -282,17 +295,19 @@ def analyze_major_asset(symbol='BTC/USDT', risk_capital_percent=2.0, account_bal
                 'entry_limit': entry_limit,
                 'entry_stop': entry_stop,
                 'sl': sl,
+                'sl_dist': sl_dist,
                 'sl_percent': sl_percent,
                 'tp1': tp1,
                 'tp2': tp2,
-                'rr_tp1': "1:2.0",
-                'rr_tp2': "1:3.5",
+                'rr_tp1': "1:2.0 (+40 giá)",
+                'rr_tp2': "1:3.5 (+70 giá)",
                 'risk_percent': risk_capital_percent,
                 'position_size_usd': position_size_usd,
                 'suggested_leverage': f"{suggested_leverage}x",
                 'margin_percent': margin_percent,
                 'margin_usd': margin_needed,
                 'rsi': rsi_h4,
+                'advice_market': advice_market,
                 'd1_trend': "D1 GIẢM" if tv_data['d1_close'] < tv_data['d1_ema20'] else "D1 TĂNG",
                 'trend': "DOWNTREND H4 (Ưu tiên SHORT)" if not is_uptrend else "UPTREND H4 (Ưu tiên LONG)"
             }

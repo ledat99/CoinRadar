@@ -99,15 +99,18 @@ def handle_gold():
 📈 Xu hướng D1: <b>{sig.get('d1_trend')}</b> | H4: <b>{sig.get('trend')}</b>
 📊 RSI H4: <b>{sig['rsi']:.1f}</b>
 ━━━━━━━━━━━━━━━━━━
-🚀 <b>CHIẾN LƯỢC: {s_emoji}</b>
-👉 <b>1. LỆNH LIMIT ({action_limit_desc}):</b>
+🚀 <b>CHIẾN LƯỢC: {s_emoji} (CHIA 2 LỆNH VÀO)</b>
+👉 <b>{action_limit_desc}:</b>
    <code>${sig['entry_limit']:,.2f}</code>
-👉 <b>2. LỆNH STOP ({action_stop_desc}):</b>
+👉 <b>{action_stop_desc}:</b>
    <code>${sig['entry_stop']:,.2f}</code>
 
-🛡️ <b>Cắt lỗ (SL H4):</b> <code>${sig['sl']:,.2f}</code> (-{sig['sl_percent']:.2f}%)
-🎯 <b>Chốt lời 1 (TP1 - R:R 1:2):</b> <code>${sig['tp1']:,.2f}</code>
-🎯 <b>Chốt lời 2 (TP2 - R:R 1:3.5):</b> <code>${sig['tp2']:,.2f}</code>
+🛡️ <b>Cắt lỗ (SL Chuẩn {sig.get('sl_dist', 20):.0f} Giá):</b> <code>${sig['sl']:,.2f}</code>
+🎯 <b>Chốt lời 1 (TP1 - Ăn 40 Giá):</b> <code>${sig['tp1']:,.2f}</code>
+🎯 <b>Chốt lời 2 (TP2 - Ăn 70 Giá):</b> <code>${sig['tp2']:,.2f}</code>
+
+🧠 <b>KẾ HOẠCH XỬ LÝ LỆNH CHỦ ĐỘNG:</b>
+{sig.get('advice_market', '')}
 
 🛡️ <b>QUẢN LÝ VỐN VÀNG (${CONFIG['ACCOUNT_BALANCE']:,.0f}):</b>
 • Rủi ro tối đa 2%: <b>${CONFIG['ACCOUNT_BALANCE']*sig['risk_percent']/100:.1f}</b>
