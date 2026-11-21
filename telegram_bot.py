@@ -859,11 +859,6 @@ def handle_btc():
 🎯 <b>TP2 (Ăn {plan['buy_risk']*2.5:,.1f} USD):</b> <code>${plan['buy_tp2']:,.1f}</code>
 
 ━━━━━━━━━━━━━━━━━━
-⚡ <b>3. KỊCH BẢN PHÁ VỠ CẤU TRÚC (ĐUA SÓNG TIẾP DIỄN):</b>
-👉 <b>Sell Stop (Phá Đáy):</b> Sập thủng <code>${plan['m15_choch_bear']:,.1f}</code> ──> Vào Sell theo đà rơi!
-👉 <b>Buy Stop (Phá Đỉnh):</b> Vượt qua <code>${plan['m15_choch_bull']:,.1f}</code> ──> Vào Buy theo đà tăng!
-
-━━━━━━━━━━━━━━━━━━
 🧠 <b>TRẠNG THÁI HIỆN TẠI:</b>
 • <b>Tín hiệu vào lệnh:</b> <b>{plan['confirm_badge']}</b>
 • <b>Cấu trúc M15:</b> {plan['m15_status']}
@@ -1173,11 +1168,6 @@ def handle_gold():
 🎯 <b>TP2 (Ăn {plan['buy_risk']*2.5:,.1f} Giá):</b> <code>${plan['buy_tp2']:,.2f}</code>
 
 ━━━━━━━━━━━━━━━━━━
-⚡ <b>3. KỊCH BẢN PHÁ VỠ CẤU TRÚC (ĐUA SÓNG TIẾP DIỄN):</b>
-👉 <b>Sell Stop (Phá Đáy):</b> Sập thủng <code>${plan['m15_choch_bear']:,.2f}</code> ──> Vào Sell theo đà rơi!
-👉 <b>Buy Stop (Phá Đỉnh):</b> Vượt qua <code>${plan['m15_choch_bull']:,.2f}</code> ──> Vào Buy theo đà tăng!
-
-━━━━━━━━━━━━━━━━━━
 🧠 <b>TRẠNG THÁI HIỆN TẠI:</b>
 • <b>Tín hiệu vào lệnh:</b> <b>{plan['confirm_badge']}</b>
 • <b>Cấu trúc M15:</b> {plan['m15_status']}
@@ -1287,7 +1277,6 @@ def handle_scan(mode='long'):
 • Giá thị trường: <b>{r['market_price']}</b> | Biến động: <b>{r['change']:+.2f}%</b>
 🎯 <b>Trạng thái:</b> <i>{r['status']}</i>
 👉 <b>{r['limit_lbl']}:</b> <code>{r['entry_limit']}</code>
-👉 <b>{r['stop_lbl']}:</b> <code>{r['entry_stop']}</code>
 🛡️ <b>Cắt lỗ (SL):</b> <code>{r['sl']}</code> (-{r['sl_pct']}%)
 🎯 <b>Chốt lời 1 (TP1):</b> <code>{r['tp1']}</code> [R:R 1:2]
 🎯 <b>Chốt lời 2 (TP2):</b> <code>{r['tp2']}</code> [R:R 1:3.5]"""
@@ -1425,10 +1414,8 @@ def auto_diamond_alert_worker():
 📊 Nguồn biểu đồ: <b>TradingView (OANDA:XAUUSD - Chuẩn MT5)</b>
 💰 Giá Vàng hiện tại: <b>${price_gold:,.2f}</b>
 🎯 <b>Trạng thái:</b> <b>{plan_gold.get('confirm_badge', 'ĐÃ XÁC NHẬN')}</b>
-📊 <b>Cản To Khung H1:</b> <code>${plan_gold['swing_high']:,.2f}</code> ({plan_gold.get('sh_time', '')})
-   🧱 <b>Khối Bearish OB H1:</b> <code>[${plan_gold['b_ob_bot']:,.2f} - ${plan_gold['b_ob_top']:,.2f}]</code>
-📉 <b>Hỗ Trợ Khung H1:</b> <code>${plan_gold['swing_low']:,.2f}</code> ({plan_gold.get('sl_time', '')})
-   🧱 <b>Khối Bullish OB H1:</b> <code>[${plan_gold['bull_ob_bot']:,.2f} - ${plan_gold['bull_ob_top']:,.2f}]</code>
+📊 <b>Khối Bearish OB H1:</b> <code>[${plan_gold['b_ob_bot']:,.2f} - ${plan_gold['b_ob_top']:,.2f}]</code>
+📉 <b>Khối Bullish OB H1:</b> <code>[${plan_gold['bull_ob_bot']:,.2f} - ${plan_gold['bull_ob_top']:,.2f}]</code>
 ⚡ <b>Cấu Trúc Khung M15:</b> <b>{plan_gold.get('m15_status')}</b> (Mốc BOS: <code>${plan_gold.get('m15_choch_level', 0):,.2f}</code>)
 ━━━━━━━━━━━━━━━━━━
 💎 <b>ĐỒNG PHA BIAS ĐA KHUNG (WINRATE CAO):</b>
@@ -1439,8 +1426,6 @@ def auto_diamond_alert_worker():
 🚀 <b>KHUYẾN NGHỊ VÀO LỆNH: {s_emoji}</b>
 👉 <b>{action_l}</b>
    <code>${entry_gold:,.2f}</code>
-👉 <b>LỆNH STOP NHỒI SÓNG TIẾP DIỄN:</b>
-   <code>${plan_gold['entry_stop']:,.2f}</code>
 
 🛡️ <b>Cắt lỗ (SL Ngoài Râu M5):</b>
    <code>${plan_gold['sl']:,.2f}</code> (~{plan_gold['sl_dist']:.1f} Giá)
@@ -1460,7 +1445,7 @@ def auto_diamond_alert_worker():
                         symbol='XAUUSD',
                         signal=plan_gold['signal'],
                         entry_price=entry_gold,
-                        entry_stop=plan_gold['entry_stop'],
+                        entry_stop=plan_gold.get('entry_stop', 0),
                         sl=plan_gold['sl'],
                         tp1=plan_gold['tp1'],
                         tp2=plan_gold['tp2'],
@@ -1476,18 +1461,14 @@ def auto_diamond_alert_worker():
                 if now - LAST_ALERT_TIME['BTC'] > 1200:
                     price_btc = plan_btc['current_price']
                     entry_l = plan_btc['entry_limit']
-                    entry_s = plan_btc['entry_stop']
                     s_emoji = "🔴 SHORT (BÁN)" if plan_btc['signal'] == 'SHORT' else "🟢 LONG (MUA)"
                     action_l = "LỆNH VÀO NGAY (M15 Đã Gãy Cấu Trúc + M5 Retest Kích Vol):"
-                    action_s = "LỆNH STOP ĐUA SÓNG:"
                     msg = f"""🚨 <b>[TỰ ĐỘNG BÁO KÈO VIP: ĐÃ PHÁ VỠ CẤU TRÚC M15 & KÍCH VOL M5]</b> 🚨
 ━━━━━━━━━━━━━━━━━━
 💰 Giá BTC hiện tại: <b>${price_btc:,.1f}</b>
 🎯 <b>Trạng thái:</b> <b>{plan_btc.get('confirm_badge', 'ĐÃ XÁC NHẬN')}</b>
-📊 <b>Cản To Khung H1:</b> <code>${plan_btc['swing_high']:,.1f}</code> ({plan_btc.get('sh_time', '')})
-   🧱 <b>Khối Bearish OB H1:</b> <code>[${plan_btc['b_ob_bot']:,.1f} - ${plan_btc['b_ob_top']:,.1f}]</code>
-📉 <b>Hỗ Trợ Khung H1:</b> <code>${plan_btc['swing_low']:,.1f}</code> ({plan_btc.get('sl_time', '')})
-   🧱 <b>Khối Bullish OB H1:</b> <code>[${plan_btc['bull_ob_bot']:,.1f} - ${plan_btc['bull_ob_top']:,.1f}]</code>
+📊 <b>Khối Bearish OB H1:</b> <code>[${plan_btc['b_ob_bot']:,.1f} - ${plan_btc['b_ob_top']:,.1f}]</code>
+📉 <b>Khối Bullish OB H1:</b> <code>[${plan_btc['bull_ob_bot']:,.1f} - ${plan_btc['bull_ob_top']:,.1f}]</code>
 ⚡ <b>Cấu Trúc Khung M15:</b> <b>{plan_btc.get('m15_status')}</b> (Mốc BOS: <code>${plan_btc.get('m15_choch_level', 0):,.1f}</code>)
 ━━━━━━━━━━━━━━━━━━
 💎 <b>ĐỒNG PHA BIAS ĐA KHUNG (WINRATE CAO):</b>
@@ -1498,8 +1479,6 @@ def auto_diamond_alert_worker():
 🚀 <b>KHUYẾN NGHỊ VÀO LỆNH: {s_emoji}</b>
 👉 <b>{action_l}:</b>
    <code>${entry_l:,.1f}</code>
-👉 <b>{action_s}:</b>
-   <code>${entry_s:,.1f}</code>
 
 🛡️ <b>Cắt lỗ (SL Ngoài Râu M5):</b> <code>${plan_btc['sl']:,.1f}</code> (-{plan_btc['sl_pct']}%)
 🎯 <b>Chốt lời 1 (TP1 - R:R 1:1.2 | Chốt 50% & Dời Hoà):</b> <code>${plan_btc['tp1']:,.1f}</code>
@@ -1517,20 +1496,7 @@ def auto_diamond_alert_worker():
                         symbol='BTCUSDT',
                         signal=plan_btc['signal'],
                         entry_price=entry_l,
-                        entry_stop=entry_s,
-                        sl=plan_btc['sl'],
-                        tp1=plan_btc['tp1'],
-                        tp2=plan_btc['tp2'],
-                        sl_dist=abs(entry_l - plan_btc['sl'])
-                    )
-                    send_telegram(msg)
-                    LAST_ALERT_TIME['BTC'] = now
-                    record_new_vip_trade(
-                        asset='BTC',
-                        symbol='BTCUSDT',
-                        signal=plan_btc['signal'],
-                        entry_price=entry_l,
-                        entry_stop=entry_s,
+                        entry_stop=plan_btc.get('entry_stop', 0),
                         sl=plan_btc['sl'],
                         tp1=plan_btc['tp1'],
                         tp2=plan_btc['tp2'],
