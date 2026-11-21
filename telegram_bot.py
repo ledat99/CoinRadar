@@ -59,30 +59,77 @@ def get_main_keyboard():
 # ==========================================
 # 1. KẾ HOẠCH BITCOIN: ĐỒNG PHA BIAS TUẦN/NGÀY + ENTRY POC M15 & STOP ĐUA SÓNG
 # ==========================================
-def find_fractal_swings(klines_desc, n=2):
+def find_smc_swings_and_ob(klines_desc):
     """
-    Xác định đỉnh/đáy cấu trúc uy tín (Fractal Swing High / Swing Low) chuẩn SMC.
-    Một đỉnh là Swing High khi cao hơn n nến trước đó và n nến sau đó.
-    Một đáy là Swing Low khi thấp hơn n nến trước đó và n nến sau đó.
+    Xác định đỉnh/đáy cấu trúc uy tín (Valid Swing High / Swing Low) và Khối Lệnh Order Block (OB) chuẩn SMC:
+    - Swing High hợp lệ: Nến đỉnh trong nhịp sóng, sau nến đó KHÔNG còn mức giá nào có thể cao hơn,
+      tạo ra khối Bearish Order Block (OB).
+    - Swing Low hợp lệ: Nến đáy trong nhịp sóng, sau nến đó KHÔNG còn mức giá nào có thể thấp hơn,
+      tạo ra khối Bullish Order Block (OB).
     """
     chrono = list(reversed(klines_desc))
-    swings_h = []
-    swings_l = []
-    for i in range(n, len(chrono) - n):
-        c_time = datetime.datetime.fromtimestamp(int(chrono[i][0])/1000 + 7*3600).strftime('%H:%M %d/%m')
-        h = float(chrono[i][2])
-        l = float(chrono[i][3])
-        is_sh = all(h > float(chrono[j][2]) for j in range(i-n, i)) and all(h >= float(chrono[j][2]) for j in range(i+1, i+n+1))
-        is_sl = all(l < float(chrono[j][3]) for j in range(i-n, i)) and all(l <= float(chrono[j][3]) for j in range(i+1, i+n+1))
-        if is_sh:
-            swings_h.append({'time': c_time, 'price': h})
-        if is_sl:
-            swings_l.append({'time': c_time, 'price': l})
-    latest_sh = swings_h[-1] if swings_h else {'time': 'N/A', 'price': float(klines_desc[0][2])}
-    latest_sl = swings_l[-1] if swings_l else {'time': 'N/A', 'price': float(klines_desc[0][3])}
-    major_sh = max(swings_h, key=lambda x: x['price']) if swings_h else latest_sh
-    major_sl = min(swings_l, key=lambda x: x['price']) if swings_l else latest_sl
-    return latest_sh, latest_sl, major_sh, major_sl
+    n_candles = len(chrono)
+    
+    valid_sh = None
+    bearish_ob = None
+    for i in range(n_candles - 3, 2, -1):
+        c = chrono[i]
+        c_h = float(c[2])
+        subsequent_highs = [float(chrono[k][2]) for k in range(i + 1, n_candles)]
+        if all(h <= c_h for h in subsequent_highs):
+            prev_highs = [float(chrono[k][2]) for k in range(max(0, i - 4), i)]
+            if prev_highs and c_h >= max(prev_highs):
+                valid_sh = {
+                    'time': datetime.datetime.fromtimestamp(int(c[0])/1000 + 7*3600).strftime('%H:%M %d/%m'),
+                    'high': c_h,
+                    'low': float(c[3]),
+                    'open': float(c[1]),
+                    'close': float(c[4])
+                }
+                ob_top = c_h
+                ob_bot = min(float(c[1]), float(c[4]))
+                bearish_ob = {
+                    'top': ob_top,
+                    'bottom': ob_bot,
+                    'mid': round((ob_top + ob_bot) / 2.0, 1),
+                    'time': valid_sh['time']
+                }
+                break
+
+    valid_sl = None
+    bullish_ob = None
+    for i in range(n_candles - 3, 2, -1):
+        c = chrono[i]
+        c_l = float(c[3])
+        subsequent_lows = [float(chrono[k][3]) for k in range(i + 1, n_candles)]
+        if all(l >= c_l for l in subsequent_lows):
+            prev_lows = [float(chrono[k][3]) for k in range(max(0, i - 4), i)]
+            if prev_lows and c_l <= min(prev_lows):
+                valid_sl = {
+                    'time': datetime.datetime.fromtimestamp(int(c[0])/1000 + 7*3600).strftime('%H:%M %d/%m'),
+                    'high': float(c[2]),
+                    'low': c_l,
+                    'open': float(c[1]),
+                    'close': float(c[4])
+                }
+                ob_bot = c_l
+                ob_top = max(float(c[1]), float(c[4]))
+                bullish_ob = {
+                    'top': ob_top,
+                    'bottom': ob_bot,
+                    'mid': round((ob_top + ob_bot) / 2.0, 1),
+                    'time': valid_sl['time']
+                }
+                break
+                
+    if not valid_sh:
+        valid_sh = {'time': 'H1', 'high': float(klines_desc[0][2])}
+        bearish_ob = {'top': valid_sh['high'], 'bottom': valid_sh['high'] * 0.995, 'mid': valid_sh['high'] * 0.9975, 'time': 'H1'}
+    if not valid_sl:
+        valid_sl = {'time': 'H1', 'low': float(klines_desc[0][3])}
+        bullish_ob = {'top': valid_sl['low'] * 1.005, 'bottom': valid_sl['low'], 'mid': valid_sl['low'] * 1.0025, 'time': 'H1'}
+
+    return valid_sh, bearish_ob, valid_sl, bullish_ob
 
 def calculate_btc_h4_plan():
     now = time.time()
@@ -115,12 +162,12 @@ def calculate_btc_h4_plan():
         d1_bear = current_price < d_ema20
         d1_bias = "🔴 GIẢM (BEARISH)" if d1_bear else "🟢 TĂNG (BULLISH)"
 
-        # 2. Cản Cấu Trúc Uy Tín (Fractal Swing High / Swing Low H1)
-        latest_sh, latest_sl, major_sh, major_sl = find_fractal_swings(h1_klines, n=2)
-        swing_high = round(latest_sh['price'], 1)
-        sh_time = latest_sh['time']
-        swing_low = round(latest_sl['price'], 1)
-        sl_time = latest_sl['time']
+        # 2. Cấu Trúc SMC & Order Block (OB H1)
+        valid_sh, bearish_ob, valid_sl, bullish_ob = find_smc_swings_and_ob(h1_klines)
+        swing_high = round(valid_sh['high'], 1)
+        sh_time = valid_sh['time']
+        swing_low = round(valid_sl['low'], 1)
+        sl_time = valid_sl['time']
 
         # 3. Tính POC M15 (Volume profile phiên gần nhất)
         prices = []
@@ -160,26 +207,27 @@ def calculate_btc_h4_plan():
             diamond_note = "⭐ ĐẢO CHIỀU UY TÍN: Có 2 Đáy & Quét Râu Đáy rõ ràng, không bắt đáy vô cớ!"
         elif sweep_bear:
             signal = "SHORT"
-            setup_desc = f"Quét Râu Đỉnh / 2 Đỉnh tại Cản Đỉnh ${swing_high:,.1f} ({sh_time}) + Bearish CHoCH"
-            diamond_note = "⭐ CẢN TO THẬT SỰ: Chạm đỉnh râu bị từ chối mạnh, thuận lực xả vĩ mô!"
+            setup_desc = f"Quét Râu Đỉnh / Test Khối Bearish OB tại ${swing_high:,.1f} ({sh_time}) + Bearish CHoCH"
+            diamond_note = "⭐ CẢN TO THẬT SỰ: Chạm khối OB đỉnh bị từ chối mạnh, thuận lực xả vĩ mô!"
         elif w1_bear and d1_bear:
             signal = "SHORT"
-            setup_desc = f"Đồng Pha Giảm Tuần/Ngày - Kiên nhẫn chờ hồi về Cản Đỉnh ${swing_high:,.1f}"
-            diamond_note = "⭐ ĐỒNG PHA TUẦN + NGÀY (CẢN TO): Chờ hồi test cản to, tuyệt đối không bán lưng chừng!"
+            setup_desc = f"Đồng Pha Giảm Tuần/Ngày - Kiên nhẫn chờ hồi về Khối Bearish OB ${bearish_ob['mid']:,.1f}"
+            diamond_note = "⭐ ĐỒNG PHA TUẦN + NGÀY (CẢN TO): Chờ hồi test Khối OB, tuyệt đối không bán lưng chừng!"
         else:
             signal = "SHORT" if d1_bear else "LONG"
-            setup_desc = f"Cấu Trúc SMC H1 tại Cản Đỉnh ${swing_high:,.1f}"
+            setup_desc = f"Cấu Trúc SMC H1 tại Khối OB ${bearish_ob['mid']:,.1f}"
             diamond_note = "⚡ Quản lý vốn theo từng mốc cản."
 
         if signal == "SHORT":
-            # ENTRY LIMIT: Neo chặt tại CẢN ĐỈNH UY TÍN H1 (swing_high) hoặc POC M15, TUYỆT ĐỐI KHÔNG BÁN LƯNG CHỪNG
-            c_to = swing_high
-            entry_limit = round(max(poc_m15, c_to - 120.0), 1)
+            # ENTRY LIMIT: Neo chặt tại KHỐI BEARISH ORDER BLOCK (50% OB hoặc POC), TUYỆT ĐỐI KHÔNG BÁN LƯNG CHỪNG
+            entry_limit = round(max(bearish_ob['bottom'], min(poc_m15, bearish_ob['mid'])), 1)
+            if entry_limit < current_price:
+                entry_limit = round(bearish_ob['mid'], 1)
             # SELL STOP: Đặt phá vỡ đáy để ăn trọn sóng xả đâm 1 mạch nếu không hồi
             entry_stop = round(swing_low * 0.998, 1)
             
-            # SL: Đặt trên chóp cản đỉnh uy tín + đệm an toàn
-            sl = round(c_to + 180.0, 1)
+            # SL: Đặt trên chóp Swing High (đỉnh của khối OB) + đệm an toàn
+            sl = round(swing_high + 180.0, 1)
             risk = sl - entry_limit
             if risk < 300.0:
                 sl = round(entry_limit + 400.0, 1)
@@ -188,20 +236,19 @@ def calculate_btc_h4_plan():
             tp2 = round(entry_limit - (risk * 3.5), 1)
             
             advice = (
-                f"⚠️ <b>KHÔNG BÁN LƯNG CHỪNG:</b> Giá hiện tại ${current_price:,.1f} ở lưng chừng range, chỉ vào Limit khi giá hồi lên <b>Cản Đỉnh Uy Tín ${c_to:,.1f}</b> hoặc POC M15!\n"
+                f"⚠️ <b>KHÔNG BÁN LƯNG CHỪNG:</b> Giá hiện tại ${current_price:,.1f} ở lưng chừng range, chỉ vào Limit khi giá hồi lên <b>Khối Bearish OB [${bearish_ob['bottom']:,.1f} - ${bearish_ob['top']:,.1f}]</b>!\n"
                 f"💎 <b>ĐUA SÓNG ĐÂM 1 MẠCH:</b> Nếu BTC lao thẳng không test phá đáy <b>${entry_stop:,.1f}</b>, Lệnh 2 Sell Stop sẽ tự kích hoạt để không bị lỡ tàu!"
             )
         else: # LONG
-            # ENTRY LIMIT: Neo chặt tại HỖ TRỢ ĐÁY UY TÍN H1 / ĐÁY 2 (không bắt đáy vô cớ)
-            h_to = swing_low
-            entry_limit = round(min(poc_m15, h_to + 250.0), 1)
-            if entry_limit < h_to + 50.0:
-                entry_limit = round(h_to + 120.0, 1)
+            # ENTRY LIMIT: Neo chặt tại KHỐI BULLISH ORDER BLOCK (50% OB hoặc POC)
+            entry_limit = round(min(bullish_ob['top'], max(poc_m15, bullish_ob['mid'])), 1)
+            if entry_limit > current_price:
+                entry_limit = round(bullish_ob['mid'], 1)
                 
             entry_stop = round(swing_high * 1.002, 1)
             
-            # SL: Đặt dưới đáy mô hình 2 đáy / râu quét an toàn
-            sl = round(h_to - 180.0, 1)
+            # SL: Đặt dưới đáy Swing Low (đáy của khối OB) an toàn
+            sl = round(swing_low - 180.0, 1)
             risk = entry_limit - sl
             if risk < 300.0:
                 sl = round(entry_limit - 400.0, 1)
@@ -210,7 +257,7 @@ def calculate_btc_h4_plan():
             tp2 = round(entry_limit + (risk * 3.5), 1)
             
             advice = (
-                f"⚠️ <b>ĐẢO CHIỀU CÓ CHoCH:</b> Có xác nhận mô hình 2 Đáy tại Hỗ Trợ Uy Tín ${h_to:,.1f}, không bắt đáy lung tung!\n"
+                f"⚠️ <b>ĐẢO CHIỀU CÓ CHoCH:</b> Có xác nhận mô hình 2 Đáy tại Khối Bullish OB [${bullish_ob['bottom']:,.1f} - ${bullish_ob['top']:,.1f}], không bắt đáy lung tung!\n"
                 f"💎 <b>ĐUA SÓNG BỨT TỐC:</b> Nếu BTC tăng thốc 1 mạch qua đỉnh <b>${entry_stop:,.1f}</b> (như nhịp 3k giá), Lệnh 2 Buy Stop sẽ tự khớp bắt trọn con sóng!"
             )
 
@@ -227,8 +274,14 @@ def calculate_btc_h4_plan():
             'poc': poc_m15,
             'swing_high': swing_high,
             'sh_time': sh_time,
+            'b_ob_top': bearish_ob['top'],
+            'b_ob_bot': bearish_ob['bottom'],
+            'b_ob_mid': bearish_ob['mid'],
             'swing_low': swing_low,
             'sl_time': sl_time,
+            'bull_ob_top': bullish_ob['top'],
+            'bull_ob_bot': bullish_ob['bottom'],
+            'bull_ob_mid': bullish_ob['mid'],
             'entry_limit': entry_limit,
             'entry_stop': entry_stop,
             'dist_to_entry': dist_to_entry,
@@ -249,7 +302,7 @@ def handle_btc():
     try:
         plan = calculate_btc_h4_plan()
         s_emoji = "🟢 LONG (MUA)" if plan['signal'] == 'LONG' else "🔴 SHORT (BÁN)"
-        action_l = "LỆNH 1: Bán Limit Đón Râu Hồi Retest Cản Uy Tín / POC" if plan['signal'] == 'SHORT' else "LỆNH 1: Mua Limit Đón Râu Hồi Retest Hỗ Trợ Uy Tín / POC"
+        action_l = "LỆNH 1: Bán Limit Đón Râu Hồi Retest Khối OB / POC" if plan['signal'] == 'SHORT' else "LỆNH 1: Mua Limit Đón Râu Hồi Retest Khối OB / POC"
         action_s = "LỆNH 2: Bán Stop Phá Đáy - Bắt Trọn Cú Xả Đâm 1 Mạch" if plan['signal'] == 'SHORT' else "LỆNH 2: Mua Stop Phá Đỉnh - Bắt Trọn Cú Bơm Đâm 1 Mạch"
         sh_time_str = f" ({plan.get('sh_time', '')})" if plan.get('sh_time') else ""
         sl_time_str = f" ({plan.get('sl_time', '')})" if plan.get('sl_time') else ""
@@ -258,9 +311,11 @@ def handle_btc():
 ━━━━━━━━━━━━━━━━━━
 💰 Giá BTC hiện tại: <b>${plan['current_price']:,.1f}</b>
 🎯 <b>Vùng POC M15 (Volume cốt lõi):</b> <code>${plan['poc']:,.1f}</code> (Cách ${plan['dist_to_entry']:,.1f} giá)
-📊 <b>CẢN CẤU TRÚC UY TÍN (FRACTAL SMC H1):</b>
-📈 <b>Cản Đỉnh Uy Tín (Swing High):</b> <code>${plan['swing_high']:,.1f}</code>{sh_time_str}
-📉 <b>Hỗ Trợ Đáy Uy Tín (Swing Low):</b> <code>${plan['swing_low']:,.1f}</code>{sl_time_str}
+📊 <b>CẤU TRÚC SMC & ORDER BLOCK (OB KHUNG H1):</b>
+📈 <b>Swing High Hợp Lệ:</b> <code>${plan['swing_high']:,.1f}</code>{sh_time_str}
+   🧱 <b>Khối Bearish OB:</b> <code>[${plan['b_ob_bot']:,.1f} - ${plan['b_ob_top']:,.1f}]</code> (50% Mid: ${plan['b_ob_mid']:,.1f})
+📉 <b>Swing Low Hợp Lệ:</b> <code>${plan['swing_low']:,.1f}</code>{sl_time_str}
+   🧱 <b>Khối Bullish OB:</b> <code>[${plan['bull_ob_bot']:,.1f} - ${plan['bull_ob_top']:,.1f}]</code> (50% Mid: ${plan['bull_ob_mid']:,.1f})
 ━━━━━━━━━━━━━━━━━━
 💎 <b>ĐỒNG PHA BIAS ĐA KHUNG (WINRATE CAO):</b>
 • <b>Bias Tuần (W1):</b> {plan['w1_bias']}
@@ -274,7 +329,7 @@ def handle_btc():
 👉 <b>{action_s}:</b>
    <code>${plan['entry_stop']:,.1f}</code>
 
-🛡️ <b>Cắt lỗ (SL Ngoài Cản Đỉnh/Đáy H1):</b> <code>${plan['sl']:,.1f}</code> (-{plan['sl_pct']}%)
+🛡️ <b>Cắt lỗ (SL Ngoài Chóp Swing High/Low):</b> <code>${plan['sl']:,.1f}</code> (-{plan['sl_pct']}%)
 🎯 <b>Chốt lời 1 (TP1 - R:R 1:2):</b> <code>${plan['tp1']:,.1f}</code>
 🎯 <b>Chốt lời 2 (TP2 - R:R 1:3.5):</b> <code>${plan['tp2']:,.1f}</code>
 
@@ -327,17 +382,25 @@ def calculate_gold_h4_plan():
         w1_bias = "🔴 GIẢM (BEARISH)" if w1_bear else "🟢 TĂNG (BULLISH)"
         d1_bias = "🔴 GIẢM (BEARISH)" if d1_bear else "🟢 TĂNG (BULLISH)"
         
-        # 2. Lấy dữ liệu H1 klines từ Bybit XAUUSDT và tính Fractal Swing High / Low SMC
+        # 2. Lấy dữ liệu H1 klines từ Bybit XAUUSDT và tính Valid Swing High / Low & Order Block (OB) SMC
         url_gold_kline = 'https://api.bybit.com/v5/market/kline?category=linear&symbol=XAUUSDT&interval=60&limit=60'
         req_g = urllib.request.Request(url_gold_kline, headers=HEADERS)
         with urllib.request.urlopen(req_g, timeout=8) as r:
             gold_h1_klines = json.loads(r.read().decode())['result']['list']
 
-        sh_raw, sl_raw, m_sh_raw, m_sl_raw = find_fractal_swings(gold_h1_klines, n=2)
+        sh_raw, b_ob_raw, sl_raw, bull_ob_raw = find_smc_swings_and_ob(gold_h1_klines)
         delta = current_gold - float(gold_h1_klines[0][4])
-        major_res = round(sh_raw['price'] + delta, 2)
-        major_sup = round(sl_raw['price'] + delta, 2)
+        
+        major_res = round(sh_raw['high'] + delta, 2)
+        b_ob_top = round(b_ob_raw['top'] + delta, 2)
+        b_ob_bot = round(b_ob_raw['bottom'] + delta, 2)
+        b_ob_mid = round(b_ob_raw['mid'] + delta, 2)
         sh_time = sh_raw['time']
+
+        major_sup = round(sl_raw['low'] + delta, 2)
+        bull_ob_top = round(bull_ob_raw['top'] + delta, 2)
+        bull_ob_bot = round(bull_ob_raw['bottom'] + delta, 2)
+        bull_ob_mid = round(bull_ob_raw['mid'] + delta, 2)
         sl_time = sl_raw['time']
 
         m5_high = round(data['high|5'], 2)
@@ -351,33 +414,33 @@ def calculate_gold_h4_plan():
         
         # 4. Phát hiện Bẫy Quét Râu / Mô hình 2 Đáy / 2 Đỉnh trên M15
         is_double_bottom = (current_gold > major_sup + 4.0) and (m15_low >= major_sup - 1.0) and (current_gold > m15_ema20)
-        is_at_major_res = (current_gold >= major_res - 3.5) or (m5_high >= major_res - 0.8)
+        is_at_major_res = (current_gold >= b_ob_bot - 1.5) or (m5_high >= major_res - 0.8)
         
         # XÁC ĐỊNH HƯỚNG ĐÁNH (KHÔNG ÉP THEO TREND NGÀY NẾU M15 CÓ ĐẢO CHIỀU UY TÍN)
         if is_double_bottom and not is_at_major_res:
             signal = "LONG"
-            setup_desc = f"Mô Hình 2 Đáy M15 tại Hỗ Trợ Đáy Uy Tín ${major_sup:,.2f} ({sl_time}) + Bullish CHoCH"
-            diamond_note = "⭐ ĐẢO CHIỀU UY TÍN: Có mô hình 2 Đáy từ cản uy tín, không bắt đáy vô cớ!"
+            setup_desc = f"Mô Hình 2 Đáy M15 tại Khối Bullish OB ${major_sup:,.2f} ({sl_time}) + Bullish CHoCH"
+            diamond_note = "⭐ ĐẢO CHIỀU UY TÍN: Có mô hình 2 Đáy từ khối OB uy tín, không bắt đáy vô cớ!"
         elif is_at_major_res or (current_gold < h4_ema20):
             signal = "SHORT"
-            setup_desc = f"Cản Đỉnh Uy Tín H1 tại ${major_res:,.2f} ({sh_time}) + Quét Râu Đỉnh / CHoCH Giảm"
-            diamond_note = "⭐ CẢN TO THẬT SỰ: Chạm đỉnh râu cản H1 bị từ chối mạnh, tuyệt đối không bán lưng chừng!"
+            setup_desc = f"Chạm Khối Bearish OB tại ${major_res:,.2f} ({sh_time}) + Quét Râu Đỉnh / CHoCH Giảm"
+            diamond_note = "⭐ KHỐI ORDER BLOCK UY TÍN: Chạm khối OB đỉnh bị từ chối mạnh, tuyệt đối không bán lưng chừng!"
         else:
             signal = "SHORT" if d1_bear else "LONG"
-            setup_desc = f"Cấu Trúc SMC H1 tại Cản Đỉnh ${major_res:,.2f}"
+            setup_desc = f"Cấu Trúc SMC H1 tại Khối OB ${b_ob_mid:,.2f}"
             diamond_note = "⚡ Quản lý vốn chặt chẽ theo cản."
         
         if signal == "SHORT":
-            # ENTRY LIMIT: Neo chặt tại CẢN ĐỈNH UY TÍN (major_res) hoặc POC M15, TUYỆT ĐỐI KHÔNG BÁN LƯNG CHỪNG
-            entry_limit = round(max(poc_gold_m15, major_res - 1.8), 2)
+            # ENTRY LIMIT: Neo chặt tại KHỐI BEARISH ORDER BLOCK (50% OB hoặc POC), TUYỆT ĐỐI KHÔNG BÁN LƯNG CHỪNG
+            entry_limit = round(max(b_ob_bot, min(poc_gold_m15, b_ob_mid)), 2)
             if entry_limit < current_gold:
-                entry_limit = round(major_res - 1.0, 2)
+                entry_limit = round(b_ob_mid, 2)
                 
             # Entry 2: Bán Stop khi gãy đáy xác nhận sóng xả tiếp diễn
             entry_stop = round(major_sup - 1.2, 2)
             
-            # SL ĐẶT TRÊN CẢN ĐỈNH UY TÍN H1: đệm 2.5 giá ngoài đỉnh cản
-            sl = round(major_res + 2.5, 2)
+            # SL ĐẶT TRÊN CHÓP SWING HIGH H1: đệm 2.2 giá ngoài đỉnh cản
+            sl = round(major_res + 2.2, 2)
             sl_dist = round(sl - entry_limit, 2)
             if sl_dist < 8.0:
                 sl = round(entry_limit + 10.0, 2)
@@ -390,18 +453,18 @@ def calculate_gold_h4_plan():
             tp2 = round(entry_limit - (sl_dist * 3.5), 2)
             
             advice = (
-                f"⚠️ <b>KHÔNG BÁN LƯNG CHỪNG:</b> Giá hiện tại ${current_gold:,.2f} ở giữa sóng, chỉ đặt Sell Limit đón tại <b>Cản Đỉnh Uy Tín ${major_res:,.2f}</b> ({sh_time})!\n"
+                f"⚠️ <b>KHÔNG BÁN LƯNG CHỪNG:</b> Giá hiện tại ${current_gold:,.2f} ở giữa sóng, chỉ đặt Sell Limit đón tại <b>Khối Bearish OB [${b_ob_bot:,.2f} - ${b_ob_top:,.2f}]</b> ({sh_time})!\n"
                 f"💎 <b>DCA NHỒI KHI ĐẸP:</b> Khớp Lệnh 1 và giá sập thủng đáy <b>${entry_stop:,.2f}</b> (lãi > {sl_dist*0.7:.1f} giá), dời SL về Hoà Vốn (Entry) và kích hoạt Lệnh 2 (Sell Stop)!"
             )
         else: # LONG
-            # ENTRY LIMIT: Neo chặt tại HỖ TRỢ ĐÁY UY TÍN (không bắt đáy vô cớ)
-            entry_limit = round(min(poc_gold_m15, major_sup + 2.5), 2)
+            # ENTRY LIMIT: Neo chặt tại KHỐI BULLISH ORDER BLOCK (không bắt đáy vô cớ)
+            entry_limit = round(min(bull_ob_top, max(poc_gold_m15, bull_ob_mid)), 2)
             if entry_limit > current_gold:
-                entry_limit = round(major_sup + 1.0, 2)
+                entry_limit = round(bull_ob_mid, 2)
                 
             entry_stop = round(major_res + 1.2, 2)
             
-            sl = round(major_sup - 2.5, 2)
+            sl = round(major_sup - 2.2, 2)
             sl_dist = round(entry_limit - sl, 2)
             if sl_dist < 8.0:
                 sl = round(entry_limit - 10.0, 2)
@@ -414,7 +477,7 @@ def calculate_gold_h4_plan():
             tp2 = round(entry_limit + (sl_dist * 3.5), 2)
             
             advice = (
-                f"⚠️ <b>ĐẢO CHIỀU CÓ CHoCH:</b> Có xác nhận mô hình 2 Đáy tại Hỗ Trợ Đáy Uy Tín ${major_sup:,.2f} ({sl_time}), không bắt đáy vô cớ! SL dưới đáy hỗ trợ.\n"
+                f"⚠️ <b>ĐẢO CHIỀU CÓ CHoCH:</b> Có xác nhận mô hình 2 Đáy tại Khối Bullish OB [${bull_ob_bot:,.2f} - ${bull_ob_top:,.2f}] ({sl_time}), không bắt đáy vô cớ! SL dưới đáy hỗ trợ.\n"
                 f"💎 <b>DCA NHỒI KHI ĐẸP:</b> Khớp Lệnh 1 và giá bứt phá qua đỉnh <b>${entry_stop:,.2f}</b> (lãi > {sl_dist*0.7:.1f} giá), dời SL về Hoà Vốn và kích hoạt Lệnh 2 (Buy Stop)!"
             )
             
@@ -427,18 +490,24 @@ def calculate_gold_h4_plan():
         d1_bias = "🔴 GIẢM (BEARISH)"
         diamond_note = "⭐ ĐỒNG PHA TUẦN + NGÀY (SETUP CAO CẤP)"
         poc_gold_m15 = 3535.0
-        entry_limit = 3545.0
+        entry_limit = 3543.0
         entry_stop = 3505.0
         major_res = 3547.0
+        b_ob_top = 3547.0
+        b_ob_bot = 3537.0
+        b_ob_mid = 3542.0
         major_sup = 3508.0
+        bull_ob_top = 3528.0
+        bull_ob_bot = 3508.0
+        bull_ob_mid = 3518.0
         sh_time = "H1"
         sl_time = "H1"
         sl = 3550.0
-        sl_dist = 5.0
+        sl_dist = 7.0
         tp1 = 3535.0
         tp2 = 3520.0
         signal = "SHORT"
-        setup_desc = "Cản Đỉnh Uy Tín H1 + CHoCH Giảm"
+        setup_desc = "Khối Bearish OB H1 + CHoCH Giảm"
         advice = "⚠️ Kiểm tra biểu đồ MT5 trước khi vào lệnh."
 
     plan = {
@@ -453,8 +522,14 @@ def calculate_gold_h4_plan():
         'poc_m15': poc_gold_m15,
         'swing_high': major_res,
         'sh_time': sh_time,
+        'b_ob_top': b_ob_top,
+        'b_ob_bot': b_ob_bot,
+        'b_ob_mid': b_ob_mid,
         'swing_low': major_sup,
         'sl_time': sl_time,
+        'bull_ob_top': bull_ob_top,
+        'bull_ob_bot': bull_ob_bot,
+        'bull_ob_mid': bull_ob_mid,
         'setup_desc': setup_desc,
         'entry_limit': entry_limit,
         'entry_stop': entry_stop,
@@ -472,7 +547,7 @@ def handle_gold():
     try:
         plan = calculate_gold_h4_plan()
         s_emoji = "🟢 LONG (MUA)" if plan['signal'] == 'LONG' else "🔴 SHORT (BÁN)"
-        action_l = "LỆNH 1: Bán Limit Đón Râu Hồi Retest Cản Uy Tín / POC" if plan['signal'] == 'SHORT' else "LỆNH 1: Mua Limit Đón Râu Hồi Retest Hỗ Trợ Uy Tín / POC"
+        action_l = "LỆNH 1: Bán Limit Đón Râu Hồi Retest Khối OB / POC" if plan['signal'] == 'SHORT' else "LỆNH 1: Mua Limit Đón Râu Hồi Retest Khối OB / POC"
         action_s = "LỆNH 2: Bán Stop Phá Đáy Tiếp Diễn Sóng Tuần" if plan['signal'] == 'SHORT' else "LỆNH 2: Mua Stop Phá Đỉnh Tiếp Diễn Sóng Tuần"
         sh_time_str = f" ({plan.get('sh_time', '')})" if plan.get('sh_time') else ""
         sl_time_str = f" ({plan.get('sl_time', '')})" if plan.get('sl_time') else ""
@@ -482,9 +557,11 @@ def handle_gold():
 📊 Nguồn biểu đồ: <b>{plan['data_source']}</b>
 💰 Giá Vàng OANDA: <b>${plan['current_price']:,.2f}</b> (Bid: ${plan['bid']:,.2f} | Ask: ${plan['ask']:,.2f})
 🎯 <b>Vùng POC M15 (Thanh khoản hội tụ):</b> <code>${plan['poc_m15']:,.2f}</code>
-📊 <b>CẢN CẤU TRÚC UY TÍN (FRACTAL SMC H1):</b>
-📈 <b>Cản Đỉnh Uy Tín (Swing High):</b> <code>${plan['swing_high']:,.2f}</code>{sh_time_str}
-📉 <b>Hỗ Trợ Đáy Uy Tín (Swing Low):</b> <code>${plan['swing_low']:,.2f}</code>{sl_time_str}
+📊 <b>CẤU TRÚC SMC & ORDER BLOCK (OB KHUNG H1):</b>
+📈 <b>Swing High Hợp Lệ:</b> <code>${plan['swing_high']:,.2f}</code>{sh_time_str}
+   🧱 <b>Khối Bearish OB:</b> <code>[${plan['b_ob_bot']:,.2f} - ${plan['b_ob_top']:,.2f}]</code> (50% Mid: ${plan['b_ob_mid']:,.2f})
+📉 <b>Swing Low Hợp Lệ:</b> <code>${plan['swing_low']:,.2f}</code>{sl_time_str}
+   🧱 <b>Khối Bullish OB:</b> <code>[${plan['bull_ob_bot']:,.2f} - ${plan['bull_ob_top']:,.2f}]</code> (50% Mid: ${plan['bull_ob_mid']:,.2f})
 ━━━━━━━━━━━━━━━━━━
 💎 <b>ĐỒNG PHA BIAS ĐA KHUNG (WINRATE CAO):</b>
 • <b>Bias Tuần (W1):</b> {plan['w1_bias']}
@@ -498,7 +575,7 @@ def handle_gold():
 👉 <b>{action_s}:</b>
    <code>${plan['entry_stop']:,.2f}</code>
 
-🛡️ <b>Cắt lỗ (SL Ngoài Cản Đỉnh/Đáy H1 ~{plan['sl_dist']:.1f} Giá):</b>
+🛡️ <b>Cắt lỗ (SL Ngoài Chóp Swing High/Low ~{plan['sl_dist']:.1f} Giá):</b>
    <code>${plan['sl']:,.2f}</code>
 🎯 <b>Chốt lời 1 (TP1 - Ăn {plan['sl_dist']*2:.1f} Giá | R:R 1:2):</b> <code>${plan['tp1']:,.2f}</code>
 🎯 <b>Chốt lời 2 (TP2 - Ăn {plan['sl_dist']*3.5:.1f} Giá | R:R 1:3.5):</b> <code>${plan['tp2']:,.2f}</code>
@@ -508,7 +585,7 @@ def handle_gold():
 
 🛡️ <b>QUẢN LÝ VỐN VÀNG MT5 (${CONFIG['ACCOUNT_BALANCE']:,.0f}):</b>
 • Rủi ro tối đa 2%: <b>$20.0</b> (tương đương 0.01 - 0.02 lot trên MT5)
-<i>💡 Setup kinh điển: Thuận Bias Tuần & Ngày, rình M15 tạo CHoCH và giật râu test cản là vào lệnh! SL cực ngắn trên chóp râu, tỷ lệ ăn R:R cực lớn!</i>"""
+<i>💡 Setup kinh điển: Thuận Bias Tuần & Ngày, rình M15 tạo CHoCH và giật râu test Khối OB là vào lệnh! SL cực ngắn trên chóp Swing High, tỷ lệ ăn R:R cực lớn!</i>"""
         send_telegram(text, reply_markup=get_main_keyboard())
     except Exception as e:
         send_telegram(f"Lỗi phân tích Vàng: {e}", reply_markup=get_main_keyboard())
