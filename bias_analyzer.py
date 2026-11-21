@@ -112,6 +112,29 @@ def check_choch_and_retest(df, mode='long'):
     lows = df['low'].values
     closes = df['close'].values
     
+    if mode == 'long':
+        prev_swing_high = float(max(highs[-15:-5]))
+        choch_found = bool((closes[-5:] > prev_swing_high).any() or (highs[-5:] > prev_swing_high).any())
+        retest_cond = (lows[-4:] <= prev_swing_high * 1.008) & (closes[-4:] >= prev_swing_high * 0.992)
+        retest_found = bool(retest_cond.any())
+        return {
+            'has_choch': choch_found,
+            'has_retest': retest_found,
+            'retest_level': prev_swing_high,
+            'breakout_level': float(max(highs[-5:]))
+        }
+    else: # short
+        prev_swing_low = float(min(lows[-15:-5]))
+        choch_found = bool((closes[-5:] < prev_swing_low).any() or (lows[-5:] < prev_swing_low).any())
+        retest_cond = (highs[-4:] >= prev_swing_low * 0.992) & (closes[-4:] <= prev_swing_low * 1.008)
+        retest_found = bool(retest_cond.any())
+        return {
+            'has_choch': choch_found,
+            'has_retest': retest_found,
+            'retest_level': prev_swing_low,
+            'breakout_level': float(min(lows[-5:]))
+        }
+
 def quick_scan_market(mode='long', limit=5):
     """
     Quét siêu tốc các coin thanh khoản cao trên Binance Futures theo chiều TĂNG hoặc GIẢM.
