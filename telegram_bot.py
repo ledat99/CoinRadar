@@ -161,72 +161,181 @@ def handle_btc():
         send_telegram(f"Lỗi BTC POC: {e}", reply_markup=get_main_keyboard())
 
 # ==========================================
-# 2. KẾ HOẠCH VÀNG (OANDA) - ENTRY THEO POC M15 & CẢN NẾN H4
+# 2. KẾ HOẠCH VÀNG (SMC) - QUÉT RÂU THANH KHOẢN (SWEEP) + CHoCH & RETEST POC M15
 # ==========================================
+def fetch_gold_bybit_klines(interval='5', limit=100):
+    url = f'https://api.bybit.com/v5/market/kline?category=linear&symbol=XAUUSDT&interval={interval}&limit={limit}'
+    req = urllib.request.Request(url, headers=HEADERS)
+    with urllib.request.urlopen(req, timeout=8) as r:
+        raw = json.loads(r.read().decode())['result']['list']
+    klines = []
+    for k in reversed(raw):
+        ts = int(k[0]) / 1000
+        dt = time.strftime('%H:%M', time.localtime(ts))
+        klines.append({
+            'time': dt,
+            'open': float(k[1]),
+            'high': float(k[2]),
+            'low': float(k[3]),
+            'close': float(k[4]),
+            'vol': float(k[5])
+        })
+    return klines
+
 def calculate_gold_h4_plan():
     now = time.time()
     if PLAN_CACHE['GOLD']['data'] and (now - PLAN_CACHE['GOLD']['candle_time'] < 3600):
         return PLAN_CACHE['GOLD']['data']
         
-    url = 'https://scanner.tradingview.com/cfd/scan'
-    payload = json.dumps({
-        'symbols': {'tickers': ['OANDA:XAUUSD']},
-        'columns': [
-            'close', 'open', 'high', 'low', 'volume',
-            'close|15', 'high|15', 'low|15', 'EMA20|15',
-            'close|240', 'high|240', 'low|240', 'EMA20|240'
-        ]
-    }).encode()
-    req = urllib.request.Request(url, data=payload, headers=HEADERS)
-    with urllib.request.urlopen(req, timeout=10) as resp:
-        d = json.loads(resp.read().decode())['data'][0]['d']
+    try:
+        # Lấy dữ liệu nến M5 và M15 từ Bybit XAUUSDT (Dữ liệu tick chuẩn theo Gold quốc tế)
+        m5 = fetch_gold_bybit_klines('5', 100)
+        m15 = fetch_gold_bybit_klines('15', 60)
+        current_gold = m5[-1]['close']
+        data_source = "Bybit XAUUSDT (Nến M5/M15 Thực Chiến)"
         
-    current_gold = d[0]
-    m15_high = d[6]
-    m15_low = d[7]
-    m15_ema20 = d[8]
-    
-    h4_high = d[10]
-    h4_low = d[11]
-    h4_ema20 = d[12]
-    
-    # POC M15 thực chiến (vùng thanh khoản nến M15 gần giá nhất)
-    poc_gold_m15 = round((m15_high + m15_low + m15_ema20) / 3.0, 2)
-    is_uptrend = current_gold >= h4_ema20
-    signal = "LONG" if is_uptrend else "SHORT"
-    
-    if signal == "SHORT":
-        # Entry Limit bám sát POC M15 hoặc râu hồi M15 (rất dễ khớp)
-        entry_limit = poc_gold_m15 if poc_gold_m15 > current_gold else round(current_gold + 4.5, 2)
-        entry_stop = round(h4_low - 1.5, 2)
+        # 1. Tính POC M15 (Volume profile 24 nến M15 gần nhất ~ 6 tiếng)
+        recent_m15 = m15[-24:]
+        price_bins = {}
+        for c in recent_m15:
+            step = 1.0
+            for p in [round(c['low']/step)*step, round(((c['high']+c['low'])/2.0)/step)*step, round(c['high']/step)*step]:
+                price_bins[p] = price_bins.get(p, 0) + (c['vol'] / 3.0)
+        poc_gold_m15 = max(price_bins.items(), key=lambda x: x[1])[0] if price_bins else current_gold
+
+        # 2. Phát hiện Quét Thanh Khoản (Liquidity Sweep) trên nến M5
+        highs = [c['high'] for c in m5[-60:-5]]
+        lows = [c['low'] for c in m5[-60:-5]]
+        swing_high = max(highs) if highs else current_gold + 10.0
+        swing_low = min(lows) if lows else current_gold - 10.0
         
-        # SL LINH HOẠT: Đặt ngoài cản râu đỉnh H4 ($3,544.40) + đệm 3 giá
-        sl = round(max(entry_limit + 14.0, h4_high + 3.0), 2)
-        sl_dist = round(sl - entry_limit, 2)
-        tp1 = round(entry_limit - (sl_dist * 2.0), 2)
-        tp2 = round(entry_limit - (sl_dist * 3.5), 2)
-        advice = (
-            f"⚠️ CẮT SỚM KHI XẤU: Nếu có nến H1 đóng cửa vượt cản đỉnh ${h4_high:,.2f} thì chủ động cắt lỗ sớm bằng tay!\n"
-            f"💎 DCA KHI ĐẸP: Khi giá rơi phá thủng đáy ${h4_low:,.2f} và có lãi > {sl_dist:.0f} giá, dời SL về Entry và nhồi thêm Lệnh 2 (Sell Stop)!"
-        )
-    else: # LONG
-        entry_limit = poc_gold_m15 if poc_gold_m15 < current_gold else round(current_gold - 4.5, 2)
-        entry_stop = round(h4_high + 1.5, 2)
-        sl = round(min(entry_limit - 14.0, h4_low - 3.0), 2)
-        sl_dist = round(entry_limit - sl, 2)
-        tp1 = round(entry_limit + (sl_dist * 2.0), 2)
-        tp2 = round(entry_limit + (sl_dist * 3.5), 2)
-        advice = (
-            f"⚠️ CẮT SỚM KHI XẤU: Nếu có nến H1 đóng cửa gãy hỗ trợ ${h4_low:,.2f} thì chủ động cắt sớm bằng tay!\n"
-            f"💎 DCA KHI ĐẸP: Khi giá tăng vượt đỉnh ${h4_high:,.2f} và có lãi > {sl_dist:.0f} giá, dời SL về Entry và nhồi thêm Lệnh 2 (Buy Stop)!"
-        )
+        # Quét râu đỉnh (Bearish Sweep): High rướn lên/vượt cản nhưng rút râu xả ngược (như cây nến 22h)
+        sweep_bear = None
+        for c in reversed(m5[-30:]):
+            c_range = c['high'] - c['low']
+            upper_wick = c['high'] - max(c['open'], c['close'])
+            if c['high'] >= swing_high - 1.0:
+                if c['close'] < c['high'] - 1.5 or (c_range > 2.0 and upper_wick / c_range > 0.35):
+                    sweep_bear = c
+                    break
+                    
+        # Quét râu đáy (Bullish Sweep): Low quét thủng cản nhưng rút râu tăng ngược
+        sweep_bull = None
+        for c in reversed(m5[-30:]):
+            c_range = c['high'] - c['low']
+            lower_wick = min(c['open'], c['close']) - c['low']
+            if c['low'] <= swing_low + 1.0:
+                if c['close'] > c['low'] + 1.5 or (c_range > 2.0 and lower_wick / c_range > 0.35):
+                    sweep_bull = c
+                    break
+                    
+        ema20_m15 = sum([c['close'] for c in m15[-20:]]) / 20.0
         
+        if sweep_bear and not sweep_bull:
+            signal = "SHORT"
+        elif sweep_bull and not sweep_bear:
+            signal = "LONG"
+        else:
+            signal = "SHORT" if current_gold < ema20_m15 else "LONG"
+            
+        recent_min_5 = min([c['low'] for c in m5[-6:]])
+        recent_max_5 = max([c['high'] for c in m5[-6:]])
+        
+        if signal == "SHORT":
+            sweep_level = sweep_bear['high'] if sweep_bear else swing_high
+            sweep_time = sweep_bear['time'] if sweep_bear else "Phiên gần"
+            
+            # Entry 1: Bán Limit đón râu hồi retest vùng POC M15 hoặc FVG/EMA20 (rất dễ khớp)
+            entry_limit = round(max(current_gold + 2.5, min(poc_gold_m15, sweep_level - 2.5)), 2)
+            # Entry 2: Bán Stop khi gãy đáy xác nhận sóng xả tiếp diễn
+            entry_stop = round(recent_min_5 - 1.2, 2)
+            
+            # SL ĐẶT TRÊN RÂU QUÉT: đệm 1.8 giá ngoài đỉnh quét (Hợp lý trong ngưỡng 12-25 giá)
+            sl = round(max(sweep_level + 1.8, entry_limit + 12.0), 2)
+            if (sl - entry_limit) > 26.0:
+                sl = round(entry_limit + 22.0, 2)
+            sl_dist = round(sl - entry_limit, 2)
+            
+            tp1 = round(entry_limit - (sl_dist * 2.0), 2)
+            tp2 = round(entry_limit - (sl_dist * 3.5), 2)
+            
+            setup_desc = f"Quét Râu Đỉnh ({sweep_time} tại ${sweep_level:,.2f}) + CHoCH Giảm"
+            advice = (
+                f"⚠️ <b>CẮT SỚM KHI XẤU:</b> Nếu có nến M15 đóng cửa vững chắc vượt qua râu quét <b>${sweep_level:,.2f}</b>, cấu trúc bẫy sụp đổ -> Cắt lỗ sớm bằng tay!\n"
+                f"💎 <b>DCA NHỒI KHI ĐẸP:</b> Khi Lệnh 1 khớp và giá sập phá vỡ đáy <b>${entry_stop:,.2f}</b> (lãi > {sl_dist*0.7:.1f} giá), dời SL về Hoà Vốn (Entry) và kích hoạt Lệnh 2 (Sell Stop)!"
+            )
+        else: # LONG
+            sweep_level = sweep_bull['low'] if sweep_bull else swing_low
+            sweep_time = sweep_bull['time'] if sweep_bull else "Phiên gần"
+            
+            entry_limit = round(min(current_gold - 2.5, max(poc_gold_m15, sweep_level + 2.5)), 2)
+            entry_stop = round(recent_max_5 + 1.2, 2)
+            
+            sl = round(min(sweep_level - 1.8, entry_limit - 12.0), 2)
+            if (entry_limit - sl) > 26.0:
+                sl = round(entry_limit - 22.0, 2)
+            sl_dist = round(entry_limit - sl, 2)
+            
+            tp1 = round(entry_limit + (sl_dist * 2.0), 2)
+            tp2 = round(entry_limit + (sl_dist * 3.5), 2)
+            
+            setup_desc = f"Quét Râu Đáy ({sweep_time} tại ${sweep_level:,.2f}) + CHoCH Tăng"
+            advice = (
+                f"⚠️ <b>CẮT SỚM KHI XẤU:</b> Nếu có nến M15 đóng cửa gãy qua râu đáy quét <b>${sweep_level:,.2f}</b> -> Cắt lỗ sớm bằng tay!\n"
+                f"💎 <b>DCA NHỒI KHI ĐẸP:</b> Khi Lệnh 1 khớp và giá tăng bứt phá đỉnh <b>${entry_stop:,.2f}</b> (lãi > {sl_dist*0.7:.1f} giá), dời SL về Hoà Vốn (Entry) và kích hoạt Lệnh 2 (Buy Stop)!"
+            )
+            
+    except Exception as e:
+        # Fallback TradingView CFD Scanner nếu Bybit bận
+        url = 'https://scanner.tradingview.com/cfd/scan'
+        payload = json.dumps({
+            'symbols': {'tickers': ['OANDA:XAUUSD']},
+            'columns': ['close', 'open', 'high', 'low', 'high|15', 'low|15', 'close|15', 'EMA20|15', 'high|240', 'low|240', 'EMA20|240']
+        }).encode()
+        req = urllib.request.Request(url, data=payload, headers=HEADERS)
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            d = json.loads(resp.read().decode())['data'][0]['d']
+        current_gold = d[0]
+        data_source = "TradingView (OANDA:XAUUSD)"
+        m15_high = d[4]
+        m15_low = d[5]
+        m15_ema20 = d[7]
+        poc_gold_m15 = round((m15_high + m15_low + m15_ema20) / 3.0, 2)
+        h4_high = d[8]
+        h4_low = d[9]
+        signal = "SHORT" if current_gold < d[10] else "LONG"
+        
+        if signal == "SHORT":
+            entry_limit = poc_gold_m15 if poc_gold_m15 > current_gold else round(current_gold + 3.5, 2)
+            entry_stop = round(m15_low - 1.2, 2)
+            sl = round(max(h4_high + 2.0, entry_limit + 14.0), 2)
+            sl_dist = round(sl - entry_limit, 2)
+            tp1 = round(entry_limit - (sl_dist * 2.0), 2)
+            tp2 = round(entry_limit - (sl_dist * 3.5), 2)
+            setup_desc = f"Cản Râu Đỉnh H4 tại ${h4_high:,.2f}"
+            advice = (
+                f"⚠️ <b>CẮT SỚM KHI XẤU:</b> Nếu có nến M15/H1 đóng cửa vượt đỉnh <b>${h4_high:,.2f}</b> -> Cắt lỗ sớm bằng tay!\n"
+                f"💎 <b>DCA NHỒI KHI ĐẸP:</b> Khi Lệnh 1 có lãi > {sl_dist*0.7:.1f} giá và phá đáy <b>${entry_stop:,.2f}</b>, dời SL về Entry và nhồi Lệnh 2!"
+            )
+        else:
+            entry_limit = poc_gold_m15 if poc_gold_m15 < current_gold else round(current_gold - 3.5, 2)
+            entry_stop = round(m15_high + 1.2, 2)
+            sl = round(min(h4_low - 2.0, entry_limit - 14.0), 2)
+            sl_dist = round(entry_limit - sl, 2)
+            tp1 = round(entry_limit + (sl_dist * 2.0), 2)
+            tp2 = round(entry_limit + (sl_dist * 3.5), 2)
+            setup_desc = f"Hỗ Trợ Đáy H4 tại ${h4_low:,.2f}"
+            advice = (
+                f"⚠️ <b>CẮT SỚM KHI XẤU:</b> Nếu có nến M15/H1 đóng cửa gãy đáy <b>${h4_low:,.2f}</b> -> Cắt lỗ sớm bằng tay!\n"
+                f"💎 <b>DCA NHỒI KHI ĐẸP:</b> Khi Lệnh 1 có lãi > {sl_dist*0.7:.1f} giá và vượt đỉnh <b>${entry_stop:,.2f}</b>, dời SL về Entry và nhồi Lệnh 2!"
+            )
+
     plan = {
         'signal': signal,
         'current_price': current_gold,
+        'data_source': data_source,
         'poc_m15': poc_gold_m15,
-        'h4_high': h4_high,
-        'h4_low': h4_low,
+        'setup_desc': setup_desc,
         'entry_limit': entry_limit,
         'entry_stop': entry_stop,
         'sl': sl,
@@ -242,16 +351,16 @@ def calculate_gold_h4_plan():
 def handle_gold():
     try:
         plan = calculate_gold_h4_plan()
-        s_emoji = "🟢 LONG" if plan['signal'] == 'LONG' else "🔴 SHORT"
-        action_l = "LỆNH 1: Bán Đón Râu Hồi Về Vùng POC M15" if plan['signal'] == 'SHORT' else "LỆNH 1: Mua Đón Râu Hồi Về Vùng POC M15"
-        action_s = "LỆNH 2: Bán Phá Đáy Xác Nhận Sóng Xả H4" if plan['signal'] == 'SHORT' else "LỆNH 2: Mua Vượt Đỉnh H4"
+        s_emoji = "🟢 LONG (MUA)" if plan['signal'] == 'LONG' else "🔴 SHORT (BÁN)"
+        action_l = "LỆNH 1: Bán Limit Đón Râu Hồi Retest POC M15" if plan['signal'] == 'SHORT' else "LỆNH 1: Mua Limit Đón Râu Hồi Retest POC M15"
+        action_s = "LỆNH 2: Bán Stop Phá Đáy Tiếp Diễn Động Lực" if plan['signal'] == 'SHORT' else "LỆNH 2: Mua Stop Phá Đỉnh Tiếp Diễn Động Lực"
         
-        text = f"""🥇 <b>[KẾ HOẠCH VÀNG: ENTRY POC M15 & CẢN RÂU H4]</b> 🥇
+        text = f"""🥇 <b>[CHIẾN LƯỢC VÀNG SMC: QUÉT RÂU THANH KHOẢN & CHoCH]</b> 🥇
 ━━━━━━━━━━━━━━━━━━
-📊 Nguồn biểu đồ: <b>TradingView (OANDA:XAUUSD)</b>
+📊 Nguồn biểu đồ: <b>{plan['data_source']}</b>
 💰 Giá Vàng hiện tại: <b>${plan['current_price']:,.2f}</b>
-🎯 <b>Vùng POC M15 (Thanh khoản gần):</b> <code>${plan['poc_m15']:,.2f}</code>
-📈 Cản râu đỉnh H4: <b>${plan['h4_high']:,.2f}</b> | Đáy râu H4: <b>${plan['h4_low']:,.2f}</b>
+🎯 <b>Vùng POC M15 (Thanh khoản hội tụ):</b> <code>${plan['poc_m15']:,.2f}</code>
+⚡ <b>Cấu trúc SMC:</b> <b>{plan['setup_desc']}</b>
 ━━━━━━━━━━━━━━━━━━
 🚀 <b>CHIẾN LƯỢC: {s_emoji}</b>
 👉 <b>{action_l}:</b>
@@ -259,20 +368,20 @@ def handle_gold():
 👉 <b>{action_s}:</b>
    <code>${plan['entry_stop']:,.2f}</code>
 
-🛡️ <b>Cắt lỗ (SL Linh Hoạt Ngoài Cản H4 ~{plan['sl_dist']:.1f} Giá):</b>
+🛡️ <b>Cắt lỗ (SL Trên Râu Quét ~{plan['sl_dist']:.1f} Giá):</b>
    <code>${plan['sl']:,.2f}</code>
-🎯 <b>Chốt lời 1 (TP1 - Ăn {plan['sl_dist']*2:.1f} Giá):</b> <code>${plan['tp1']:,.2f}</code>
-🎯 <b>Chốt lời 2 (TP2 - Ăn {plan['sl_dist']*3.5:.1f} Giá):</b> <code>${plan['tp2']:,.2f}</code>
+🎯 <b>Chốt lời 1 (TP1 - Ăn {plan['sl_dist']*2:.1f} Giá | R:R 1:2):</b> <code>${plan['tp1']:,.2f}</code>
+🎯 <b>Chốt lời 2 (TP2 - Ăn {plan['sl_dist']*3.5:.1f} Giá | R:R 1:3.5):</b> <code>${plan['tp2']:,.2f}</code>
 
 🧠 <b>KẾ HOẠCH XỬ LÝ LỆNH CHỦ ĐỘNG:</b>
 {plan['advice']}
 
 🛡️ <b>QUẢN LÝ VỐN VÀNG (${CONFIG['ACCOUNT_BALANCE']:,.0f}):</b>
 • Rủi ro tối đa 2%: <b>$20.0</b> | Khối lượng: <b>$2,500.0</b> | Đòn bẩy: <b>5x</b>
-<i>💡 Điểm vào Entry Limit bám sát theo vùng POC M15 cực kỳ dễ khớp đón nhịp râu, SL bảo vệ ngoài cản đỉnh/đáy H4 an toàn!</i>"""
+<i>💡 Setup SMC chuyên trị giật râu: Đón lệnh khi Big Boys đã quét sạch thanh khoản và xác nhận CHoCH. SL đặt bám râu quét cực kỳ an toàn và tối ưu R:R!</i>"""
         send_telegram(text, reply_markup=get_main_keyboard())
     except Exception as e:
-        send_telegram(f"Lỗi Vàng H4: {e}", reply_markup=get_main_keyboard())
+        send_telegram(f"Lỗi phân tích Vàng: {e}", reply_markup=get_main_keyboard())
 
 # ==========================================
 # 3. QUÉT COIN THEO PHIÊN 1H - CỐ ĐỊNH ENTRY
