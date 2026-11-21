@@ -51,7 +51,7 @@ def get_main_keyboard():
     }
 
 # ==========================================
-# 1. TÍNH ENTRY THEO POC M15 & CẢN RÂU NẾN H4 (DỄ KHỚP LỆNH, R:R CAO)
+# 1. KẾ HOẠCH BITCOIN: ĐỒNG PHA BIAS TUẦN/NGÀY + ENTRY POC M15 & STOP ĐUA SÓNG
 # ==========================================
 def calculate_btc_h4_plan():
     now = time.time()
@@ -59,103 +59,163 @@ def calculate_btc_h4_plan():
     if PLAN_CACHE['BTC']['data'] and (now - PLAN_CACHE['BTC']['candle_time'] < 3600):
         return PLAN_CACHE['BTC']['data']
         
-    # Lấy 24 nến M15 (phiên 6 tiếng gần nhất) để tính Volume Profile POC thực tế
-    url = 'https://api.bybit.com/v5/market/kline?category=linear&symbol=BTCUSDT&interval=15&limit=24'
-    req = urllib.request.Request(url, headers=HEADERS)
-    with urllib.request.urlopen(req, timeout=10) as resp:
-        data = json.loads(resp.read().decode())['result']['list']
+    try:
+        def get_kline(interval='15', limit=30):
+            url = f'https://api.bybit.com/v5/market/kline?category=linear&symbol=BTCUSDT&interval={interval}&limit={limit}'
+            req = urllib.request.Request(url, headers=HEADERS)
+            with urllib.request.urlopen(req, timeout=8) as r:
+                return json.loads(r.read().decode())['result']['list']
+
+        w_klines = get_kline('W', 25)
+        d_klines = get_kline('D', 25)
+        m15_klines = get_kline('15', 30)
+
+        current_price = float(m15_klines[0][4])
         
-    current_price = float(data[0][4])
-    
-    # 1. Tính POC M15 (Vùng thanh khoản tập trung lớn nhất phiên gần nhất)
-    prices = []
-    weights = []
-    for k in data:
-        high = float(k[2])
-        low = float(k[3])
-        vol = float(k[5])
-        for p in np.linspace(low, high, 5):
-            prices.append(p)
-            weights.append(vol / 5.0)
+        # 1. Bias Đa Khung (Tuần W1 & Ngày D1)
+        w_closes = [float(k[4]) for k in reversed(w_klines)]
+        w_ema20 = sum(w_closes[-20:]) / 20.0
+        w1_bear = current_price < w_ema20
+        w1_bias = "🔴 GIẢM (BEARISH)" if w1_bear else "🟢 TĂNG (BULLISH)"
+
+        d_closes = [float(k[4]) for k in reversed(d_klines)]
+        d_ema20 = sum(d_closes[-20:]) / 20.0
+        d1_bear = current_price < d_ema20
+        d1_bias = "🔴 GIẢM (BEARISH)" if d1_bear else "🟢 TĂNG (BULLISH)"
+
+        # 2. Tính POC M15 (Volume profile phiên gần nhất)
+        prices = []
+        weights = []
+        for k in m15_klines:
+            high = float(k[2])
+            low = float(k[3])
+            vol = float(k[5])
+            for p in np.linspace(low, high, 5):
+                prices.append(p)
+                weights.append(vol / 5.0)
+                
+        hist, bin_edges = np.histogram(prices, bins=25, weights=weights)
+        poc_m15 = round((bin_edges[np.argmax(hist)] + bin_edges[np.argmax(hist)+1]) / 2, 1)
+
+        # 3. Cản râu nến M15/H4
+        highs = [float(k[2]) for k in m15_klines]
+        lows = [float(k[3]) for k in m15_klines]
+        swing_high = round(max(highs), 1)
+        swing_low = round(min(lows), 1)
+
+        # Ưu tiên xu hướng theo Bias Tuần & Ngày
+        if w1_bear and d1_bear:
+            signal = "SHORT"
+        elif not w1_bear and not d1_bear:
+            signal = "LONG"
+        else:
+            signal = "SHORT" if d1_bear else "LONG"
+
+        is_diamond = (w1_bear and d1_bear and signal == "SHORT") or (not w1_bear and not d1_bear and signal == "LONG")
+        diamond_note = "⭐ ĐỒNG PHA TUẦN + NGÀY (SETUP KIM CƯƠNG): BTC rất dễ đâm một mạch theo xu hướng chính!" if is_diamond else "⚡ Lưu ý quản lý vốn chặt chẽ theo từng phiên."
+
+        if signal == "SHORT":
+            # ENTRY LIMIT: Đón nhịp rút chân kiểm tra lại POC M15 hoặc cản râu hồi
+            entry_limit = poc_m15 if poc_m15 > current_price else round(current_price * 1.006, 1)
+            if entry_limit > swing_high - 50.0:
+                entry_limit = round(swing_high - 100.0, 1)
+                
+            # SELL STOP: Đặt ngay dưới đáy swing_low để bắt trọn sóng xả đâm 1 mạch nếu BTC không thèm test!
+            entry_stop = round(swing_low * 0.998, 1)
             
-    hist, bin_edges = np.histogram(prices, bins=25, weights=weights)
-    poc_m15 = round((bin_edges[np.argmax(hist)] + bin_edges[np.argmax(hist)+1]) / 2, 1)
-    
-    # 2. Cản râu nến H4 (Đỉnh râu cao nhất & Đáy râu thấp nhất của phiên)
-    highs = [float(k[2]) for k in data]
-    lows = [float(k[3]) for k in data]
-    swing_high_h4 = round(max(highs), 1)
-    swing_low_h4 = round(min(lows), 1)
-    
-    is_uptrend = current_price >= poc_m15
-    signal = "LONG" if is_uptrend else "SHORT"
-    
-    if signal == "SHORT":
-        # ENTRY LIMIT: Đặt đúng tại POC M15 (Nếu POC cao hơn giá hiện tại để đón râu hồi)
-        # Nếu POC đang thấp hơn giá hiện tại thì lấy cản râu hồi gần nhất
-        entry_limit = poc_m15 if poc_m15 > current_price else round(current_price * 1.006, 1)
-        # SELL STOP: Đặt khi đâm thủng đáy râu hỗ trợ H4
-        entry_stop = round(swing_low_h4 * 0.998, 1)
-        # SL LINH HOẠT: Đặt trên cản đỉnh râu H4 + đệm an toàn
-        sl = round(max(entry_limit * 1.015, swing_high_h4 + 150.0), 1)
-        risk = sl - entry_limit
-        tp1 = round(entry_limit - (risk * 2.0), 1)
-        tp2 = round(entry_limit - (risk * 3.5), 1)
-    else: # LONG
-        entry_limit = poc_m15 if poc_m15 < current_price else round(current_price * 0.994, 1)
-        entry_stop = round(swing_high_h4 * 1.002, 1)
-        sl = round(min(entry_limit * 0.985, swing_low_h4 - 150.0), 1)
-        risk = entry_limit - sl
-        tp1 = round(entry_limit + (risk * 2.0), 1)
-        tp2 = round(entry_limit + (risk * 3.5), 1)
-        
-    sl_pct = (risk / entry_limit) * 100.0
-    dist_to_entry = round(abs(current_price - entry_limit), 1)
-    
-    plan = {
-        'signal': signal,
-        'current_price': current_price,
-        'poc': poc_m15,
-        'swing_high': swing_high_h4,
-        'swing_low': swing_low_h4,
-        'entry_limit': entry_limit,
-        'entry_stop': entry_stop,
-        'dist_to_entry': dist_to_entry,
-        'sl': sl,
-        'sl_pct': round(sl_pct, 2),
-        'tp1': tp1,
-        'tp2': tp2
-    }
-    PLAN_CACHE['BTC']['data'] = plan
-    PLAN_CACHE['BTC']['candle_time'] = now
-    return plan
+            # SL: Đặt trên cản râu đỉnh swing_high + đệm an toàn
+            sl = round(max(entry_limit * 1.015, swing_high + 150.0), 1)
+            risk = sl - entry_limit
+            tp1 = round(entry_limit - (risk * 2.0), 1)
+            tp2 = round(entry_limit - (risk * 3.5), 1)
+            
+            setup_desc = f"Quét Râu Test Đỉnh M15 tại ${swing_high:,.1f} + CHoCH Giảm"
+            advice = (
+                f"⚠️ <b>CẮT SỚM KHI XẤU:</b> Nếu có nến M15/H1 đóng cửa vượt cản đỉnh <b>${swing_high:,.1f}</b> -> Chủ động cắt sớm bằng tay!\n"
+                f"💎 <b>DCA NHỒI KHI ĐẸP:</b> BTC quán tính rất mạnh! Nếu không khớp Lệnh 1 Limit mà đâm thẳng 1 mạch phá đáy <b>${entry_stop:,.1f}</b>, Lệnh 2 Sell Stop sẽ tự động khớp để không bị lỡ tàu. Khi lãi > {risk*0.7:.0f} giá, dời SL về Hoà Vốn!"
+            )
+        else: # LONG
+            entry_limit = poc_m15 if poc_m15 < current_price else round(current_price * 0.994, 1)
+            if entry_limit < swing_low + 50.0:
+                entry_limit = round(swing_low + 100.0, 1)
+                
+            entry_stop = round(swing_high * 1.002, 1)
+            
+            sl = round(min(entry_limit * 0.985, swing_low - 150.0), 1)
+            risk = entry_limit - sl
+            tp1 = round(entry_limit + (risk * 2.0), 1)
+            tp2 = round(entry_limit + (risk * 3.5), 1)
+            
+            setup_desc = f"Quét Râu Test Đáy M15 tại ${swing_low:,.1f} + CHoCH Tăng"
+            advice = (
+                f"⚠️ <b>CẮT SỚM KHI XẤU:</b> Nếu có nến M15/H1 đóng cửa gãy hỗ trợ <b>${swing_low:,.1f}</b> -> Chủ động cắt sớm bằng tay!\n"
+                f"💎 <b>DCA NHỒI KHI ĐẸP:</b> BTC quán tính rất mạnh! Nếu không khớp Lệnh 1 Limit mà bứt phá thẳng 1 mạch qua đỉnh <b>${entry_stop:,.1f}</b>, Lệnh 2 Buy Stop sẽ tự động khớp để không bị lỡ tàu. Khi lãi > {risk*0.7:.0f} giá, dời SL về Hoà Vốn!"
+            )
+
+        sl_pct = (risk / entry_limit) * 100.0
+        dist_to_entry = round(abs(current_price - entry_limit), 1)
+
+        plan = {
+            'signal': signal,
+            'current_price': current_price,
+            'w1_bias': w1_bias,
+            'd1_bias': d1_bias,
+            'diamond_note': diamond_note,
+            'setup_desc': setup_desc,
+            'poc': poc_m15,
+            'swing_high': swing_high,
+            'swing_low': swing_low,
+            'entry_limit': entry_limit,
+            'entry_stop': entry_stop,
+            'dist_to_entry': dist_to_entry,
+            'sl': sl,
+            'sl_pct': round(sl_pct, 2),
+            'tp1': tp1,
+            'tp2': tp2,
+            'advice': advice
+        }
+        PLAN_CACHE['BTC']['data'] = plan
+        PLAN_CACHE['BTC']['candle_time'] = now
+        return plan
+    except Exception as e:
+        print(f"Lỗi tính plan BTC: {e}")
+        raise e
 
 def handle_btc():
     try:
         plan = calculate_btc_h4_plan()
-        s_emoji = "🟢 LONG" if plan['signal'] == 'LONG' else "🔴 SHORT"
-        action_l = "Đón Râu Hồi Về Đúng Vùng POC M15" if plan['signal'] == 'SHORT' else "Mua Giá Thấp Tại Vùng POC M15"
-        action_s = "Bán Tháo Khi Thủng Đáy Râu H4" if plan['signal'] == 'SHORT' else "Mua Đuổi Khi Vượt Đỉnh Râu H4"
+        s_emoji = "🟢 LONG (MUA)" if plan['signal'] == 'LONG' else "🔴 SHORT (BÁN)"
+        action_l = "LỆNH 1: Bán Limit Đón Râu Hồi Retest POC M15" if plan['signal'] == 'SHORT' else "LỆNH 1: Mua Limit Đón Râu Hồi Retest POC M15"
+        action_s = "LỆNH 2: Bán Stop Phá Đáy - Bắt Trọn Cú Xả Đâm 1 Mạch" if plan['signal'] == 'SHORT' else "LỆNH 2: Mua Stop Phá Đỉnh - Bắt Trọn Cú Bơm Đâm 1 Mạch"
         
-        text = f"""👑 <b>[KẾ HOẠCH BITCOIN: ENTRY POC M15 & CẢN RÂU H4]</b> 👑
+        text = f"""👑 <b>[CHIẾN LƯỢC BITCOIN: ĐỒNG PHA BIAS TUẦN/NGÀY & SMC]</b> 👑
 ━━━━━━━━━━━━━━━━━━
-💰 Giá hiện tại: <b>${plan['current_price']:,.1f}</b>
+💰 Giá BTC hiện tại: <b>${plan['current_price']:,.1f}</b>
 🎯 <b>Vùng POC M15 (Volume cốt lõi):</b> <code>${plan['poc']:,.1f}</code> (Cách ${plan['dist_to_entry']:,.1f} giá)
-📊 Cản râu đỉnh H4: <b>${plan['swing_high']:,.1f}</b> | Đáy râu H4: <b>${plan['swing_low']:,.1f}</b>
+📊 Cản râu đỉnh M15: <b>${plan['swing_high']:,.1f}</b> | Đáy râu M15: <b>${plan['swing_low']:,.1f}</b>
+━━━━━━━━━━━━━━━━━━
+💎 <b>ĐỒNG PHA BIAS ĐA KHUNG (WINRATE CAO):</b>
+• <b>Bias Tuần (W1):</b> {plan['w1_bias']}
+• <b>Bias Ngày (D1):</b> {plan['d1_bias']}
+⚡ <b>Cấu trúc M15:</b> <b>{plan['setup_desc']}</b>
+<i>{plan['diamond_note']}</i>
 ━━━━━━━━━━━━━━━━━━
 🚀 <b>CHIẾN LƯỢC: {s_emoji}</b>
-👉 <b>1. LỆNH LIMIT THEO POC M15 ({action_l}):</b>
+👉 <b>{action_l}:</b>
    <code>${plan['entry_limit']:,.1f}</code>
-👉 <b>2. LỆNH STOP PHÁ VỠ ({action_s}):</b>
+👉 <b>{action_s}:</b>
    <code>${plan['entry_stop']:,.1f}</code>
 
-🛡️ <b>Cắt lỗ (SL Linh Hoạt Trên Cản Râu H4):</b> <code>${plan['sl']:,.1f}</code> (-{plan['sl_pct']}%)
+🛡️ <b>Cắt lỗ (SL Ngoài Cản Râu M15/H4):</b> <code>${plan['sl']:,.1f}</code> (-{plan['sl_pct']}%)
 🎯 <b>Chốt lời 1 (TP1 - R:R 1:2):</b> <code>${plan['tp1']:,.1f}</code>
 🎯 <b>Chốt lời 2 (TP2 - R:R 1:3.5):</b> <code>${plan['tp2']:,.1f}</code>
 
+🧠 <b>KẾ HOẠCH XỬ LÝ LỆNH CHỦ ĐỘNG:</b>
+{plan['advice']}
+
 🛡️ <b>QUẢN LÝ VỐN (${CONFIG['ACCOUNT_BALANCE']:,.0f}):</b>
 • Rủi ro tối đa 2%: <b>$20.0</b> | Khối lượng: <b>$1,000.0</b> | Đòn bẩy: <b>5x</b>
-<i>💡 Điểm vào Entry bám sát theo vùng POC M15 nên cực kỳ dễ khớp đón nhịp giật râu, SL đặt trên cản râu H4 an toàn!</i>"""
+<i>💡 Giải pháp chuyên biệt cho BTC: BTC có quán tính cực mạnh, khi xuôi sóng Tuần & Ngày thường đâm thẳng một mạch không test nhiều. Nếu không khớp Lệnh 1 thì Lệnh 2 Stop sẽ tự động kích hoạt đua sóng, không bao giờ bị lỡ kèo!</i>"""
         send_telegram(text, reply_markup=get_main_keyboard())
     except Exception as e:
         send_telegram(f"Lỗi BTC POC: {e}", reply_markup=get_main_keyboard())
