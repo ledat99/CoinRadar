@@ -221,5 +221,29 @@ def run_bot():
             print(f"Lỗi: {e}")
             time.sleep(3)
 
+import http.server
+import socketserver
+import threading
+
+def start_health_server():
+    """Tạo một server HTTP siêu nhẹ để Render nhận diện port và giữ bot Live 24/7"""
+    port = int(os.environ.get('PORT', 8080))
+    class HealthHandler(http.server.SimpleHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header('Content-type', 'text/plain')
+            self.end_headers()
+            self.wfile.write(b'Bot is running healthy!')
+        def log_message(self, format, *args):
+            return
+    try:
+        with socketserver.TCPServer(('', port), HealthHandler) as httpd:
+            print(f'Health server running on port {port}')
+            httpd.serve_forever()
+    except Exception as e:
+        print(f'Health server error: {e}')
+
 if __name__ == '__main__':
+    # Chạy server HTTP nền cho Render
+    threading.Thread(target=start_health_server, daemon=True).start()
     run_bot()
