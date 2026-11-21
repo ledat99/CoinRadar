@@ -237,8 +237,8 @@ def calculate_keyvolume_nodes(klines, n_bins=20):
 
 def calculate_btc_h4_plan():
     now = time.time()
-    # Cache giữ nguyên trong 1 tiếng để đảm bảo không bị nhảy giá liên tục
-    if PLAN_CACHE['BTC']['data'] and (now - PLAN_CACHE['BTC']['candle_time'] < 3600):
+    # Cache giữ nguyên trong 4 phút (đồng bộ chu kỳ nến M5)
+    if PLAN_CACHE['BTC']['data'] and (now - PLAN_CACHE['BTC']['candle_time'] < 240):
         return PLAN_CACHE['BTC']['data']
         
     try:
@@ -461,7 +461,8 @@ def handle_btc():
 # ==========================================
 def calculate_gold_h4_plan():
     now = time.time()
-    if PLAN_CACHE['GOLD']['data'] and (now - PLAN_CACHE['GOLD']['candle_time'] < 3600):
+    # Cache giữ nguyên trong 4 phút (đồng bộ chu kỳ nến M5)
+    if PLAN_CACHE['GOLD']['data'] and (now - PLAN_CACHE['GOLD']['candle_time'] < 240):
         return PLAN_CACHE['GOLD']['data']
         
     confirm_badge = "⏳ ĐANG CHỜ XÁC NHẬN (CHƯA VÀO LỆNH)"
@@ -996,27 +997,42 @@ def run_bot():
         except Exception as e:
             time.sleep(3)
 
+def sleep_until_next_m5():
+    """Chờ đồng bộ đến đúng thời điểm nến M5 vừa đóng cửa (giây thứ 5 của các mốc :00, :05, :10, :15, :20, :25, :30, :35, :40, :45, :50, :55)"""
+    now = time.time()
+    remainder = now % 300
+    sleep_sec = (300 - remainder) + 5
+    if sleep_sec < 5:
+        sleep_sec += 300
+    return sleep_sec
+
 def auto_diamond_alert_worker():
-    """Quét tự động ngầm mỗi 3 phút - Phát hiện Setup Kim Cương (Đồng pha Tuần/Ngày & Test POC) là tự động bắn Telegram"""
-    time.sleep(20) # Chờ bot khởi động ổn định 20 giây
+    """
+    Quét tự động ngầm đồng bộ chuẩn M5 (mỗi 5 phút tại các mốc giờ chẵn :00, :05, :10, :15...)
+    Đúng giây thứ 5 sau khi nến M5 chốt, quét ngay để đón Entry đẹp nhất ở đầu nến mới!
+    """
+    time.sleep(10) # Chờ bot khởi động ổn định 10 giây
     while True:
         try:
+            # 1. Chờ đúng thời điểm nến M5 vừa đóng cửa (chu kỳ 5 phút các mốc chẵn)
+            sleep_time = sleep_until_next_m5()
+            time.sleep(sleep_time)
+
             now = time.time()
+            # Xoá cache để luôn tính toán nến M5 mới nhất vừa đóng
+            PLAN_CACHE['GOLD']['data'] = None
+            PLAN_CACHE['BTC']['data'] = None
             
-            # 1. QUÉT TỰ ĐỘNG VÀNG (OANDA:XAUUSD - Chuẩn MT5)
-            if now - LAST_ALERT_TIME['GOLD'] > 3600: # Cooldown 1 tiếng mỗi thông báo
-                plan_gold = calculate_gold_h4_plan()
-                # TÔN CHỈ KEYVOLUME: CHỈ BẮN KÈO KHI:
-                # 1. ĐÃ ĐƯỢC XÁC NHẬN NẾN + VOLUME M5 (is_confirmed is True)
-                # 2. confirm_badge chứa 'ĐÃ XÁC NHẬN'
-                # 3. Giá đang nằm trong hoặc sát vùng OB (cách OB <= 8.0 giá), không bắn khi giá ở lưng chừng!
-                dist_to_cản = abs(plan_gold['current_price'] - plan_gold['entry_limit'])
-                if plan_gold.get('is_confirmed') and ('ĐÃ XÁC NHẬN' in plan_gold.get('confirm_badge', '')) and (dist_to_cản <= 8.0):
+            # 2. QUÉT TỰ ĐỘNG VÀNG (OANDA:XAUUSD - Chuẩn MT5)
+            plan_gold = calculate_gold_h4_plan()
+            dist_to_cản = abs(plan_gold['current_price'] - plan_gold['entry_limit'])
+            if plan_gold.get('is_confirmed') and ('ĐÃ XÁC NHẬN' in plan_gold.get('confirm_badge', '')) and (dist_to_cản <= 8.0):
+                if now - LAST_ALERT_TIME['GOLD'] > 1200: # Cooldown 20 phút giữa các kèo
                     price_gold = plan_gold['current_price']
                     entry_gold = plan_gold['entry_limit']
                     s_emoji = "🔴 SHORT (BÁN)" if plan_gold['signal'] == 'SHORT' else "🟢 LONG (MUA)"
-                    action_l = "LỆNH VÀO NGAY (Đã Kích Vol & Rút Râu M5):"
-                    msg = f"""🚨 <b>[TỰ ĐỘNG BÁO KÈO VIP: ĐÃ XÁC NHẬN NẾN & VOLUME M5]</b> 🚨
+                    action_l = "LỆNH VÀO NGAY (Nến M5 Vừa Đóng Chốt Retest):"
+                    msg = f"""🚨 <b>[TỰ ĐỘNG BÁO KÈO VIP M5: VÀO LỆNH NGAY ĐẦU NẾN]</b> 🚨
 ━━━━━━━━━━━━━━━━━━
 📊 Nguồn biểu đồ: <b>TradingView (OANDA:XAUUSD - Chuẩn MT5)</b>
 💰 Giá Vàng hiện tại: <b>${price_gold:,.2f}</b>
@@ -1051,22 +1067,18 @@ def auto_diamond_alert_worker():
                     send_telegram(msg)
                     LAST_ALERT_TIME['GOLD'] = now
 
-            # 2. QUÉT TỰ ĐỘNG BITCOIN (BTCUSDT)
-            if now - LAST_ALERT_TIME['BTC'] > 3600:
-                plan_btc = calculate_btc_h4_plan()
-                # TÔN CHỈ KEYVOLUME: CHỈ BẮN KÈO KHI:
-                # 1. ĐÃ ĐƯỢC XÁC NHẬN NẾN + VOLUME M5 (is_confirmed is True)
-                # 2. confirm_badge chứa 'ĐÃ XÁC NHẬN'
-                # 3. Giá đang nằm trong hoặc sát vùng OB (cách OB <= 300.0 giá)
-                dist_to_cản = abs(plan_btc['current_price'] - plan_btc['entry_limit'])
-                if plan_btc.get('is_confirmed') and ('ĐÃ XÁC NHẬN' in plan_btc.get('confirm_badge', '')) and (dist_to_cản <= 300.0):
+            # 3. QUÉT TỰ ĐỘNG BITCOIN (BTCUSDT)
+            plan_btc = calculate_btc_h4_plan()
+            dist_to_cản = abs(plan_btc['current_price'] - plan_btc['entry_limit'])
+            if plan_btc.get('is_confirmed') and ('ĐÃ XÁC NHẬN' in plan_btc.get('confirm_badge', '')) and (dist_to_cản <= 300.0):
+                if now - LAST_ALERT_TIME['BTC'] > 1200:
                     price_btc = plan_btc['current_price']
                     entry_l = plan_btc['entry_limit']
                     entry_s = plan_btc['entry_stop']
                     s_emoji = "🔴 SHORT (BÁN)" if plan_btc['signal'] == 'SHORT' else "🟢 LONG (MUA)"
-                    action_l = "LỆNH VÀO NGAY (Đã Kích Vol & Rút Râu M5):"
+                    action_l = "LỆNH VÀO NGAY (Nến M5 Vừa Đóng Chốt Retest):"
                     action_s = "LỆNH STOP ĐUA SÓNG:"
-                    msg = f"""🚨 <b>[TỰ ĐỘNG BÁO KÈO VIP: ĐÃ XÁC NHẬN NẾN & VOLUME M5]</b> 🚨
+                    msg = f"""🚨 <b>[TỰ ĐỘNG BÁO KÈO VIP M5: VÀO LỆNH NGAY ĐẦU NẾN]</b> 🚨
 ━━━━━━━━━━━━━━━━━━
 💰 Giá BTC hiện tại: <b>${price_btc:,.1f}</b>
 🎯 <b>Trạng thái:</b> <b>{plan_btc.get('confirm_badge', 'ĐÃ XÁC NHẬN')}</b>
@@ -1101,8 +1113,7 @@ def auto_diamond_alert_worker():
 
         except Exception as e:
             print(f"Lỗi worker quét tự động: {e}")
-            
-        time.sleep(180) # Quét lại mỗi 3 phút
+            time.sleep(10)
 
 if __name__ == '__main__':
     threading.Thread(target=start_health_server, daemon=True).start()
