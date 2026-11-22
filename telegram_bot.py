@@ -281,7 +281,7 @@ def check_and_update_vip_trades(curr_gold_p, curr_btc_p):
 
     save_vip_trades(remaining)
 
-def handle_check_vip_trades():
+def handle_check_vip_trades(chat_id=None):
     try:
         trades = load_vip_trades()
         history = load_vip_history()
@@ -344,24 +344,95 @@ def handle_check_vip_trades():
                 st = "✅ TP Full" if h.get('status') == 'CLOSED_TP2' else ("🛡️ Hoà Vốn" if h.get('status') == 'CLOSED_BREAKEVEN' else "🛑 Cắt Lỗ")
                 msg += f"  - {sym} {h.get('signal')}: {st} ({sgn_p}) [{h.get('close_time', '')}]\n"
 
-        send_telegram(msg, reply_markup=get_main_keyboard())
+        send_telegram(msg, reply_markup=get_main_keyboard(), target_chat_id=chat_id)
     except Exception as e:
-        send_telegram(f"Lỗi kiểm tra lệnh: {e}", reply_markup=get_main_keyboard())
+        send_telegram(f"Lỗi kiểm tra lệnh: {e}", reply_markup=get_main_keyboard(), target_chat_id=chat_id)
 
-def send_telegram(text, reply_markup=None):
-    url = f"https://api.telegram.org/bot{CONFIG['TELEGRAM_BOT_TOKEN']}/sendMessage"
-    payload = {
-        "chat_id": CONFIG['TELEGRAM_CHAT_ID'],
-        "text": text,
-        "parse_mode": "HTML",
-        "disable_web_page_preview": True
-    }
-    if reply_markup:
-        payload["reply_markup"] = reply_markup
+USERS_FILE = os.path.join(os.path.dirname(__file__), 'authorized_users.json')
+ADMIN_ID = str(CONFIG['TELEGRAM_CHAT_ID'])
+
+def load_authorized_users():
+    """Load danh sách người dùng được duyệt sử dụng bot"""
+    users = {ADMIN_ID: {'name': 'Chủ Sở Hữu (Admin)', 'role': 'admin', 'date': 'Gốc'}}
+    if os.path.exists(USERS_FILE):
+        try:
+            with open(USERS_FILE, 'r', encoding='utf-8') as f:
+                saved = json.load(f)
+                users.update(saved)
+        except Exception as e:
+            print(f"Lỗi load authorized users: {e}")
+    return users
+
+def save_authorized_users(users):
     try:
-        requests.post(url, json=payload, timeout=10)
+        with open(USERS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(users, f, ensure_ascii=False, indent=2)
     except Exception as e:
-        print(f"Lỗi gửi Telegram: {e}")
+        print(f"Lỗi save authorized users: {e}")
+
+def is_user_approved(chat_id):
+    users = load_authorized_users()
+    return str(chat_id) in users
+
+def add_approved_user(chat_id, name="User"):
+    users = load_authorized_users()
+    chat_id = str(chat_id)
+    users[chat_id] = {
+        'name': name,
+        'role': 'user',
+        'date': datetime.datetime.now(TZ_VN).strftime('%H:%M %d/%m/%Y')
+    }
+    save_authorized_users(users)
+
+def remove_approved_user(chat_id):
+    users = load_authorized_users()
+    chat_id = str(chat_id)
+    if chat_id == ADMIN_ID:
+        return False
+    if chat_id in users:
+        del users[chat_id]
+        save_authorized_users(users)
+        return True
+    return False
+
+def send_telegram(text, reply_markup=None, target_chat_id=None):
+    """
+    Gửi tin nhắn Telegram:
+    - Nếu có target_chat_id: Gửi riêng cho người dùng cụ thể.
+    - Nếu target_chat_id=None: Phát sóng (broadcast) đồng loạt cho TẤT CẢ thành viên được Admin duyệt!
+    """
+    url = f"https://api.telegram.org/bot{CONFIG['TELEGRAM_BOT_TOKEN']}/sendMessage"
+    
+    if target_chat_id is not None:
+        payload = {
+            "chat_id": str(target_chat_id),
+            "text": text,
+            "parse_mode": "HTML",
+            "disable_web_page_preview": True
+        }
+        if reply_markup:
+            payload["reply_markup"] = reply_markup
+        try:
+            requests.post(url, json=payload, timeout=10)
+        except Exception as e:
+            print(f"Lỗi gửi Telegram tới {target_chat_id}: {e}")
+        return
+
+    # Broadcast cho toàn bộ thành viên được duyệt
+    users = load_authorized_users()
+    for uid in users.keys():
+        payload = {
+            "chat_id": str(uid),
+            "text": text,
+            "parse_mode": "HTML",
+            "disable_web_page_preview": True
+        }
+        if reply_markup:
+            payload["reply_markup"] = reply_markup
+        try:
+            requests.post(url, json=payload, timeout=10)
+        except Exception as e:
+            print(f"Lỗi broadcast tới {uid}: {e}")
 
 def get_main_keyboard():
     return {
@@ -834,7 +905,7 @@ def calculate_btc_h4_plan():
         print(f"Lỗi tính plan BTC: {e}")
         raise e
 
-def handle_btc():
+def handle_btc(chat_id=None):
     try:
         plan = calculate_btc_h4_plan()
         text = f"""👑 <b>[KẾ HOẠCH GIAO DỊCH BITCOIN - BTCUSDT]</b> 👑
@@ -868,9 +939,9 @@ def handle_btc():
 • <b>Nhận định:</b> {plan['action_advice']}
 ━━━━━━━━━━━━━━━━━━
 <i>🛡️ Quản lý vốn: Rủi ro tối đa 2% ($40.0 trên tài khoản $2,000).</i>"""
-        send_telegram(text, reply_markup=get_main_keyboard())
+        send_telegram(text, reply_markup=get_main_keyboard(), target_chat_id=chat_id)
     except Exception as e:
-        send_telegram(f"Lỗi BTC POC: {e}", reply_markup=get_main_keyboard())
+        send_telegram(f"Lỗi BTC POC: {e}", reply_markup=get_main_keyboard(), target_chat_id=chat_id)
 
 # ==========================================
 # 2. KẾ HOẠCH VÀNG (SMC) - NGUỒN OANDA:XAUUSD (CHUẨN MT5)
@@ -1145,7 +1216,7 @@ def calculate_gold_h4_plan():
         print(f"Lỗi tính plan Vàng: {e}")
         raise e
 
-def handle_gold():
+def handle_gold(chat_id=None):
     try:
         plan = calculate_gold_h4_plan()
         text = f"""🥇 <b>[KẾ HOẠCH GIAO DỊCH VÀNG - XAUUSD]</b> 🥇
@@ -1179,9 +1250,9 @@ def handle_gold():
 • <b>Nhận định:</b> {plan['action_advice']}
 ━━━━━━━━━━━━━━━━━━
 <i>🛡️ Quản lý vốn MT5: Rủi ro tối đa 2% ($40.0 trên tài khoản $2,000 ~ 0.02-0.04 lot).</i>"""
-        send_telegram(text, reply_markup=get_main_keyboard())
+        send_telegram(text, reply_markup=get_main_keyboard(), target_chat_id=chat_id)
     except Exception as e:
-        send_telegram(f"Lỗi phân tích Vàng: {e}", reply_markup=get_main_keyboard())
+        send_telegram(f"Lỗi phân tích Vàng: {e}", reply_markup=get_main_keyboard(), target_chat_id=chat_id)
 
 # ==========================================
 # 3. TUYỆT CHIÊU H4 LƯỠNG LỰ: BREAKOUT BUY STOP / SELL STOP
@@ -1314,7 +1385,7 @@ def calculate_h4_breakout_plan(symbol='BTCUSDT', is_gold=False):
         print(f"Lỗi calculate_h4_breakout_plan: {e}")
         raise e
 
-def handle_h4_breakout():
+def handle_h4_breakout(chat_id=None):
     try:
         p_gold = calculate_h4_breakout_plan(symbol='XAUUSD', is_gold=True)
         p_btc = calculate_h4_breakout_plan(symbol='BTCUSDT', is_gold=False)
@@ -1367,9 +1438,9 @@ def handle_h4_breakout():
 1. Khi giá đang nén trong hộp H4: Cài sẵn đồng thời cả 2 lệnh chờ <b>BUY STOP</b> và <b>SELL STOP</b>.
 2. <b>Khi 1 đầu khớp lệnh:</b> Ngay lập tức <b>HỦY</b> lệnh chờ ở đầu còn lại!
 3. <b>Khi giá đạt mốc TP1:</b> Chốt 50% khối lượng, đồng thời dời Stop Loss về giá Entry (Hoà vốn - Risk Free) để gồng tiếp về TP2!"""
-        send_telegram(text, reply_markup=get_main_keyboard())
+        send_telegram(text, reply_markup=get_main_keyboard(), target_chat_id=chat_id)
     except Exception as e:
-        send_telegram(f"Lỗi kiểm tra H4 Breakout: {e}", reply_markup=get_main_keyboard())
+        send_telegram(f"Lỗi kiểm tra H4 Breakout: {e}", reply_markup=get_main_keyboard(), target_chat_id=chat_id)
 
 # ==========================================
 # 3. QUÉT COIN THEO PHIÊN 1H - CỐ ĐỊNH ENTRY
@@ -1457,7 +1528,7 @@ def scan_coins_bybit(mode='long', limit=3):
     PLAN_CACHE[cache_key]['time'] = now
     return results
 
-def handle_scan(mode='long'):
+def handle_scan(mode='long', chat_id=None):
     try:
         results = scan_coins_bybit(mode=mode, limit=3)
         header = "🚀 [TOP COIN TIỀM NĂNG TĂNG - LONG]" if mode == 'long' else "📉 [TOP COIN TIỀM NĂNG GIẢM - SHORT]"
@@ -1475,9 +1546,9 @@ def handle_scan(mode='long'):
 🎯 <b>Chốt lời 2 (TP2):</b> <code>{r['tp2']}</code> [R:R 1:3.5]"""
             
         msg += "\n━━━━━━━━━━━━━━━━━━\n<i>💡 Điểm vào lệnh được neo cố định theo cản nến trong phiên để bạn kịp đặt lệnh trên sàn!</i>"
-        send_telegram(msg, reply_markup=get_main_keyboard())
+        send_telegram(msg, reply_markup=get_main_keyboard(), target_chat_id=chat_id)
     except Exception as e:
-        send_telegram(f"Lỗi scan: {e}", reply_markup=get_main_keyboard())
+        send_telegram(f"Lỗi scan: {e}", reply_markup=get_main_keyboard(), target_chat_id=chat_id)
 
 # ==========================================
 # 4. SERVER HEALTH CHECK & AUTO-PING
@@ -1534,25 +1605,90 @@ def run_bot():
                     last_update_id = update["update_id"]
                     msg = update.get("message", {})
                     text = msg.get("text", "").strip()
-                    chat_id = str(msg.get("chat", {}).get("id"))
+                    chat_obj = msg.get("chat", {})
+                    chat_id = str(chat_obj.get("id"))
+                    from_user = msg.get("from", {})
+                    first_name = from_user.get("first_name", "User")
+                    username = from_user.get("username", "")
+                    user_tag = f"@{username}" if username else first_name
                     
-                    if chat_id != CONFIG['TELEGRAM_CHAT_ID']:
+                    if not chat_id or chat_id == "None":
                         continue
-                        
+
+                    # 1. Quản lý phê duyệt dành riêng cho ADMIN
+                    if chat_id == ADMIN_ID:
+                        if text.startswith("/approve"):
+                            parts = text.split()
+                            if len(parts) >= 2:
+                                target_id = parts[1].strip()
+                                add_approved_user(target_id, name=f"User {target_id}")
+                                send_telegram(f"✅ Đã <b>DUYỆT</b> thành công quyền sử dụng bot cho ID: <code>{target_id}</code>!", target_chat_id=ADMIN_ID)
+                                send_telegram("🎉 <b>CHÚC MỪNG!</b>\nTài khoản của bạn đã được Admin phê duyệt quyền sử dụng <b>FX DREAM TRADING BOT</b>!\nBấm các nút bên dưới để bắt đầu nhận phân tích:", reply_markup=get_main_keyboard(), target_chat_id=target_id)
+                            else:
+                                send_telegram("⚠️ Cú pháp duyệt thành viên: <code>/approve &lt;ID_Telegram&gt;</code>", target_chat_id=ADMIN_ID)
+                            continue
+                        elif text.startswith("/revoke"):
+                            parts = text.split()
+                            if len(parts) >= 2:
+                                target_id = parts[1].strip()
+                                ok = remove_approved_user(target_id)
+                                if ok:
+                                    send_telegram(f"🚫 Đã <b>HUỶ QUYỀN</b> sử dụng bot của ID: <code>{target_id}</code>!", target_chat_id=ADMIN_ID)
+                                    send_telegram("⚠️ Quyền sử dụng bot của bạn đã bị thu hồi bởi Admin.", target_chat_id=target_id)
+                                else:
+                                    send_telegram(f"⚠️ Không tìm thấy hoặc không thể huỷ ID: <code>{target_id}</code>", target_chat_id=ADMIN_ID)
+                            else:
+                                send_telegram("⚠️ Cú pháp huỷ quyền: <code>/revoke &lt;ID_Telegram&gt;</code>", target_chat_id=ADMIN_ID)
+                            continue
+                        elif text in ["/users", "/members", "users", "Danh Sách Thành Viên"]:
+                            users = load_authorized_users()
+                            u_list = "👥 <b>DANH SÁCH THÀNH VIÊN ĐƯỢC DUYỆT:</b>\n━━━━━━━━━━━━━━━━━━\n"
+                            for uid, info in users.items():
+                                u_role = "👑 ADMIN" if info.get('role') == 'admin' else "👤 Member"
+                                u_list += f"• <b>{info.get('name', 'User')}</b> ({u_role})\n  ID: <code>{uid}</code> | Kích hoạt: {info.get('date', '')}\n"
+                            u_list += f"\n<i>👉 Để huỷ quyền, gõ: /revoke &lt;ID&gt;</i>"
+                            send_telegram(u_list, target_chat_id=ADMIN_ID)
+                            continue
+
+                    # 2. Kiểm duyệt người dùng lạ: Nếu chưa được duyệt thì chặn và báo Admin
+                    if not is_user_approved(chat_id):
+                        guest_msg = f"""👋 <b>Xin chào {first_name}!</b>
+━━━━━━━━━━━━━━━━━━
+🔒 <b>HỆ THỐNG TRUY CẬP CÓ KIỂM SOÁT</b>
+Tài khoản của bạn hiện tại chưa được cấp quyền sử dụng hệ thống tín hiệu và phân tích VIP.
+
+🆔 <b>Telegram ID của bạn:</b> <code>{chat_id}</code>
+⏱️ Yêu cầu của bạn đã được tự động gửi tới Admin phê duyệt.
+
+<i>👉 Vui lòng liên hệ Admin để được cấp quyền kích hoạt!</i>"""
+                        send_telegram(guest_msg, target_chat_id=chat_id)
+
+                        admin_alert = f"""🔔 <b>[YÊU CẦU TRUY CẬP BOT MỚI]</b> 🔔
+━━━━━━━━━━━━━━━━━━
+👤 <b>Người dùng:</b> {first_name} ({user_tag})
+🆔 <b>Telegram ID:</b> <code>{chat_id}</code>
+⏱️ <b>Thời gian:</b> {datetime.datetime.now(TZ_VN).strftime('%H:%M:%S %d/%m/%Y')}
+
+👉 <b>ĐỂ PHÊ DUYỆT NGAY, BẤM VÀO LỆNH SAU:</b>
+<code>/approve {chat_id}</code>"""
+                        send_telegram(admin_alert, target_chat_id=ADMIN_ID)
+                        continue
+
+                    # 3. Phân luồng tính năng cho thành viên ĐÃ ĐƯỢC DUYỆT
                     if text in ["/start", "menu", "Menu", "⚙️ Menu Hỗ Trợ"]:
-                        send_telegram("Chọn một tính năng bên dưới:", reply_markup=get_main_keyboard())
+                        send_telegram("Chọn một tính năng bên dưới:", reply_markup=get_main_keyboard(), target_chat_id=chat_id)
                     elif text in ["/check", "check", "🔍 Kiểm Tra Lệnh & Báo Cáo Ngày"]:
-                        handle_check_vip_trades()
+                        handle_check_vip_trades(chat_id=chat_id)
                     elif text in ["/h4", "⚡ Tuyệt Chiêu H4 Lưỡng Lự", "h4", "H4", "breakout", "Breakout"]:
-                        handle_h4_breakout()
+                        handle_h4_breakout(chat_id=chat_id)
                     elif text in ["/btc", "👑 Phân Tích BTC", "btc", "BTC"]:
-                        handle_btc()
+                        handle_btc(chat_id=chat_id)
                     elif text in ["/gold", "🥇 Phân Tích VÀNG (XAU)", "gold", "vang", "Vàng"]:
-                        handle_gold()
+                        handle_gold(chat_id=chat_id)
                     elif text in ["/long", "📈 Tìm Coin TĂNG (LONG)", "long"]:
-                        handle_scan(mode='long')
+                        handle_scan(mode='long', chat_id=chat_id)
                     elif text in ["/short", "📉 Tìm Coin GIẢM (SHORT)", "short"]:
-                        handle_scan(mode='short')
+                        handle_scan(mode='short', chat_id=chat_id)
             time.sleep(1)
         except Exception as e:
             time.sleep(3)
