@@ -12,7 +12,7 @@ import numpy as np
 CONFIG = {
     'TELEGRAM_BOT_TOKEN': '9051874352:AAFrnfJ8Mm0QF4wBlz8V3vYjYiqz5_sIVF8',
     'TELEGRAM_CHAT_ID': '6022180065',
-    'ACCOUNT_BALANCE': 1000.0,
+    'ACCOUNT_BALANCE': 2000.0,
     'RISK_PER_TRADE': 2.0,
 }
 
@@ -867,7 +867,7 @@ def handle_btc():
 • <b>Cấu trúc M15:</b> {plan['m15_status']}
 • <b>Nhận định:</b> {plan['action_advice']}
 ━━━━━━━━━━━━━━━━━━
-<i>🛡️ Quản lý vốn: Rủi ro tối đa 2% ($20.0 trên tài khoản $1,000).</i>"""
+<i>🛡️ Quản lý vốn: Rủi ro tối đa 2% ($40.0 trên tài khoản $2,000).</i>"""
         send_telegram(text, reply_markup=get_main_keyboard())
     except Exception as e:
         send_telegram(f"Lỗi BTC POC: {e}", reply_markup=get_main_keyboard())
@@ -1178,7 +1178,7 @@ def handle_gold():
 • <b>Cấu trúc M15:</b> {plan['m15_status']}
 • <b>Nhận định:</b> {plan['action_advice']}
 ━━━━━━━━━━━━━━━━━━
-<i>🛡️ Quản lý vốn MT5: Rủi ro tối đa 2% ($20.0 trên tài khoản $1,000 ~ 0.01-0.02 lot).</i>"""
+<i>🛡️ Quản lý vốn MT5: Rủi ro tối đa 2% ($40.0 trên tài khoản $2,000 ~ 0.02-0.04 lot).</i>"""
         send_telegram(text, reply_markup=get_main_keyboard())
     except Exception as e:
         send_telegram(f"Lỗi phân tích Vàng: {e}", reply_markup=get_main_keyboard())
@@ -1631,7 +1631,7 @@ def auto_diamond_alert_worker():
 {plan_gold['advice']}
 
 🛡️ <b>QUẢN LÝ VỐN VÀNG MT5 (${CONFIG['ACCOUNT_BALANCE']:,.0f}):</b>
-• Rủi ro tối đa 2%: <b>$20.0</b> (tương đương 0.01 - 0.02 lot trên MT5)"""
+• Rủi ro tối đa 2%: <b>$40.0</b> (tương đương 0.02 - 0.04 lot trên MT5)"""
                     send_telegram(msg)
                     LAST_ALERT_TIME['GOLD'] = now
                     # Ghi nhận lệnh vào hệ thống theo dõi duy nhất 1 lệnh
@@ -1683,7 +1683,7 @@ def auto_diamond_alert_worker():
 {plan_btc['advice']}
 
 🛡️ <b>QUẢN LÝ VỐN (${CONFIG['ACCOUNT_BALANCE']:,.0f}):</b>
-• Rủi ro tối đa 2%: <b>$20.0</b> | Khối lượng: <b>$1,000.0</b> | Đòn bẩy: <b>5x</b>"""
+• Rủi ro tối đa 2%: <b>$40.0</b> | Khối lượng: <b>$2,000.0</b> | Đòn bẩy: <b>5x</b>"""
                     send_telegram(msg)
                     LAST_ALERT_TIME['BTC'] = now
                     record_new_vip_trade(
