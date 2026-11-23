@@ -25,7 +25,8 @@ PLAN_CACHE = {
     'GOLD': {'candle_time': 0, 'data': None},
     'COINS_LONG': {'time': 0, 'data': []},
     'COINS_SHORT': {'time': 0, 'data': []},
-    'VN_STOCKS': {'time': 0, 'data': None}
+    'VN_STOCKS': {'time': 0, 'data': None},
+    'VP_SCALP': {'time': 0, 'data': None}
 }
 
 LAST_ALERT_TIME = {
@@ -447,8 +448,8 @@ def get_main_keyboard():
         "keyboard": [
             [{"text": "📈 Tìm Coin TĂNG (LONG)"}, {"text": "📉 Tìm Coin GIẢM (SHORT)"}],
             [{"text": "👑 Phân Tích BTC"}, {"text": "🥇 Phân Tích VÀNG (XAU)"}],
-            [{"text": "🇻🇳 Đánh Giá Cổ Phiếu VN"}, {"text": "⚡ Tuyệt Chiêu H4 Lưỡng Lự"}],
-            [{"text": "🔍 Kiểm Tra Lệnh & Báo Cáo Ngày"}, {"text": "⚙️ Menu Hỗ Trợ"}]
+            [{"text": "🎯 Scalping Volume Profile M5"}, {"text": "⚡ Tuyệt Chiêu H4 Lưỡng Lự"}],
+            [{"text": "🇻🇳 Đánh Giá Cổ Phiếu VN"}, {"text": "🔍 Kiểm Tra Lệnh & Báo Cáo Ngày"}]
         ],
         "resize_keyboard": True
     }
@@ -1535,6 +1536,227 @@ def handle_h4_breakout(chat_id=None):
         send_telegram(f"Lỗi kiểm tra H4 Breakout: {e}", reply_markup=get_main_keyboard(), target_chat_id=chat_id)
 
 # ==========================================
+# 2.3 TUYỆT CHIÊU SCALPING VOLUME PROFILE M5 & TEST RÂU NẾN (HVN REBOUND)
+# ==========================================
+def compute_volume_profile(klines_desc, bins_count=50):
+    """Tính Fixed Range Volume Profile (FRVP) phân bổ khối lượng theo mức giá"""
+    try:
+        klines = list(reversed(klines_desc))
+        lows = [float(k[3]) for k in klines]
+        highs = [float(k[2]) for k in klines]
+        min_p = min(lows)
+        max_p = max(highs)
+        if max_p == min_p:
+            return None
+        bin_size = (max_p - min_p) / bins_count
+        bins = [0.0] * bins_count
+        total_vol = 0.0
+        for k in klines:
+            l, h = float(k[3]), float(k[2])
+            v = float(k[5])
+            total_vol += v
+            start_bin = max(0, min(bins_count - 1, int((l - min_p) / bin_size)))
+            end_bin = max(0, min(bins_count - 1, int((h - min_p) / bin_size)))
+            num_bins = end_bin - start_bin + 1
+            vol_per_bin = v / num_bins
+            for b in range(start_bin, end_bin + 1):
+                bins[b] += vol_per_bin
+
+        max_bin_idx = bins.index(max(bins))
+        poc_price = min_p + (max_bin_idx + 0.5) * bin_size
+
+        va_target = total_vol * 0.70
+        va_vol = bins[max_bin_idx]
+        up_idx, down_idx = max_bin_idx, max_bin_idx
+        while va_vol < va_target and (up_idx < bins_count - 1 or down_idx > 0):
+            next_up = bins[up_idx + 1] if up_idx < bins_count - 1 else 0
+            next_down = bins[down_idx - 1] if down_idx > 0 else 0
+            if next_up >= next_down and up_idx < bins_count - 1:
+                up_idx += 1
+                va_vol += bins[up_idx]
+            elif down_idx > 0:
+                down_idx -= 1
+                va_vol += bins[down_idx]
+            else:
+                break
+
+        val_price = min_p + down_idx * bin_size
+        vah_price = min_p + (up_idx + 1) * bin_size
+
+        hvns = []
+        for i in range(1, bins_count - 1):
+            if bins[i] > bins[i-1] and bins[i] > bins[i+1] and bins[i] >= 0.45 * bins[max_bin_idx]:
+                p = min_p + (i + 0.5) * bin_size
+                hvns.append(round(p, 2))
+
+        return {
+            'poc': round(poc_price, 2),
+            'val': round(val_price, 2),
+            'vah': round(vah_price, 2),
+            'hvns': hvns,
+            'min_p': round(min_p, 2),
+            'max_p': round(max_p, 2)
+        }
+    except Exception:
+        return None
+
+def analyze_scalp_vp_plan(asset='GOLD'):
+    """Phân tích setup Scalping Volume Profile nảy cạnh HVN & test râu M5"""
+    symbol = 'XAUUSDT' if asset == 'GOLD' else 'BTCUSDT'
+    url = f'https://api.bybit.com/v5/market/kline?category=linear&symbol={symbol}&interval=5&limit=80'
+    req = urllib.request.Request(url, headers=HEADERS)
+    with urllib.request.urlopen(req, timeout=10) as r:
+        klines = json.loads(r.read().decode())['result']['list']
+
+    curr_p = float(klines[0][4])
+    vp = compute_volume_profile(klines)
+    if not vp:
+        return None
+
+    # Tìm cây nến M5 có râu từ chối (Rejection Wick) gần nhất trong 5 nến gần đây
+    best_rejection = None
+    for i in range(5):
+        k = klines[i]
+        o, h, l, c = float(k[1]), float(k[2]), float(k[3]), float(k[4])
+        rng = h - l
+        if rng > 0:
+            lw = min(o, c) - l
+            uw = h - max(o, c)
+            lw_pct = (lw / rng) * 100
+            uw_pct = (uw / rng) * 100
+            if lw_pct >= 35 and (best_rejection is None or lw_pct > best_rejection['pct']):
+                best_rejection = {'type': 'BULL', 'low': l, 'high': h, 'pct': lw_pct, 'candle_idx': i}
+            elif uw_pct >= 35 and (best_rejection is None or uw_pct > best_rejection['pct']):
+                best_rejection = {'type': 'BEAR', 'low': l, 'high': h, 'pct': uw_pct, 'candle_idx': i}
+
+    dist_to_val = abs(curr_p - vp['val'])
+    dist_to_vah = abs(curr_p - vp['vah'])
+    is_buy = (best_rejection and best_rejection['type'] == 'BULL') or (dist_to_val <= dist_to_vah)
+
+    if asset == 'GOLD':
+        if is_buy:
+            sig = 'BUY SCALPING (Nảy Hỗ Trợ HVN)'
+            entry = round(best_rejection['low'] + 1.2, 2) if (best_rejection and abs(curr_p - best_rejection['low']) < 6.0) else round(vp['val'], 2)
+            sl_ref = best_rejection['low'] if best_rejection else vp['val']
+            sl = round(sl_ref - 2.2, 2)
+            risk = round(abs(entry - sl), 2)
+            if risk < 3.0:
+                risk = 4.0
+                sl = round(entry - risk, 2)
+            tp1 = round(max(entry + risk * 1.5, (vp['vah'] - 0.5) if vp['vah'] > entry + risk else (entry + risk * 1.5)), 2)
+            tp2 = round(entry + risk * 3.5, 2)
+        else:
+            sig = 'SELL SCALPING (Dội Kháng Cự HVN)'
+            entry = round(best_rejection['high'] - 1.2, 2) if (best_rejection and abs(curr_p - best_rejection['high']) < 6.0) else round(vp['vah'], 2)
+            sl_ref = best_rejection['high'] if best_rejection else vp['vah']
+            sl = round(sl_ref + 2.2, 2)
+            risk = round(abs(sl - entry), 2)
+            if risk < 3.0:
+                risk = 4.0
+                sl = round(entry + risk, 2)
+            tp1 = round(min(entry - risk * 1.5, (vp['val'] + 0.5) if vp['val'] < entry - risk else (entry - risk * 1.5)), 2)
+            tp2 = round(entry - risk * 3.5, 2)
+    else: # BTC
+        if is_buy:
+            sig = 'BUY SCALPING (Nảy Hỗ Trợ HVN)'
+            entry = round(best_rejection['low'] + 50.0, 1) if (best_rejection and abs(curr_p - best_rejection['low']) < 300.0) else round(vp['val'], 1)
+            sl_ref = best_rejection['low'] if best_rejection else vp['val']
+            sl = round(sl_ref - 120.0, 1)
+            risk = round(abs(entry - sl), 1)
+            if risk < 100.0:
+                risk = 150.0
+                sl = round(entry - risk, 1)
+            tp1 = round(max(entry + risk * 1.5, (vp['vah'] - 50.0) if vp['vah'] > entry + risk else (entry + risk * 1.5)), 1)
+            tp2 = round(entry + risk * 3.5, 1)
+        else:
+            sig = 'SELL SCALPING (Dội Kháng Cự HVN)'
+            entry = round(best_rejection['high'] - 50.0, 1) if (best_rejection and abs(curr_p - best_rejection['high']) < 300.0) else round(vp['vah'], 1)
+            sl_ref = best_rejection['high'] if best_rejection else vp['vah']
+            sl = round(sl_ref + 120.0, 1)
+            risk = round(abs(sl - entry), 1)
+            if risk < 100.0:
+                risk = 150.0
+                sl = round(entry + risk, 1)
+            tp1 = round(min(entry - risk * 1.5, (vp['val'] + 50.0) if vp['val'] < entry - risk else (entry - risk * 1.5)), 1)
+            tp2 = round(entry - risk * 3.5, 1)
+
+    wick_str = f"Nến M5 test râu {best_rejection['pct']:.1f}% từ chối giá" if best_rejection else "Giá tích lũy nén quanh biên HVN"
+
+    return {
+        'asset': asset,
+        'symbol': symbol,
+        'curr_p': curr_p,
+        'poc': vp['poc'],
+        'val': vp['val'],
+        'vah': vp['vah'],
+        'hvns': vp['hvns'],
+        'signal': sig,
+        'is_buy': is_buy,
+        'entry': entry,
+        'sl': sl,
+        'risk': risk,
+        'tp1': tp1,
+        'tp2': tp2,
+        'wick_info': wick_str
+    }
+
+def handle_vp_scalping(chat_id=None):
+    """Báo cáo phân tích Scalping nảy Volume Profile (HVN Rebound) & Test râu M5 cho VÀNG và BTC"""
+    send_telegram("⏳ <i>Đang tính toán Fixed Range Volume Profile (FRVP) & Quét nến test râu M5 cho VÀNG và BTC...</i>", target_chat_id=chat_id)
+    try:
+        now = time.time()
+        cache = PLAN_CACHE.get('VP_SCALP')
+        if cache and cache.get('data') and (now - cache['time'] < 180):
+            p_gold, p_btc = cache['data']['gold'], cache['data']['btc']
+        else:
+            p_gold = analyze_scalp_vp_plan('GOLD')
+            p_btc = analyze_scalp_vp_plan('BTC')
+            PLAN_CACHE['VP_SCALP'] = {'time': now, 'data': {'gold': p_gold, 'btc': p_btc}}
+
+        g_emoji = "🟢" if p_gold['is_buy'] else "🔴"
+        b_emoji = "🟢" if p_btc['is_buy'] else "🔴"
+
+        msg = f"""🎯 <b>TUYỆT CHIÊU SCALPING VOLUME PROFILE (HVN) & TEST RÂU M5</b>
+━━━━━━━━━━━━━━━━━━
+🥇 <b>1. VÀNG (XAUUSD) - SCALPING M5:</b>
+• 💰 Giá hiện tại: <code>${p_gold['curr_p']:,.2f}</code>
+• 📊 <b>Vùng Volume Profile (Range 80 nến M5):</b>
+  - 📍 <b>POC (Thanh khoản dày nhất):</b> <code>${p_gold['poc']:,.2f}</code>
+  - 🟢 <b>Biên Hỗ trợ VAL (Gom hàng):</b> <code>${p_gold['val']:,.2f}</code>
+  - 🔴 <b>Biên Kháng cự VAH (Phân phối):</b> <code>${p_gold['vah']:,.2f}</code>
+• ⚡ <b>Hành động giá M5:</b> <i>{p_gold['wick_info']}</i>
+
+🚀 <b>KẾ HOẠCH VÀO LỆNH: {g_emoji} {p_gold['signal']}</b>
+👉 <b>Điểm vào (Entry):</b> <code>${p_gold['entry']:,.2f}</code>
+🛡️ <b>Cắt lỗ (SL Bóp Chân Râu M5):</b> <code>${p_gold['sl']:,.2f}</code> (~{p_gold['risk']} Giá)
+🎯 <b>TP1 (Chốt Scalping 75% | R:R 1:1.5):</b> <code>${p_gold['tp1']:,.2f}</code>
+🎯 <b>TP2 (Gồng Breakout 25% | R:R 1:3.5):</b> <code>${p_gold['tp2']:,.2f}</code>
+
+━━━━━━━━━━━━━━━━━━
+👑 <b>2. BITCOIN (BTCUSDT) - SCALPING M5:</b>
+• 💰 Giá hiện tại: <code>${p_btc['curr_p']:,.1f}</code>
+• 📊 <b>Vùng Volume Profile (Range 80 nến M5):</b>
+  - 📍 <b>POC (Thanh khoản dày nhất):</b> <code>${p_btc['poc']:,.1f}</code>
+  - 🟢 <b>Biên Hỗ trợ VAL:</b> <code>${p_btc['val']:,.1f}</code>
+  - 🔴 <b>Biên Kháng cự VAH:</b> <code>${p_btc['vah']:,.1f}</code>
+• ⚡ <b>Hành động giá M5:</b> <i>{p_btc['wick_info']}</i>
+
+🚀 <b>KẾ HOẠCH VÀO LỆNH: {b_emoji} {p_btc['signal']}</b>
+👉 <b>Điểm vào (Entry):</b> <code>${p_btc['entry']:,.1f}</code>
+🛡️ <b>Cắt lỗ (SL Bóp Chân Râu M5):</b> <code>${p_btc['sl']:,.1f}</code> (~{p_btc['risk']:,.1f} USD)
+🎯 <b>TP1 (Chốt Scalping 75% | R:R 1:1.5):</b> <code>${p_btc['tp1']:,.1f}</code>
+🎯 <b>TP2 (Gồng Breakout 25% | R:R 1:3.5):</b> <code>${p_btc['tp2']:,.1f}</code>
+
+━━━━━━━━━━━━━━━━━━
+🧠 <b>QUY TẮC THỰC CHIẾN TỪ SƯ PHỤ:</b>
+1. <b>Bản chất Scalping:</b> Đánh nhịp phản xạ nảy giá đầu tiên tại cạnh High Volume Node (HVN).
+2. <b>Chốt lời dứt khoát:</b> Chốt ngay <b>75% - 80% khối lượng tại TP1</b> để đút túi tiền lãi chắc chắn.
+3. <b>Chỉ gồng xa 20% còn lại nếu:</b> Nến M5 tiếp tục đâm thủng mốc TP1 bằng <b>cây nến Marubozu thân đặc nổ Volume (Breakout mạnh)</b>! Lúc đó dời SL về hòa vốn để gồng Free-Risk!"""
+        send_telegram(msg, reply_markup=get_main_keyboard(), target_chat_id=chat_id)
+    except Exception as e:
+        send_telegram(f"⚠️ Lỗi tính toán Scalping Volume Profile: {e}", reply_markup=get_main_keyboard(), target_chat_id=chat_id)
+
+# ==========================================
 # 3. QUÉT COIN THEO PHIÊN 1H - CỐ ĐỊNH ENTRY
 # ==========================================
 def scan_coins_bybit(mode='long', limit=3):
@@ -2007,6 +2229,8 @@ Tài khoản của bạn hiện tại chưa được cấp quyền sử dụng h
                         handle_check_vip_trades(chat_id=chat_id)
                     elif text in ["/h4", "⚡ Tuyệt Chiêu H4 Lưỡng Lự", "h4", "H4", "breakout", "Breakout"]:
                         handle_h4_breakout(chat_id=chat_id)
+                    elif text in ["/scalp", "/vp", "/volumeprofile", "🎯 Scalping Volume Profile M5", "scalp", "Scalp", "SCALP", "vp", "VP"]:
+                        handle_vp_scalping(chat_id=chat_id)
                     elif text in ["/btc", "👑 Phân Tích BTC", "btc", "BTC"]:
                         handle_btc(chat_id=chat_id)
                     elif text in ["/gold", "🥇 Phân Tích VÀNG (XAU)", "gold", "vang", "Vàng"]:
