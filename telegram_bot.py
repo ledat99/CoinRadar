@@ -1601,22 +1601,51 @@ def compute_volume_profile(klines_desc, bins_count=50):
         return None
 
 def analyze_scalp_vp_plan(asset='GOLD'):
-    """Phân tích setup Scalping Volume Profile nảy cạnh HVN & test râu M5"""
+    """Phân tích setup Daily Volume Profile (DVP) từ giá mở cửa ngày (Daily Open - OANDA / 00:00 UTC) & Test râu M5"""
     symbol = 'XAUUSDT' if asset == 'GOLD' else 'BTCUSDT'
-    url = f'https://api.bybit.com/v5/market/kline?category=linear&symbol={symbol}&interval=5&limit=80'
+    url = f'https://api.bybit.com/v5/market/kline?category=linear&symbol={symbol}&interval=5&limit=288'
     req = urllib.request.Request(url, headers=HEADERS)
     with urllib.request.urlopen(req, timeout=10) as r:
         klines = json.loads(r.read().decode())['result']['list']
 
     curr_p = float(klines[0][4])
-    vp = compute_volume_profile(klines)
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    
+    # Xác định giờ mở phiên ngày:
+    # Với VÀNG (XAU): Phiên ngày OANDA / Forex mở lúc 22:00 UTC (17:00 New York)
+    # Với BTC: Phiên ngày mở lúc 00:00 UTC
+    if asset == 'GOLD':
+        if now_utc.hour >= 22:
+            session_start = datetime.datetime(now_utc.year, now_utc.month, now_utc.day, 22, 0, 0, tzinfo=datetime.timezone.utc)
+        else:
+            prev_day = now_utc - datetime.timedelta(days=1)
+            session_start = datetime.datetime(prev_day.year, prev_day.month, prev_day.day, 22, 0, 0, tzinfo=datetime.timezone.utc)
+    else:
+        session_start = datetime.datetime(now_utc.year, now_utc.month, now_utc.day, 0, 0, 0, tzinfo=datetime.timezone.utc)
+        
+    session_start_ts = int(session_start.timestamp() * 1000)
+    session_klines = [k for k in klines if int(k[0]) >= session_start_ts]
+    if len(session_klines) < 20:
+        session_klines = klines[:60]
+
+    daily_open = float(session_klines[-1][1])
+    hod = max([float(k[2]) for k in session_klines])
+    lod = min([float(k[3]) for k in session_klines])
+
+    vp = compute_volume_profile(session_klines)
     if not vp:
         return None
+
+    # Xác định Daily Bias theo giá mở cửa ngày (Daily Open)
+    if curr_p >= daily_open:
+        daily_bias = f"🟢 BULLISH (Giá trên Daily Open ${daily_open:,.1f})"
+    else:
+        daily_bias = f"🔴 BEARISH (Giá dưới Daily Open ${daily_open:,.1f})"
 
     # Tìm cây nến M5 có râu từ chối (Rejection Wick) gần nhất trong 5 nến gần đây
     best_rejection = None
     for i in range(5):
-        k = klines[i]
+        k = session_klines[i]
         o, h, l, c = float(k[1]), float(k[2]), float(k[3]), float(k[4])
         rng = h - l
         if rng > 0:
@@ -1631,12 +1660,19 @@ def analyze_scalp_vp_plan(asset='GOLD'):
 
     dist_to_val = abs(curr_p - vp['val'])
     dist_to_vah = abs(curr_p - vp['vah'])
-    is_buy = (best_rejection and best_rejection['type'] == 'BULL') or (dist_to_val <= dist_to_vah)
+    
+    # Ưu tiên đánh thuận theo Daily Bias hoặc nảy tại dPOC/dVAL/dVAH
+    if best_rejection:
+        is_buy = (best_rejection['type'] == 'BULL')
+    elif curr_p >= daily_open:
+        is_buy = True
+    else:
+        is_buy = (dist_to_val <= dist_to_vah)
 
     if asset == 'GOLD':
         if is_buy:
-            sig = 'BUY SCALPING (Nảy Hỗ Trợ HVN)'
-            entry = round(best_rejection['low'] + 1.2, 2) if (best_rejection and abs(curr_p - best_rejection['low']) < 6.0) else round(vp['val'], 2)
+            sig = 'BUY SCALPING (Nảy Hỗ Trợ dPOC / dVAL)'
+            entry = round(best_rejection['low'] + 1.2, 2) if (best_rejection and abs(curr_p - best_rejection['low']) < 6.0) else round(max(vp['poc'], vp['val']), 2)
             sl_ref = best_rejection['low'] if best_rejection else vp['val']
             sl = round(sl_ref - 2.2, 2)
             risk = round(abs(entry - sl), 2)
@@ -1644,10 +1680,10 @@ def analyze_scalp_vp_plan(asset='GOLD'):
                 risk = 4.0
                 sl = round(entry - risk, 2)
             tp1 = round(max(entry + risk * 1.5, (vp['vah'] - 0.5) if vp['vah'] > entry + risk else (entry + risk * 1.5)), 2)
-            tp2 = round(entry + risk * 3.5, 2)
+            tp2 = round(max(hod, entry + risk * 3.5), 2)
         else:
-            sig = 'SELL SCALPING (Dội Kháng Cự HVN)'
-            entry = round(best_rejection['high'] - 1.2, 2) if (best_rejection and abs(curr_p - best_rejection['high']) < 6.0) else round(vp['vah'], 2)
+            sig = 'SELL SCALPING (Dội Kháng Cự dPOC / dVAH)'
+            entry = round(best_rejection['high'] - 1.2, 2) if (best_rejection and abs(curr_p - best_rejection['high']) < 6.0) else round(min(vp['poc'], vp['vah']), 2)
             sl_ref = best_rejection['high'] if best_rejection else vp['vah']
             sl = round(sl_ref + 2.2, 2)
             risk = round(abs(sl - entry), 2)
@@ -1655,11 +1691,11 @@ def analyze_scalp_vp_plan(asset='GOLD'):
                 risk = 4.0
                 sl = round(entry + risk, 2)
             tp1 = round(min(entry - risk * 1.5, (vp['val'] + 0.5) if vp['val'] < entry - risk else (entry - risk * 1.5)), 2)
-            tp2 = round(entry - risk * 3.5, 2)
+            tp2 = round(min(lod, entry - risk * 3.5), 2)
     else: # BTC
         if is_buy:
-            sig = 'BUY SCALPING (Nảy Hỗ Trợ HVN)'
-            entry = round(best_rejection['low'] + 50.0, 1) if (best_rejection and abs(curr_p - best_rejection['low']) < 300.0) else round(vp['val'], 1)
+            sig = 'BUY SCALPING (Nảy Hỗ Trợ dPOC / dVAL)'
+            entry = round(best_rejection['low'] + 50.0, 1) if (best_rejection and abs(curr_p - best_rejection['low']) < 300.0) else round(max(vp['poc'], vp['val']), 1)
             sl_ref = best_rejection['low'] if best_rejection else vp['val']
             sl = round(sl_ref - 120.0, 1)
             risk = round(abs(entry - sl), 1)
@@ -1667,10 +1703,10 @@ def analyze_scalp_vp_plan(asset='GOLD'):
                 risk = 150.0
                 sl = round(entry - risk, 1)
             tp1 = round(max(entry + risk * 1.5, (vp['vah'] - 50.0) if vp['vah'] > entry + risk else (entry + risk * 1.5)), 1)
-            tp2 = round(entry + risk * 3.5, 1)
+            tp2 = round(max(hod, entry + risk * 3.5), 1)
         else:
-            sig = 'SELL SCALPING (Dội Kháng Cự HVN)'
-            entry = round(best_rejection['high'] - 50.0, 1) if (best_rejection and abs(curr_p - best_rejection['high']) < 300.0) else round(vp['vah'], 1)
+            sig = 'SELL SCALPING (Dội Kháng Cự dPOC / dVAH)'
+            entry = round(best_rejection['high'] - 50.0, 1) if (best_rejection and abs(curr_p - best_rejection['high']) < 300.0) else round(min(vp['poc'], vp['vah']), 1)
             sl_ref = best_rejection['high'] if best_rejection else vp['vah']
             sl = round(sl_ref + 120.0, 1)
             risk = round(abs(sl - entry), 1)
@@ -1678,18 +1714,21 @@ def analyze_scalp_vp_plan(asset='GOLD'):
                 risk = 150.0
                 sl = round(entry + risk, 1)
             tp1 = round(min(entry - risk * 1.5, (vp['val'] + 50.0) if vp['val'] < entry - risk else (entry - risk * 1.5)), 1)
-            tp2 = round(entry - risk * 3.5, 1)
+            tp2 = round(min(lod, entry - risk * 3.5), 1)
 
-    wick_str = f"Nến M5 test râu {best_rejection['pct']:.1f}% từ chối giá" if best_rejection else "Giá tích lũy nén quanh biên HVN"
+    wick_str = f"Nến M5 test râu {best_rejection['pct']:.1f}% từ chối giá" if best_rejection else "Giá tích lũy nén quanh mốc Volume Profile ngày"
 
     return {
         'asset': asset,
         'symbol': symbol,
         'curr_p': curr_p,
+        'daily_open': daily_open,
+        'hod': hod,
+        'lod': lod,
+        'daily_bias': daily_bias,
         'poc': vp['poc'],
         'val': vp['val'],
         'vah': vp['vah'],
-        'hvns': vp['hvns'],
         'signal': sig,
         'is_buy': is_buy,
         'entry': entry,
@@ -1697,12 +1736,13 @@ def analyze_scalp_vp_plan(asset='GOLD'):
         'risk': risk,
         'tp1': tp1,
         'tp2': tp2,
-        'wick_info': wick_str
+        'wick_info': wick_str,
+        'candles_count': len(session_klines)
     }
 
 def handle_vp_scalping(chat_id=None):
-    """Báo cáo phân tích Scalping nảy Volume Profile (HVN Rebound) & Test râu M5 cho VÀNG và BTC"""
-    send_telegram("⏳ <i>Đang tính toán Fixed Range Volume Profile (FRVP) & Quét nến test râu M5 cho VÀNG và BTC...</i>", target_chat_id=chat_id)
+    """Báo cáo phân tích Scalping nảy Volume Profile Ngày (DVP - OANDA Daily Open) & Test râu M5"""
+    send_telegram("⏳ <i>Đang tính toán Daily Volume Profile (DVP) từ giá mở cửa phiên ngày (OANDA / UTC)...</i>", target_chat_id=chat_id)
     try:
         now = time.time()
         cache = PLAN_CACHE.get('VP_SCALP')
@@ -1716,42 +1756,48 @@ def handle_vp_scalping(chat_id=None):
         g_emoji = "🟢" if p_gold['is_buy'] else "🔴"
         b_emoji = "🟢" if p_btc['is_buy'] else "🔴"
 
-        msg = f"""🎯 <b>TUYỆT CHIÊU SCALPING VOLUME PROFILE (HVN) & TEST RÂU M5</b>
+        msg = f"""🎯 <b>TUYỆT CHIÊU DAILY VOLUME PROFILE (DVP) THEO GIỜ MỞ CỬA NGÀY</b>
 ━━━━━━━━━━━━━━━━━━
-🥇 <b>1. VÀNG (XAUUSD) - SCALPING M5:</b>
+🥇 <b>1. VÀNG (XAUUSD - SÀN OANDA CHUẨN):</b>
 • 💰 Giá hiện tại: <code>${p_gold['curr_p']:,.2f}</code>
-• 📊 <b>Vùng Volume Profile (Range 80 nến M5):</b>
-  - 📍 <b>POC (Thanh khoản dày nhất):</b> <code>${p_gold['poc']:,.2f}</code>
-  - 🟢 <b>Biên Hỗ trợ VAL (Gom hàng):</b> <code>${p_gold['val']:,.2f}</code>
-  - 🔴 <b>Biên Kháng cự VAH (Phân phối):</b> <code>${p_gold['vah']:,.2f}</code>
+• 🌅 <b>Giá Mở Cửa Ngày (Daily Open - OANDA):</b> <code>${p_gold['daily_open']:,.2f}</code>
+• 📈 <b>Biên độ ngày (LOD - HOD):</b> <code>[${p_gold['lod']:,.2f} - ${p_gold['hod']:,.2f}]</code>
+• 🧭 <b>Xu hướng ngày (Daily Bias):</b> <b>{p_gold['daily_bias']}</b>
+• 📊 <b>Mốc Volume Profile Ngày ({p_gold['candles_count']} nến M5 từ giờ mở cửa):</b>
+  - 📍 <b>dPOC (Vùng gom hàng lớn nhất):</b> <code>${p_gold['poc']:,.2f}</code>
+  - 🟢 <b>dVAL (Biên dưới hỗ trợ ngày):</b> <code>${p_gold['val']:,.2f}</code>
+  - 🔴 <b>dVAH (Biên trên kháng cự ngày):</b> <code>${p_gold['vah']:,.2f}</code>
 • ⚡ <b>Hành động giá M5:</b> <i>{p_gold['wick_info']}</i>
 
 🚀 <b>KẾ HOẠCH VÀO LỆNH: {g_emoji} {p_gold['signal']}</b>
 👉 <b>Điểm vào (Entry):</b> <code>${p_gold['entry']:,.2f}</code>
 🛡️ <b>Cắt lỗ (SL Bóp Chân Râu M5):</b> <code>${p_gold['sl']:,.2f}</code> (~{p_gold['risk']} Giá)
 🎯 <b>TP1 (Chốt Scalping 75% | R:R 1:1.5):</b> <code>${p_gold['tp1']:,.2f}</code>
-🎯 <b>TP2 (Gồng Breakout 25% | R:R 1:3.5):</b> <code>${p_gold['tp2']:,.2f}</code>
+🎯 <b>TP2 (Gồng Đỉnh HOD 25% | R:R 1:3.5):</b> <code>${p_gold['tp2']:,.2f}</code>
 
 ━━━━━━━━━━━━━━━━━━
-👑 <b>2. BITCOIN (BTCUSDT) - SCALPING M5:</b>
+👑 <b>2. BITCOIN (BTCUSDT - 00:00 UTC):</b>
 • 💰 Giá hiện tại: <code>${p_btc['curr_p']:,.1f}</code>
-• 📊 <b>Vùng Volume Profile (Range 80 nến M5):</b>
-  - 📍 <b>POC (Thanh khoản dày nhất):</b> <code>${p_btc['poc']:,.1f}</code>
-  - 🟢 <b>Biên Hỗ trợ VAL:</b> <code>${p_btc['val']:,.1f}</code>
-  - 🔴 <b>Biên Kháng cự VAH:</b> <code>${p_btc['vah']:,.1f}</code>
+• 🌅 <b>Giá Mở Cửa Ngày (Daily Open):</b> <code>${p_btc['daily_open']:,.1f}</code>
+• 📈 <b>Biên độ ngày (LOD - HOD):</b> <code>[${p_btc['lod']:,.1f} - ${p_btc['hod']:,.1f}]</code>
+• 🧭 <b>Xu hướng ngày (Daily Bias):</b> <b>{p_btc['daily_bias']}</b>
+• 📊 <b>Mốc Volume Profile Ngày ({p_btc['candles_count']} nến M5):</b>
+  - 📍 <b>dPOC:</b> <code>${p_btc['poc']:,.1f}</code>
+  - 🟢 <b>dVAL:</b> <code>${p_btc['val']:,.1f}</code>
+  - 🔴 <b>dVAH:</b> <code>${p_btc['vah']:,.1f}</code>
 • ⚡ <b>Hành động giá M5:</b> <i>{p_btc['wick_info']}</i>
 
 🚀 <b>KẾ HOẠCH VÀO LỆNH: {b_emoji} {p_btc['signal']}</b>
 👉 <b>Điểm vào (Entry):</b> <code>${p_btc['entry']:,.1f}</code>
 🛡️ <b>Cắt lỗ (SL Bóp Chân Râu M5):</b> <code>${p_btc['sl']:,.1f}</code> (~{p_btc['risk']:,.1f} USD)
 🎯 <b>TP1 (Chốt Scalping 75% | R:R 1:1.5):</b> <code>${p_btc['tp1']:,.1f}</code>
-🎯 <b>TP2 (Gồng Breakout 25% | R:R 1:3.5):</b> <code>${p_btc['tp2']:,.1f}</code>
+🎯 <b>TP2 (Gồng Đỉnh HOD 25% | R:R 1:3.5):</b> <code>${p_btc['tp2']:,.1f}</code>
 
 ━━━━━━━━━━━━━━━━━━
-🧠 <b>QUY TẮC THỰC CHIẾN TỪ SƯ PHỤ:</b>
-1. <b>Bản chất Scalping:</b> Đánh nhịp phản xạ nảy giá đầu tiên tại cạnh High Volume Node (HVN).
-2. <b>Chốt lời dứt khoát:</b> Chốt ngay <b>75% - 80% khối lượng tại TP1</b> để đút túi tiền lãi chắc chắn.
-3. <b>Chỉ gồng xa 20% còn lại nếu:</b> Nến M5 tiếp tục đâm thủng mốc TP1 bằng <b>cây nến Marubozu thân đặc nổ Volume (Breakout mạnh)</b>! Lúc đó dời SL về hòa vốn để gồng Free-Risk!"""
+🧠 <b>QUY TẮC BẤT BẠI VỚI DAILY OPEN & dPOC:</b>
+1. <b>Quy luật mở cửa:</b> Giá nằm TRÊN Daily Open $\rightarrow$ Ưu tiên BUY khi giá hồi về dPOC / Daily Open.
+2. <b>Chốt lời dứt khoát:</b> Chốt ngay <b>75% - 80% tại TP1</b> để đút túi tiền lãi Scalping.
+3. <b>Chỉ gồng xa 20% còn lại nếu:</b> Nến M5 đâm thủng mốc TP1 bằng cây Marubozu thân đặc nổ Volume (Breakout đỉnh HOD)!"""
         send_telegram(msg, reply_markup=get_main_keyboard(), target_chat_id=chat_id)
     except Exception as e:
         send_telegram(f"⚠️ Lỗi tính toán Scalping Volume Profile: {e}", reply_markup=get_main_keyboard(), target_chat_id=chat_id)
