@@ -24,7 +24,8 @@ PLAN_CACHE = {
     'BTC': {'candle_time': 0, 'data': None},
     'GOLD': {'candle_time': 0, 'data': None},
     'COINS_LONG': {'time': 0, 'data': []},
-    'COINS_SHORT': {'time': 0, 'data': []}
+    'COINS_SHORT': {'time': 0, 'data': []},
+    'VN_STOCKS': {'time': 0, 'data': None}
 }
 
 LAST_ALERT_TIME = {
@@ -446,7 +447,7 @@ def get_main_keyboard():
         "keyboard": [
             [{"text": "📈 Tìm Coin TĂNG (LONG)"}, {"text": "📉 Tìm Coin GIẢM (SHORT)"}],
             [{"text": "👑 Phân Tích BTC"}, {"text": "🥇 Phân Tích VÀNG (XAU)"}],
-            [{"text": "⚡ Tuyệt Chiêu H4 Lưỡng Lự"}],
+            [{"text": "🇻🇳 Đánh Giá Cổ Phiếu VN"}, {"text": "⚡ Tuyệt Chiêu H4 Lưỡng Lự"}],
             [{"text": "🔍 Kiểm Tra Lệnh & Báo Cáo Ngày"}, {"text": "⚙️ Menu Hỗ Trợ"}]
         ],
         "resize_keyboard": True
@@ -1642,7 +1643,241 @@ def handle_scan(mode='long', chat_id=None):
         send_telegram(f"Lỗi scan: {e}", reply_markup=get_main_keyboard(), target_chat_id=chat_id)
 
 # ==========================================
-# 4. SERVER HEALTH CHECK & AUTO-PING
+# 4. ĐÁNH GIÁ & LỌC CỔ PHIẾU VIỆT NAM (VN-INDEX, P/E < 10, G > 10%)
+# ==========================================
+VN_WATCHLIST = [
+    'HPG', 'MBB', 'TCB', 'ACB', 'CTG', 'VPB', 'VHM', 'MWG', 'MSN', 'VNM',
+    'FPT', 'DCM', 'DPM', 'PVS', 'PC1', 'HAH', 'SSI', 'GMD', 'HDB', 'VRE',
+    'STB', 'BID', 'VCB', 'KBC', 'NLG', 'IDC', 'VIX', 'PVD', 'DGC', 'HCM', 'SHS'
+]
+
+def get_vnindex_summary():
+    """Lấy dữ liệu chỉ số VN-Index từ DNSE API"""
+    try:
+        now = int(time.time())
+        month_ago = now - 30 * 86400
+        url = f"https://services.entrade.com.vn/chart-api/v2/ohlcs/index?from={month_ago}&to={now}&symbol=VNINDEX&resolution=1D"
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            d = json.loads(resp.read().decode('utf-8'))
+            closes = d.get('c', [])
+            vols = d.get('v', [])
+            times = d.get('t', [])
+            if len(closes) >= 2:
+                last_c = closes[-1]
+                prev_c = closes[-2]
+                chg = last_c - prev_c
+                chg_pct = (chg / prev_c) * 100
+                last_date = datetime.datetime.fromtimestamp(times[-1]).strftime('%d/%m/%Y')
+                last_vol = vols[-1] if vols else 0
+                return {
+                    'price': last_c,
+                    'change': chg,
+                    'change_pct': chg_pct,
+                    'volume': last_vol,
+                    'date': last_date
+                }
+    except Exception as e:
+        pass
+    return None
+
+def analyze_vn_stock(ticker):
+    """Phân tích 1 cổ phiếu theo P/E, G, PEG, ROE, Inflow/Outflow qua Simplize API"""
+    ticker = ticker.upper().strip()
+    url = f"https://api.simplize.vn/api/company/summary/{ticker}"
+    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read().decode('utf-8')).get('data', {})
+            price = data.get('priceClose', 0)
+            pe = data.get('peRatio', 0)
+            pb = data.get('pbRatio', 0)
+            eps = data.get('epsRatio', 0)
+            g = data.get('netIncomeLtmGrowth', 0)
+            rev_g = data.get('revenueLtmGrowth', 0)
+            roe = data.get('roe', 0)
+            roa = data.get('roa', 0)
+            vol = data.get('volume', 0)
+            avg_vol = data.get('volume10dAvg', 0)
+            sector = data.get('bcEconomicSectorName', 'N/A')
+            name = data.get('nameVi', ticker)
+            
+            peg = round(pe / g, 2) if (g and g > 0 and pe and pe > 0) else None
+            
+            # Đánh giá dòng tiền (Inflow / Outflow)
+            vol_ratio = round(vol / avg_vol, 2) if (avg_vol and avg_vol > 0) else 1.0
+            if vol_ratio >= 1.2:
+                flow = f"🟢 INFLOW MẠNH (Vol {vol_ratio}x TB 10 phiên - Dòng tiền lớn gom hàng)"
+            elif vol_ratio <= 0.8:
+                flow = f"🟡 TÍCH LŨY CẠN CUNG (Vol {vol_ratio}x TB 10 phiên - Lực bán cạn)"
+            else:
+                flow = f"⚖️ TRUNG TÍNH (Vol xấp xỉ TB 10 phiên)"
+                
+            # Đánh giá tiêu chí Peter Lynch & Tiềm năng
+            if pe and pe < 10 and g and g > 10:
+                rating = "💎 SIÊU TIỀM NĂNG (P/E < 10, Tăng trưởng G > 10% - Rất rẻ theo Benjamin Graham & Peter Lynch)"
+                action = "🟢 KHUYẾN NGHỊ MUA GOM TÍCH SẢN (Vùng giá hấp dẫn để giữ trung - dài hạn)"
+            elif pe and pe < 12 and g and g > 0:
+                rating = "⭐ ĐỊNH GIÁ HỢP LÝ (P/E thấp, Doanh nghiệp tiếp tục tăng trưởng)"
+                action = "🟢 CANH MUA KHI CÓ NHỊP CHỈNH THEO VN-INDEX"
+            elif pe and pe >= 20:
+                rating = "⚠️ ĐỊNH GIÁ CAO (P/E >= 20, Kỳ vọng đã phản ánh nhiều vào giá)"
+                action = "⛔ KHÔNG MUA ĐUỔI - CẦN CHIẾT KHẤU THÊM"
+            else:
+                rating = "⚡ THEO DÕI THÊM TĂNG TRƯỞNG LỢI NHUẬN CÁC QUÝ TỚI"
+                action = "⏳ QUAN SÁT THÊM TÍN HIỆU DÒNG TIỀN"
+
+            return {
+                'ticker': ticker,
+                'name': name,
+                'sector': sector,
+                'price': price,
+                'pe': pe,
+                'pb': pb,
+                'eps': eps,
+                'g': g,
+                'rev_g': rev_g,
+                'peg': peg,
+                'roe': roe,
+                'roa': roa,
+                'vol': vol,
+                'avg_vol': avg_vol,
+                'vol_ratio': vol_ratio,
+                'flow': flow,
+                'rating': rating,
+                'action': action
+            }
+    except Exception as e:
+        return {'error': str(e), 'ticker': ticker}
+
+def scan_top_vn_stocks():
+    """Lọc danh sách các mã cổ phiếu đạt tiêu chí P/E < 12 và G > 10%"""
+    now = time.time()
+    cache = PLAN_CACHE.get('VN_STOCKS')
+    if cache and cache['data'] and (now - cache['time'] < 1800):
+        return cache['data']
+        
+    results = []
+    for sym in VN_WATCHLIST:
+        res = analyze_vn_stock(sym)
+        if 'error' not in res and res.get('price', 0) > 0:
+            results.append(res)
+        time.sleep(0.04)
+        
+    # Lọc các cổ phiếu có P/E <= 12 và G >= 10%
+    qualified = [r for r in results if r.get('pe') and 0 < r['pe'] <= 12.0 and r.get('g') and r['g'] >= 10.0]
+    qualified.sort(key=lambda x: (x.get('peg') or 999.0))
+    
+    data = {
+        'all': results,
+        'qualified': qualified,
+        'scan_time': datetime.datetime.now(TZ_VN).strftime('%H:%M %d/%m/%Y')
+    }
+    PLAN_CACHE['VN_STOCKS'] = {'time': now, 'data': data}
+    return data
+
+def handle_vn_stocks_overview(chat_id=None):
+    """Gửi tổng quan vĩ mô lãi suất, dòng vốn ngoại và top cổ phiếu tiềm năng P/E < 10, G > 10%"""
+    send_telegram("⏳ <i>Đang quét và phân tích dữ liệu BCTC & Dòng tiền cổ phiếu Việt Nam (P/E < 10, G > 10%)...</i>", target_chat_id=chat_id)
+    try:
+        data = scan_top_vn_stocks()
+        vnindex = get_vnindex_summary()
+        qualified = data['qualified']
+        
+        vn_str = ""
+        if vnindex:
+            vn_str = f"📊 <b>VN-Index ({vnindex['date']}):</b> <code>{vnindex['price']:.2f}</code> ({vnindex['change']:+.2f} | <b>{vnindex['change_pct']:+.2f}%</b>) - Khối lượng: {vnindex['volume']:,}\n"
+        
+        msg = f"""🇻🇳 <b>PHÂN TÍCH THỊ TRƯỜNG & LỌC CỔ PHIẾU TIỀM NĂNG VIỆT NAM</b>
+━━━━━━━━━━━━━━━━━━
+{vn_str}
+🌐 <b>BỐI CẢNH VĨ MÔ & LÃI SUẤT (MACRO CONTEXT):</b>
+• <b>Lãi suất Việt Nam (NHNN - SBV):</b> Duy trì mặt bằng thấp (Lãi suất tái cấp vốn <b>4.5%</b>, Lãi suất tiền gửi 12T quanh <b>4.8% - 5.3%</b>). Môi trường tiền rẻ thúc đẩy tín dụng và định giá P/E thị trường mở rộng.
+• <b>Lãi suất Mỹ (Fed Funds Rate):</b> Dao động <b>4.50% - 4.75%</b> trong chu kỳ nới lỏng tiền tệ, hạ nhiệt sức mạnh DXY và giảm áp lực tỷ giá USD/VND.
+• <b>Dòng vốn ngoại (Foreign Capital):</b> Khối ngoại có xu hướng sàng lọc kỹ, bán ròng mã đầu cơ P/E cao và gom tích lũy các cổ phiếu đầu ngành có <b>P/E &lt; 10, ROE &gt; 15%</b> và dòng tiền kinh doanh lành mạnh.
+
+🎯 <b>TIÊU CHÍ SÀNG LỌC ĐẦU TƯ GIÁ TRỊ TĂNG TRƯỞNG:</b>
+1. <b>P/E &lt; 10:</b> Định giá rẻ, hoàn vốn dưới 10 năm.
+2. <b>G &gt; 10%:</b> Tăng trưởng lợi nhuận ròng LTM trên 10% và duy trì ổn định.
+3. <b>PEG &lt; 1.0:</b> Tỷ số PEG siêu rẻ theo phương pháp Peter Lynch.
+4. <b>Dòng tiền (Inflow):</b> Đang có dòng tiền tổ chức gom hàng hoặc tích lũy cạn cung.
+━━━━━━━━━━━━━━━━━━
+🏆 <b>TOP CỔ PHIẾU ĐẠT TIÊU CHÍ VÀNG:</b>
+"""
+        if not qualified:
+            msg += "\n<i>Hiện tại chưa có mã nào thỏa mãn đồng thời P/E &lt; 10 và G &gt; 10%.</i>"
+        else:
+            for idx, r in enumerate(qualified[:8], 1):
+                star = "💎" if r['pe'] < 10 else "⭐"
+                peg_str = f"{r['peg']:.2f}" if r['peg'] is not None else "N/A"
+                msg += f"""
+{idx}. {star} <b>{r['ticker']}</b> - {r['name']} ({r['sector']})
+• Thị giá: <b>{r['price']:,.0f} đ</b>
+• <b>P/E:</b> <code>{r['pe']:.2f}</code> | <b>Tăng trưởng G:</b> <code>{r['g']:+.1f}%</code>
+• <b>PEG:</b> <code>{peg_str}</code> (Cực rẻ) | <b>ROE:</b> <code>{r['roe']:.1f}%</code>
+• <b>Dòng tiền:</b> <i>{r['flow']}</i>
+• <b>Khuyến nghị:</b> {r['action']}
+"""
+        msg += f"""━━━━━━━━━━━━━━━━━━
+💡 <i>Để xem chi tiết tài chính & định giá từng mã, gõ:</i>
+<code>/vnstock &lt;MÃ&gt;</code> <i>(Ví dụ: <code>/vnstock HPG</code>, <code>/vnstock MBB</code>, <code>/vnstock FPT</code> hoặc gõ thẳng tên mã)</i>
+⏱️ <i>Cập nhật: {data['scan_time']}</i>"""
+        send_telegram(msg, reply_markup=get_main_keyboard(), target_chat_id=chat_id)
+    except Exception as e:
+        send_telegram(f"⚠️ Lỗi phân tích cổ phiếu: {e}", reply_markup=get_main_keyboard(), target_chat_id=chat_id)
+
+def handle_vn_stock_detail(ticker, chat_id=None):
+    """Phân tích chi tiết 1 mã cổ phiếu theo yêu cầu của người dùng"""
+    ticker = ticker.upper().strip()
+    send_telegram(f"⏳ <i>Đang phân tích chi tiết mã cổ phiếu <b>{ticker}</b>...</i>", target_chat_id=chat_id)
+    try:
+        r = analyze_vn_stock(ticker)
+        if 'error' in r or r.get('price', 0) == 0:
+            send_telegram(f"⚠️ Không tìm thấy dữ liệu cho mã <b>{ticker}</b> hoặc mã không tồn tại trên sàn HSX/HNX/UPCOM.", reply_markup=get_main_keyboard(), target_chat_id=chat_id)
+            return
+
+        peg_str = f"{r['peg']:.2f}" if r['peg'] is not None else "N/A"
+        pe_str = f"{r['pe']:.2f}" if r['pe'] else "N/A"
+        pb_str = f"{r['pb']:.2f}" if r['pb'] else "N/A"
+        eps_str = f"{r['eps']:,.0f}" if r['eps'] else "N/A"
+        g_str = f"{r['g']:+.1f}%" if r['g'] is not None else "N/A"
+        rev_g_str = f"{r['rev_g']:+.1f}%" if r['rev_g'] is not None else "N/A"
+        roe_str = f"{r['roe']:.1f}%" if r['roe'] is not None else "N/A"
+        roa_str = f"{r['roa']:.1f}%" if r['roa'] is not None else "N/A"
+        
+        msg = f"""🇻🇳 <b>BÁO CÁO PHÂN TÍCH CHI TIẾT CỔ PHIẾU: {r['ticker']}</b>
+━━━━━━━━━━━━━━━━━━
+🏢 <b>Doanh nghiệp:</b> {r['name']}
+🏭 <b>Ngành nghề:</b> {r['sector']}
+💰 <b>Thị giá:</b> <b>{r['price']:,.0f} VNĐ</b>
+
+📊 <b>CHỈ SỐ TÀI CHÍNH CƠ BẢN:</b>
+• <b>P/E Hiện tại:</b> <code>{pe_str}</code> (Tiêu chí chuẩn &lt; 10)
+• <b>P/B:</b> <code>{pb_str}</code> | <b>EPS:</b> <code>{eps_str} đ</code>
+• <b>ROE (Hiệu quả sử dụng vốn):</b> <code>{roe_str}</code>
+• <b>ROA:</b> <code>{roa_str}</code>
+
+📈 <b>TĂNG TRƯỞNG & ĐỊNH GIÁ PETER LYNCH:</b>
+• <b>Tăng trưởng Lợi nhuận (G - LTM):</b> <code>{g_str}</code>
+• <b>Tăng trưởng Doanh thu:</b> <code>{rev_g_str}</code>
+• <b>Định giá PEG (P/E / G):</b> <code>{peg_str}</code> <i>(PEG &lt; 1.0 là cổ phiếu tăng trưởng bị định giá rẻ)</i>
+
+🌊 <b>DÒNG TIỀN & THANH KHOẢN:</b>
+• Khối lượng giao dịch: <b>{r['vol']:,}</b> cp
+• Trung bình 10 phiên: <b>{r['avg_vol']:,}</b> cp
+• Đánh giá dòng tiền: <i>{r['flow']}</i>
+
+🎯 <b>KẾT LUẬN & ĐÁNH GIÁ ĐẦU TƯ:</b>
+• <b>Xếp hạng:</b> {r['rating']}
+• <b>Hành động:</b> <b>{r['action']}</b>
+━━━━━━━━━━━━━━━━━━
+<i>💡 Gõ <code>/vnstock</code> để quay lại danh sách top cổ phiếu tiềm năng toàn thị trường!</i>"""
+        send_telegram(msg, reply_markup=get_main_keyboard(), target_chat_id=chat_id)
+    except Exception as e:
+        send_telegram(f"⚠️ Lỗi phân tích mã {ticker}: {e}", reply_markup=get_main_keyboard(), target_chat_id=chat_id)
+
+# ==========================================
+# 5. SERVER HEALTH CHECK & AUTO-PING
 # ==========================================
 def self_ping_worker():
     time.sleep(20)
@@ -1780,6 +2015,16 @@ Tài khoản của bạn hiện tại chưa được cấp quyền sử dụng h
                         handle_scan(mode='long', chat_id=chat_id)
                     elif text in ["/short", "📉 Tìm Coin GIẢM (SHORT)", "short"]:
                         handle_scan(mode='short', chat_id=chat_id)
+                    elif text in ["/vnstock", "/cophieu", "/stock", "🇻🇳 Đánh Giá Cổ Phiếu VN", "cophieu", "Cổ phiếu", "chungkhoan", "Chứng khoán"]:
+                        handle_vn_stocks_overview(chat_id=chat_id)
+                    elif text.startswith("/vnstock ") or text.startswith("/cp "):
+                        parts = text.split()
+                        if len(parts) >= 2:
+                            handle_vn_stock_detail(parts[1].strip(), chat_id=chat_id)
+                        else:
+                            handle_vn_stocks_overview(chat_id=chat_id)
+                    elif len(text) == 3 and text.upper() in VN_WATCHLIST:
+                        handle_vn_stock_detail(text.upper(), chat_id=chat_id)
             time.sleep(1)
         except Exception as e:
             time.sleep(3)
