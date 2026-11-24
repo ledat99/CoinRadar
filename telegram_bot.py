@@ -128,6 +128,7 @@ def check_and_update_vip_trades(curr_gold_p, curr_btc_p):
         signal = t['signal']
         entry_p = t['entry_price']
         sl = t['sl']
+        orig_sl = t.get('orig_sl', sl)
         tp1 = t['tp1']
         tp2 = t['tp2']
 
@@ -143,8 +144,11 @@ def check_and_update_vip_trades(curr_gold_p, curr_btc_p):
                 msg = f"""🎯 <b>[VIP CHỐT LỜI 1 (TP1) - ĐÃ ĐẠT R:R 1:1.2]</b> 🎯
 ━━━━━━━━━━━━━━━━━━
 💰 Tài sản: <b>{sym_name}</b>
-📈 Lệnh: <b>🔴 SHORT</b> từ <code>${entry_p:,.{dec}f}</code>
-🎯 Giá hiện tại: <b>${curr_p:,.{dec}f}</b> (Đã chạm mốc TP1 <code>${tp1:,.{dec}f}</code>)
+📈 Lệnh: <b>🔴 SHORT</b>
+👉 <b>Entry:</b> <code>${entry_p:,.{dec}f}</code>
+🛡️ <b>SL Ban Đầu:</b> <code>${orig_sl:,.{dec}f}</code>
+🎯 <b>Mốc TP1:</b> <code>${tp1:,.{dec}f}</code> (✅ Đã Chạm) | 🎯 <b>TP2:</b> <code>${tp2:,.{dec}f}</code>
+💵 <b>Giá Chạm TP1:</b> <b>${curr_p:,.{dec}f}</b>
 🔥 <b>LỢI NHUẬN TP1: +{abs(profit):,.{dec}f} {unit}!</b>
 ━━━━━━━━━━━━━━━━━━
 ✅ <b>HÀNH ĐỘNG KHUYẾN NGHỊ:</b>
@@ -161,6 +165,7 @@ def check_and_update_vip_trades(curr_gold_p, curr_btc_p):
                 t['tp2_hit'] = True
                 t['close_price'] = curr_p
                 t['close_time'] = time_str
+                t['close_timestamp'] = time.time()
                 t['profit'] = round(entry_p - curr_p, dec)
                 t['status'] = 'CLOSED_TP2'
                 history.append(t)
@@ -168,8 +173,11 @@ def check_and_update_vip_trades(curr_gold_p, curr_btc_p):
                 msg = f"""🎉 <b>[VIP CHỐT LỜI 2 (TP2) - FULL TAKE PROFIT ĐỈNH CAO]</b> 🎉
 ━━━━━━━━━━━━━━━━━━
 💰 Tài sản: <b>{sym_name}</b>
-📈 Lệnh: <b>🔴 SHORT</b> từ <code>${entry_p:,.{dec}f}</code>
-🎯 Giá hiện tại: <b>${curr_p:,.{dec}f}</b> (Đã chạm mốc TP2 <code>${tp2:,.{dec}f}</code>)
+📈 Lệnh: <b>🔴 SHORT</b>
+👉 <b>Entry:</b> <code>${entry_p:,.{dec}f}</code>
+🛡️ <b>SL Ban Đầu:</b> <code>${orig_sl:,.{dec}f}</code>
+🎯 <b>Mốc TP1:</b> <code>${tp1:,.{dec}f}</code> | 🎯 <b>TP2:</b> <code>${tp2:,.{dec}f}</code> (✅ Đã Chạm)
+💵 <b>Giá Đóng (TP2):</b> <b>${curr_p:,.{dec}f}</b>
 🔥 <b>TỔNG LỢI NHUẬN TRỌN VẸN: +{abs(t['profit']):,.{dec}f} {unit} (R:R 1:2.5)!</b>
 ━━━━━━━━━━━━━━━━━━
 🏁 <b>KẾT THÚC KÈO VIP HOÀN HẢO:</b>
@@ -182,17 +190,23 @@ def check_and_update_vip_trades(curr_gold_p, curr_btc_p):
             if curr_p >= sl:
                 t['close_price'] = curr_p
                 t['close_time'] = time_str
+                t['close_timestamp'] = time.time()
                 if t.get('tp1_hit'):
                     t['status'] = 'CLOSED_BREAKEVEN'
                     t['profit'] = round(abs(entry_p - tp1) * 0.5, dec) # Đã ăn 50% ở TP1
                     msg = f"""🛡️ <b>[VIP ĐÓNG LỆNH HOÀ VỐN - BẢO TOÀN LÃI TP1]</b> 🛡️
 ━━━━━━━━━━━━━━━━━━
 💰 Tài sản: <b>{sym_name}</b>
-📈 Lệnh: <b>🔴 SHORT</b> từ <code>${entry_p:,.{dec}f}</code>
-⚠️ Giá quay về đá SL Hoà Vốn tại: <b>${curr_p:,.{dec}f}</b>
+📈 Lệnh: <b>🔴 SHORT</b>
+👉 <b>Entry:</b> <code>${entry_p:,.{dec}f}</code>
+🛡️ <b>SL Ban Đầu:</b> <code>${orig_sl:,.{dec}f}</code> (Đã dời về Hoà Vốn: ${entry_p:,.{dec}f})
+🎯 <b>TP1:</b> <code>${tp1:,.{dec}f}</code> (Đã chốt 50%) | 🎯 <b>TP2:</b> <code>${tp2:,.{dec}f}</code>
+⚠️ <b>Giá Đóng (Đá SL Hoà Vốn):</b> <b>${curr_p:,.{dec}f}</b>
+━━━━━━━━━━━━━━━━━━
 🎉 <b>KẾT QUẢ CUỐI CÙNG: VẪN CÓ LÃI!</b>
 • 50% khối lượng đã bỏ túi tại TP1 (+{abs(entry_p - tp1):,.{dec}f} {unit}).
 • 50% khối lượng còn lại thoát giá Hoà Vốn (Risk = $0).
+• <b>Lợi nhuận thực tế: +{abs(t['profit']):,.{dec}f} {unit}</b>
 🟢 Hệ thống đã giải phóng slot, chờ đón cơ hội đẹp tiếp theo!"""
                 else:
                     t['status'] = 'CLOSED_SL'
@@ -200,8 +214,13 @@ def check_and_update_vip_trades(curr_gold_p, curr_btc_p):
                     msg = f"""⚠️ <b>[VIP CHẠM CẮT LỖ (SL) - BẢO VỆ TÀI KHOẢN]</b> ⚠️
 ━━━━━━━━━━━━━━━━━━
 💰 Tài sản: <b>{sym_name}</b>
-📈 Lệnh: <b>🔴 SHORT</b> từ <code>${entry_p:,.{dec}f}</code>
-🛑 Đã chạm SL tại: <b>${curr_p:,.{dec}f}</b> (-{abs(t['profit']):,.{dec}f} {unit})
+📈 Lệnh: <b>🔴 SHORT</b>
+👉 <b>Entry:</b> <code>${entry_p:,.{dec}f}</code>
+🛡️ <b>Cắt Lỗ (SL Gốc):</b> <code>${orig_sl:,.{dec}f}</code>
+🎯 <b>TP1 Dự Kiến:</b> <code>${tp1:,.{dec}f}</code> | 🎯 <b>TP2:</b> <code>${tp2:,.{dec}f}</code>
+🛑 <b>Giá Đóng (Chạm SL):</b> <b>${curr_p:,.{dec}f}</b>
+🔥 <b>KẾT QUẢ: -{abs(t['profit']):,.{dec}f} {unit}</b>
+━━━━━━━━━━━━━━━━━━
 🛡️ Đúng kỷ luật theo tôn chỉ FX DREAM: Sai là cắt ngay tại chóp râu M5, không gồng lỗ!
 🟢 Hệ thống sẵn sàng tìm kiếm điểm vào mới."""
                 history.append(t)
@@ -223,8 +242,11 @@ def check_and_update_vip_trades(curr_gold_p, curr_btc_p):
                 msg = f"""🎯 <b>[VIP CHỐT LỜI 1 (TP1) - ĐÃ ĐẠT R:R 1:1.2]</b> 🎯
 ━━━━━━━━━━━━━━━━━━
 💰 Tài sản: <b>{sym_name}</b>
-📈 Lệnh: <b>🟢 LONG</b> từ <code>${entry_p:,.{dec}f}</code>
-🎯 Giá hiện tại: <b>${curr_p:,.{dec}f}</b> (Đã chạm mốc TP1 <code>${tp1:,.{dec}f}</code>)
+📈 Lệnh: <b>🟢 LONG</b>
+👉 <b>Entry:</b> <code>${entry_p:,.{dec}f}</code>
+🛡️ <b>SL Ban Đầu:</b> <code>${orig_sl:,.{dec}f}</code>
+🎯 <b>Mốc TP1:</b> <code>${tp1:,.{dec}f}</code> (✅ Đã Chạm) | 🎯 <b>TP2:</b> <code>${tp2:,.{dec}f}</code>
+💵 <b>Giá Chạm TP1:</b> <b>${curr_p:,.{dec}f}</b>
 🔥 <b>LỢI NHUẬN TP1: +{abs(profit):,.{dec}f} {unit}!</b>
 ━━━━━━━━━━━━━━━━━━
 ✅ <b>HÀNH ĐỘNG KHUYẾN NGHỊ:</b>
@@ -241,6 +263,7 @@ def check_and_update_vip_trades(curr_gold_p, curr_btc_p):
                 t['tp2_hit'] = True
                 t['close_price'] = curr_p
                 t['close_time'] = time_str
+                t['close_timestamp'] = time.time()
                 t['profit'] = round(curr_p - entry_p, dec)
                 t['status'] = 'CLOSED_TP2'
                 history.append(t)
@@ -248,8 +271,11 @@ def check_and_update_vip_trades(curr_gold_p, curr_btc_p):
                 msg = f"""🎉 <b>[VIP CHỐT LỜI 2 (TP2) - FULL TAKE PROFIT ĐỈNH CAO]</b> 🎉
 ━━━━━━━━━━━━━━━━━━
 💰 Tài sản: <b>{sym_name}</b>
-📈 Lệnh: <b>🟢 LONG</b> từ <code>${entry_p:,.{dec}f}</code>
-🎯 Giá hiện tại: <b>${curr_p:,.{dec}f}</b> (Đã chạm mốc TP2 <code>${tp2:,.{dec}f}</code>)
+📈 Lệnh: <b>🟢 LONG</b>
+👉 <b>Entry:</b> <code>${entry_p:,.{dec}f}</code>
+🛡️ <b>SL Ban Đầu:</b> <code>${orig_sl:,.{dec}f}</code>
+🎯 <b>Mốc TP1:</b> <code>${tp1:,.{dec}f}</code> | 🎯 <b>TP2:</b> <code>${tp2:,.{dec}f}</code> (✅ Đã Chạm)
+💵 <b>Giá Đóng (TP2):</b> <b>${curr_p:,.{dec}f}</b>
 🔥 <b>TỔNG LỢI NHUẬN TRỌN VẸN: +{abs(t['profit']):,.{dec}f} {unit} (R:R 1:2.5)!</b>
 ━━━━━━━━━━━━━━━━━━
 🏁 <b>KẾT THÚC KÈO VIP HOÀN HẢO:</b>
@@ -262,17 +288,23 @@ def check_and_update_vip_trades(curr_gold_p, curr_btc_p):
             if curr_p <= sl:
                 t['close_price'] = curr_p
                 t['close_time'] = time_str
+                t['close_timestamp'] = time.time()
                 if t.get('tp1_hit'):
                     t['status'] = 'CLOSED_BREAKEVEN'
                     t['profit'] = round(abs(tp1 - entry_p) * 0.5, dec)
                     msg = f"""🛡️ <b>[VIP ĐÓNG LỆNH HOÀ VỐN - BẢO TOÀN LÃI TP1]</b> 🛡️
 ━━━━━━━━━━━━━━━━━━
 💰 Tài sản: <b>{sym_name}</b>
-📈 Lệnh: <b>🟢 LONG</b> từ <code>${entry_p:,.{dec}f}</code>
-⚠️ Giá quay về đá SL Hoà Vốn tại: <b>${curr_p:,.{dec}f}</b>
+📈 Lệnh: <b>🟢 LONG</b>
+👉 <b>Entry:</b> <code>${entry_p:,.{dec}f}</code>
+🛡️ <b>SL Ban Đầu:</b> <code>${orig_sl:,.{dec}f}</code> (Đã dời về Hoà Vốn: ${entry_p:,.{dec}f})
+🎯 <b>TP1:</b> <code>${tp1:,.{dec}f}</code> (Đã chốt 50%) | 🎯 <b>TP2:</b> <code>${tp2:,.{dec}f}</code>
+⚠️ <b>Giá Đóng (Đá SL Hoà Vốn):</b> <b>${curr_p:,.{dec}f}</b>
+━━━━━━━━━━━━━━━━━━
 🎉 <b>KẾT QUẢ CUỐI CÙNG: VẪN CÓ LÃI!</b>
 • 50% khối lượng đã bỏ túi tại TP1 (+{abs(tp1 - entry_p):,.{dec}f} {unit}).
 • 50% khối lượng còn lại thoát giá Hoà Vốn (Risk = $0).
+• <b>Lợi nhuận thực tế: +{abs(t['profit']):,.{dec}f} {unit}</b>
 🟢 Hệ thống đã giải phóng slot, chờ đón cơ hội đẹp tiếp theo!"""
                 else:
                     t['status'] = 'CLOSED_SL'
@@ -280,10 +312,19 @@ def check_and_update_vip_trades(curr_gold_p, curr_btc_p):
                     msg = f"""⚠️ <b>[VIP CHẠM CẮT LỖ (SL) - BẢO VỆ TÀI KHOẢN]</b> ⚠️
 ━━━━━━━━━━━━━━━━━━
 💰 Tài sản: <b>{sym_name}</b>
-📈 Lệnh: <b>🟢 LONG</b> từ <code>${entry_p:,.{dec}f}</code>
-🛑 Đã chạm SL tại: <b>${curr_p:,.{dec}f}</b> (-{abs(t['profit']):,.{dec}f} {unit})
+📈 Lệnh: <b>🟢 LONG</b>
+👉 <b>Entry:</b> <code>${entry_p:,.{dec}f}</code>
+🛡️ <b>Cắt Lỗ (SL Gốc):</b> <code>${orig_sl:,.{dec}f}</code>
+🎯 <b>TP1 Dự Kiến:</b> <code>${tp1:,.{dec}f}</code> | 🎯 <b>TP2:</b> <code>${tp2:,.{dec}f}</code>
+🛑 <b>Giá Đóng (Chạm SL):</b> <b>${curr_p:,.{dec}f}</b>
+🔥 <b>KẾT QUẢ: -{abs(t['profit']):,.{dec}f} {unit}</b>
+━━━━━━━━━━━━━━━━━━
 🛡️ Đúng kỷ luật theo tôn chỉ FX DREAM: Sai là cắt ngay tại chóp râu M5, không gồng lỗ!
 🟢 Hệ thống sẵn sàng tìm kiếm điểm vào mới."""
+                history.append(t)
+                save_vip_history(history)
+                send_telegram(msg, reply_markup=get_main_keyboard())
+                continue
                 history.append(t)
                 save_vip_history(history)
                 send_telegram(msg, reply_markup=get_main_keyboard())
@@ -394,6 +435,275 @@ def handle_check_vip_trades(chat_id=None):
     except Exception as e:
         send_telegram(f"Lỗi kiểm tra lệnh: {e}", reply_markup=get_main_keyboard(), target_chat_id=chat_id)
 
+REPORT_STATE_FILE = os.path.join(os.path.dirname(__file__), 'report_state.json')
+
+def get_report_state():
+    try:
+        if os.path.exists(REPORT_STATE_FILE):
+            with open(REPORT_STATE_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {'last_daily': '', 'last_weekly': ''}
+
+def save_report_state(state):
+    try:
+        with open(REPORT_STATE_FILE, 'w', encoding='utf-8') as f:
+            json.dump(state, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+def format_single_trade_block(t, index=None):
+    is_gold = (t.get('asset') == 'GOLD')
+    is_btc = (t.get('asset') == 'BTC')
+    dec = 2 if is_gold else 1
+    unit = "Giá" if is_gold else "USDT"
+    if is_gold:
+        sym = "🥇 VÀNG (XAUUSD)"
+    elif is_btc:
+        sym = "👑 BITCOIN (BTCUSDT)"
+    else:
+        sym = f"💎 {t.get('symbol', 'COIN')}"
+        
+    sgn = "🔴 SHORT" if t.get('signal') == 'SHORT' else "🟢 LONG"
+    status = t.get('status', 'CLOSED')
+    pnl = t.get('profit', 0)
+    
+    if status == 'CLOSED_TP2':
+        badge = f"🎯 FULL TP2 (+{abs(pnl):,.{dec}f} {unit})"
+    elif status == 'CLOSED_BREAKEVEN':
+        badge = f"🛡️ HOÀ VỐN (Ăn 50% TP1: +{abs(pnl):,.{dec}f} {unit})"
+    elif status == 'CLOSED_SL':
+        badge = f"🛑 CẮT LỖ SL (-{abs(pnl):,.{dec}f} {unit})"
+    elif status == 'TP1_HIT_RISK_FREE':
+        badge = "⏳ ĐÃ CHẠM TP1 (DỜI BE - RUNNING)"
+    else:
+        badge = "⏳ ĐANG CHẠY"
+        
+    entry_p = t.get('entry_price', 0)
+    orig_sl = t.get('orig_sl', t.get('sl', 0))
+    tp1 = t.get('tp1', 0)
+    tp2 = t.get('tp2', 0)
+    close_p = t.get('close_price', 0)
+    entry_t = t.get('entry_time', '')
+    close_t = t.get('close_time', 'Đang mở')
+    
+    pnl_str = f"+{pnl:,.{dec}f} {unit}" if pnl > 0 else (f"-{abs(pnl):,.{dec}f} {unit}" if pnl < 0 else f"0.0 {unit}")
+    
+    prefix = f"<b>{index}. </b>" if index is not None else ""
+    res = f"{prefix}<b>{sym} - {sgn}</b> | {badge}\n"
+    res += f"   • Thời gian: <code>{entry_t}</code> ➔ <code>{close_t}</code>\n"
+    res += f"   • 👉 <b>Entry:</b> <code>${entry_p:,.{dec}f}</code>\n"
+    res += f"   • 🛡️ <b>SL Gốc:</b> <code>${orig_sl:,.{dec}f}</code>\n"
+    res += f"   • 🎯 <b>TP1:</b> <code>${tp1:,.{dec}f}</code> | 🎯 <b>TP2:</b> <code>${tp2:,.{dec}f}</code>\n"
+    if close_p:
+        res += f"   • 💵 <b>Giá Đóng:</b> <code>${close_p:,.{dec}f}</code> | Lợi nhuận: <b>{pnl_str}</b>\n"
+    return res
+
+def compute_trade_stats(trades_list):
+    total = len(trades_list)
+    if total == 0:
+        return {
+            'total': 0, 'wins': 0, 'losses': 0, 'be': 0, 'winrate': 0.0,
+            'pnl_gold': 0.0, 'pnl_btc': 0.0, 'gold_trades': 0, 'btc_trades': 0
+        }
+    wins = 0
+    losses = 0
+    be = 0
+    pnl_gold = 0.0
+    pnl_btc = 0.0
+    gold_trades = 0
+    btc_trades = 0
+    
+    for t in trades_list:
+        is_gold = (t.get('asset') == 'GOLD')
+        profit = t.get('profit', 0)
+        status = t.get('status', '')
+        if is_gold:
+            gold_trades += 1
+            pnl_gold += profit
+        else:
+            btc_trades += 1
+            pnl_btc += profit
+            
+        if status == 'CLOSED_TP2':
+            wins += 1
+        elif status == 'CLOSED_BREAKEVEN':
+            be += 1
+            if profit > 0:
+                wins += 1
+        elif status == 'CLOSED_SL':
+            losses += 1
+        elif profit > 0:
+            wins += 1
+        elif profit < 0:
+            losses += 1
+            
+    winrate = round((wins / total) * 100, 1) if total > 0 else 0.0
+    return {
+        'total': total,
+        'wins': wins,
+        'losses': losses,
+        'be': be,
+        'winrate': winrate,
+        'pnl_gold': round(pnl_gold, 2),
+        'pnl_btc': round(pnl_btc, 1),
+        'gold_trades': gold_trades,
+        'btc_trades': btc_trades
+    }
+
+def send_daily_summary_report():
+    history = load_vip_history()
+    now_dt = datetime.datetime.now(TZ_VN)
+    # Khung thời gian ngày hôm trước: từ 07:00 hôm qua đến 07:00 sáng nay
+    end_ts = now_dt.replace(hour=7, minute=0, second=0, microsecond=0).timestamp()
+    start_ts = end_ts - 86400
+    
+    day_trades = [
+        t for t in history 
+        if start_ts <= (t.get('close_timestamp') or t.get('entry_timestamp', 0)) <= end_ts
+    ]
+    
+    stats = compute_trade_stats(day_trades)
+    yesterday_dt = now_dt - datetime.timedelta(days=1)
+    y_str = yesterday_dt.strftime('%d/%m/%Y')
+    
+    msg = f"""📊 <b>[BÁO CÁO TỔNG KẾT KÈO VIP NGÀY HÔM TRƯỚC - {y_str}]</b> 📊
+━━━━━━━━━━━━━━━━━━
+⏱️ Chu kỳ: <b>07:00 {y_str} ➔ 07:00 {now_dt.strftime('%d/%m/%Y')}</b>
+📈 <b>TỔNG QUAN HIỆU SUẤT:</b>
+• 🎯 Tổng số kèo: <b>{stats['total']} kèo</b> (🥇 Vàng: {stats['gold_trades']} | 👑 BTC: {stats['btc_trades']})
+• 🏆 Kèo Thắng (TP): <b>{stats['wins']} kèo</b>
+• 🛡️ Kèo Hoà Vốn (BE): <b>{stats['be']} kèo</b>
+• 🛑 Kèo Cắt Lỗ (SL): <b>{stats['losses']} kèo</b>
+• 🔥 <b>Tỷ lệ Thắng (Winrate): {stats['winrate']}%</b>
+━━━━━━━━━━━━━━━━━━
+💰 <b>TỔNG KẾT LỢI NHUẬN (PNL):</b>
+• 🥇 <b>Lợi nhuận VÀNG:</b> <b>{'+' if stats['pnl_gold'] >= 0 else ''}{stats['pnl_gold']:,.2f} Giá</b>
+• 👑 <b>Lợi nhuận BITCOIN:</b> <b>{'+' if stats['pnl_btc'] >= 0 else ''}{stats['pnl_btc']:,.1f} USDT</b>
+━━━━━━━━━━━━━━━━━━
+📝 <b>CHI TIẾT TỪNG KÈO ĐÃ ĐÓNG:</b>\n"""
+
+    if day_trades:
+        for idx, t in enumerate(day_trades, 1):
+            msg += "\n" + format_single_trade_block(t, index=idx)
+    else:
+        msg += "\n<i>Ngày hôm trước không có kèo nào đóng hoặc không có tín hiệu thỏa mãn bộ lọc volume khắt khe. Hệ thống giữ vững kỷ luật bảo vệ an toàn vốn!</i>\n"
+
+    active = load_vip_trades()
+    if active:
+        msg += f"\n⏳ <b>LỆNH ĐANG MỞ HIỆN TẠI ({len(active)} lệnh):</b>\n"
+        for idx, t in enumerate(active, 1):
+            msg += "\n" + format_single_trade_block(t, index=idx)
+            
+    msg += f"\n💡 <i>Báo cáo tự động định kỳ vào 07:00 AM mỗi ngày theo tôn chỉ Kỷ Luật & Chuẩn R:R!</i>"
+    send_telegram(msg, reply_markup=get_main_keyboard())
+
+def send_weekly_summary_report():
+    history = load_vip_history()
+    now_dt = datetime.datetime.now(TZ_VN)
+    # Khung thời gian tuần trước: 7 ngày (07:00 Thứ 2 tuần trước -> 07:00 Thứ 2 hôm nay)
+    end_ts = now_dt.replace(hour=7, minute=0, second=0, microsecond=0).timestamp()
+    start_ts = end_ts - 7 * 86400
+    
+    week_trades = [
+        t for t in history 
+        if start_ts <= (t.get('close_timestamp') or t.get('entry_timestamp', 0)) <= end_ts
+    ]
+    
+    stats = compute_trade_stats(week_trades)
+    start_dt = now_dt - datetime.timedelta(days=7)
+    
+    msg = f"""🏆 <b>[TỔNG KẾT KÈO VIP TUẦN - SÁNG THỨ HAI]</b> 🏆
+━━━━━━━━━━━━━━━━━━
+⏱️ Chu kỳ tuần: <b>{start_dt.strftime('%d/%m/%Y')} ➔ {now_dt.strftime('%d/%m/%Y')}</b>
+📈 <b>TỔNG QUAN HIỆU SUẤT TUẦN QUA:</b>
+• 🎯 Tổng số kèo: <b>{stats['total']} kèo</b> (🥇 Vàng: {stats['gold_trades']} | 👑 BTC: {stats['btc_trades']})
+• 🏆 Kèo Thắng (TP): <b>{stats['wins']} kèo</b>
+• 🛡️ Kèo Hoà Vốn (BE): <b>{stats['be']} kèo</b>
+• 🛑 Kèo Cắt Lỗ (SL): <b>{stats['losses']} kèo</b>
+• 🔥 <b>Tỷ lệ Thắng (Winrate): {stats['winrate']}%</b>
+━━━━━━━━━━━━━━━━━━
+💰 <b>TỔNG KẾT LỢI NHUẬN TUẦN:</b>
+• 🥇 <b>VÀNG (XAUUSD):</b> <b>{'+' if stats['pnl_gold'] >= 0 else ''}{stats['pnl_gold']:,.2f} Giá</b>
+• 👑 <b>BITCOIN:</b> <b>{'+' if stats['pnl_btc'] >= 0 else ''}{stats['pnl_btc']:,.1f} USDT</b>
+━━━━━━━━━━━━━━━━━━
+📝 <b>DANH SÁCH TOÀN BỘ KÈO TRONG TUẦN:</b>\n"""
+
+    if week_trades:
+        for idx, t in enumerate(week_trades, 1):
+            msg += "\n" + format_single_trade_block(t, index=idx)
+    else:
+        msg += "\n<i>Trong tuần qua không có lệnh nào khớp hoặc đã chốt.</i>\n"
+
+    msg += f"\n🚀 <i>Chúc anh em tuần mới giao dịch đại thắng cùng FX DREAM VIP Bot!</i>"
+    send_telegram(msg, reply_markup=get_main_keyboard())
+
+def handle_trade_summary(chat_id=None):
+    try:
+        history = load_vip_history()
+        active = load_vip_trades()
+        now_dt = datetime.datetime.now(TZ_VN)
+        now_ts = time.time()
+        
+        # 1. Thống kê toàn bộ lịch sử
+        all_stats = compute_trade_stats(history)
+        
+        # 2. Thống kê 24h gần nhất
+        trades_24h = [
+            t for t in history 
+            if (now_ts - (t.get('close_timestamp') or t.get('entry_timestamp', 0))) <= 86400
+        ]
+        stats_24h = compute_trade_stats(trades_24h)
+        
+        # 3. Thống kê 7 ngày gần nhất
+        trades_7d = [
+            t for t in history 
+            if (now_ts - (t.get('close_timestamp') or t.get('entry_timestamp', 0))) <= 7 * 86400
+        ]
+        stats_7d = compute_trade_stats(trades_7d)
+        
+        msg = f"""📊 <b>[BẢNG TỔNG KẾT HIỆU SUẤT KÈO VIP TP/SL]</b> 📊
+━━━━━━━━━━━━━━━━━━
+⏱️ <i>Thời điểm tra cứu: {now_dt.strftime('%H:%M:%S %d/%m/%Y')}</i>
+
+🏆 <b>1. TOÀN BỘ LỊCH SỬ KÈO BOT:</b>
+• 🎯 Tổng số kèo: <b>{all_stats['total']} kèo</b> (🥇 Vàng: {all_stats['gold_trades']} | 👑 BTC: {all_stats['btc_trades']})
+• 🟢 Thắng (TP): <b>{all_stats['wins']}</b> | 🛡️ BE: <b>{all_stats['be']}</b> | 🔴 SL: <b>{all_stats['losses']}</b>
+• 🔥 <b>Tỷ lệ Thắng (Winrate): {all_stats['winrate']}%</b>
+• 💰 <b>Tổng PnL Vàng:</b> <b>{'+' if all_stats['pnl_gold'] >= 0 else ''}{all_stats['pnl_gold']:,.2f} Giá</b>
+• 💰 <b>Tổng PnL BTC:</b> <b>{'+' if all_stats['pnl_btc'] >= 0 else ''}{all_stats['pnl_btc']:,.1f} USDT</b>
+━━━━━━━━━━━━━━━━━━
+📅 <b>2. HIỆU SUẤT 24 GIỜ GẦN NHẤT:</b>
+• Số kèo: <b>{stats_24h['total']} kèo</b> (Win: {stats_24h['wins']} | Loss: {stats_24h['losses']})
+• PnL Vàng 24h: <b>{'+' if stats_24h['pnl_gold'] >= 0 else ''}{stats_24h['pnl_gold']:,.2f} Giá</b>
+• PnL BTC 24h: <b>{'+' if stats_24h['pnl_btc'] >= 0 else ''}{stats_24h['pnl_btc']:,.1f} USDT</b>
+━━━━━━━━━━━━━━━━━━
+🗓️ <b>3. HIỆU SUẤT 7 NGÀY GẦN NHẤT:</b>
+• Số kèo: <b>{stats_7d['total']} kèo</b> (Win: {stats_7d['wins']} | Loss: {stats_7d['losses']})
+• PnL Vàng 7D: <b>{'+' if stats_7d['pnl_gold'] >= 0 else ''}{stats_7d['pnl_gold']:,.2f} Giá</b>
+• PnL BTC 7D: <b>{'+' if stats_7d['pnl_btc'] >= 0 else ''}{stats_7d['pnl_btc']:,.1f} USDT</b>
+━━━━━━━━━━━━━━━━━━
+📜 <b>4. DANH SÁCH 5 KÈO HOÀN TẤT GẦN NHẤT:</b>\n"""
+
+        if history:
+            recent_trades = list(reversed(history))[:5]
+            for idx, t in enumerate(recent_trades, 1):
+                msg += "\n" + format_single_trade_block(t, index=idx)
+        else:
+            msg += "\n<i>Chưa có kèo nào trong lịch sử đóng lệnh.</i>\n"
+
+        if active:
+            msg += f"\n⏳ <b>LỆNH ĐANG MỞ HIỆN TẠI ({len(active)} lệnh):</b>\n"
+            for idx, t in enumerate(active, 1):
+                msg += "\n" + format_single_trade_block(t, index=idx)
+
+        msg += f"\n💡 <i>Tất cả các kèo đều được lưu vết minh bạch: Entry, SL gốc, TP1, TP2, Giá đóng và Lợi nhuận chuẩn R:R.</i>"
+        send_telegram(msg, reply_markup=get_main_keyboard(), target_chat_id=chat_id)
+    except Exception as e:
+        print(f"Lỗi handle_trade_summary: {e}")
+        send_telegram(f"⚠️ Có lỗi khi tổng kết kèo: {e}", reply_markup=get_main_keyboard(), target_chat_id=chat_id)
+
 USERS_FILE = os.path.join(os.path.dirname(__file__), 'authorized_users.json')
 ADMIN_ID = str(CONFIG['TELEGRAM_CHAT_ID'])
 
@@ -486,7 +796,7 @@ def send_telegram(text, reply_markup=None, target_chat_id=None):
 def get_main_keyboard():
     return {
         "keyboard": [
-            [{"text": "💵 Xem Giá Live (Vàng/BTC/ETH)"}],
+            [{"text": "💵 Xem Giá Live (Vàng/BTC/ETH)"}, {"text": "📊 Tổng Kết Kèo TP/SL"}],
             [{"text": "👑 Phân Tích BTC"}, {"text": "🥇 Phân Tích VÀNG (XAU)"}],
             [{"text": "🎯 Scalping Volume Profile M5"}, {"text": "⚡ Tuyệt Chiêu H4 Lưỡng Lự"}],
             [{"text": "💣 Săn Coin Rác (Vol > $100M)"}],
@@ -2716,6 +3026,7 @@ Tài khoản của bạn hiện tại chưa được cấp quyền sử dụng h
                         menu_help = """🤖 <b>BẢNG ĐIỀU KHIỂN & MENU TÍNH NĂNG BOT:</b>
 ━━━━━━━━━━━━━━━━━━
 💵 <b>Xem Giá Live:</b> Cập nhật tức thời giá Vàng (OANDA MT5 & Bybit), Bitcoin, Ethereum
+📊 <b>Tổng Kết Kèo TP/SL:</b> Tổng kết hiệu suất Win/Loss/BE, Winrate %, chi tiết Entry/SL/TP từng kèo
 👑 <b>Phân Tích BTC:</b> Bias W1/D1 + SMC KeyVolume H1 & M5
 🥇 <b>Phân Tích VÀNG (XAU):</b> Chuẩn OANDA MT5 + SMC H1 OB
 🎯 <b>Scalping Volume Profile M5:</b> Đánh xoay trục L-Shape/P-Shape hôm trước (yVAL/yVAH) & dPOC
@@ -2726,10 +3037,12 @@ Tài khoản của bạn hiện tại chưa được cấp quyền sử dụng h
 🇻🇳 <b>Đánh Giá Cổ Phiếu VN:</b> Định giá PE < 10, G > 10%, dòng tiền & lãi suất
 🔍 <b>Kiểm Tra Lệnh & Báo Cáo Ngày:</b> Live Radar trực tiếp + Quản lý lệnh đang chạy
 
-💡 <i>Bấm các nút bên dưới hoặc gõ trực tiếp lệnh (/price, /gold, /btc, /scalp, /meme, /h4, /check, /vnstock)!</i>"""
+💡 <i>Bấm các nút bên dưới hoặc gõ trực tiếp lệnh (/price, /tongket, /gold, /btc, /scalp, /meme, /h4, /check, /vnstock)!</i>"""
                         send_telegram(menu_help, reply_markup=get_main_keyboard(), target_chat_id=chat_id)
                     elif text in ["/price", "/gia", "/xemgia", "/live", "💵 Xem Giá Live (Vàng/BTC/ETH)", "gia", "giá", "price", "xem gia", "xem giá"]:
                         handle_live_price(chat_id=chat_id)
+                    elif text in ["/tongket", "/summary", "/pnl", "/winrate", "📊 Tổng Kết Kèo TP/SL", "tongket", "tổng kết", "tong ket", "pnl", "winrate"]:
+                        handle_trade_summary(chat_id=chat_id)
                     elif text in ["/check", "check", "🔍 Kiểm Tra Lệnh & Báo Cáo Ngày"]:
                         handle_check_vip_trades(chat_id=chat_id)
                     elif text in ["/meme", "/coinrac", "/junk", "/gem", "/alt", "💣 Săn Coin Rác (Vol > $100M)", "coinrac", "coin rác", "Coin rác", "săn coin rác", "san coin rac"]:
@@ -2793,6 +3106,31 @@ def auto_diamond_alert_worker():
             # 3. THEO DÕI VÀ CẬP NHẬT TRẠNG THÁI CÁC LỆNH VIP ĐANG CHẠY (TP1, TP2, SL)
             check_and_update_vip_trades(plan_gold['current_price'], plan_btc['current_price'])
             active_trades = load_vip_trades()
+
+            # 3.1 BÁO CÁO TỔNG KẾT ĐỊNH KỲ (07:00 SÁNG GIỜ VN MỖI NGÀY & THỨ 2 HÀNG TUẦN)
+            now_dt = datetime.datetime.now(TZ_VN)
+            today_str = now_dt.strftime('%Y-%m-%d')
+            rep_state = get_report_state()
+            
+            # Khung giờ 7h sáng (07:00 - 07:59)
+            if now_dt.hour == 7:
+                # Báo cáo ngày hôm trước
+                if rep_state.get('last_daily') != today_str:
+                    rep_state['last_daily'] = today_str
+                    save_report_state(rep_state)
+                    try:
+                        send_daily_summary_report()
+                    except Exception as e_drep:
+                        print(f"Lỗi gửi báo cáo ngày 07:00: {e_drep}")
+                
+                # Báo cáo tuần vào sáng Thứ Hai (now_dt.weekday() == 0 là Thứ 2)
+                if now_dt.weekday() == 0 and rep_state.get('last_weekly') != today_str:
+                    rep_state['last_weekly'] = today_str
+                    save_report_state(rep_state)
+                    try:
+                        send_weekly_summary_report()
+                    except Exception as e_wrep:
+                        print(f"Lỗi gửi báo cáo tuần Thứ 2: {e_wrep}")
 
             # 4. RADAR CẢNH BÁO CHẠM CẢN KHỐI OB H1 (VÀNG & BITCOIN)
             # 4.1. Radar Vàng
