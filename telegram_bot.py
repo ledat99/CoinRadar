@@ -445,7 +445,10 @@ def send_telegram(text, reply_markup=None, target_chat_id=None):
     Gửi tin nhắn Telegram:
     - Nếu có target_chat_id: Gửi riêng cho người dùng cụ thể.
     - Nếu target_chat_id=None: Phát sóng (broadcast) đồng loạt cho TẤT CẢ thành viên được Admin duyệt!
+    - Tự động gắn bàn phím get_main_keyboard() nếu reply_markup không được chỉ định rõ.
     """
+    if reply_markup is None:
+        reply_markup = get_main_keyboard()
     url = f"https://api.telegram.org/bot{CONFIG['TELEGRAM_BOT_TOKEN']}/sendMessage"
     
     if target_chat_id is not None:
@@ -485,7 +488,8 @@ def get_main_keyboard():
             [{"text": "📈 Tìm Coin TĂNG (LONG)"}, {"text": "📉 Tìm Coin GIẢM (SHORT)"}],
             [{"text": "👑 Phân Tích BTC"}, {"text": "🥇 Phân Tích VÀNG (XAU)"}],
             [{"text": "🎯 Scalping Volume Profile M5"}, {"text": "⚡ Tuyệt Chiêu H4 Lưỡng Lự"}],
-            [{"text": "🇻🇳 Đánh Giá Cổ Phiếu VN"}, {"text": "🔍 Kiểm Tra Lệnh & Báo Cáo Ngày"}]
+            [{"text": "🇻🇳 Đánh Giá Cổ Phiếu VN"}, {"text": "🔍 Kiểm Tra Lệnh & Báo Cáo Ngày"}],
+            [{"text": "⚙️ Menu Hỗ Trợ"}]
         ],
         "resize_keyboard": True
     }
@@ -2351,12 +2355,24 @@ Tài khoản của bạn hiện tại chưa được cấp quyền sử dụng h
 
                     # 3. Phân luồng tính năng cho thành viên ĐÃ ĐƯỢC DUYỆT
                     if text in ["/start", "menu", "Menu", "⚙️ Menu Hỗ Trợ"]:
-                        send_telegram("Chọn một tính năng bên dưới:", reply_markup=get_main_keyboard(), target_chat_id=chat_id)
+                        menu_help = """🤖 <b>BẢNG ĐIỀU KHIỂN & MENU TÍNH NĂNG BOT:</b>
+━━━━━━━━━━━━━━━━━━
+👑 <b>Phân Tích BTC:</b> Bias W1/D1 + SMC KeyVolume H1 & M5
+🥇 <b>Phân Tích VÀNG (XAU):</b> Chuẩn OANDA MT5 + SMC H1 OB
+🎯 <b>Scalping Volume Profile M5:</b> Đánh xoay trục L-Shape/P-Shape hôm trước (yVAL/yVAH) & dPOC
+⚡ <b>Tuyệt Chiêu H4 Lưỡng Lự:</b> Bắt bứt phá Breakout nến H4
+📈 <b>Tìm Coin TĂNG (LONG):</b> Lọc coin tích lũy gom hàng Bybit
+📉 <b>Tìm Coin GIẢM (SHORT):</b> Lọc coin phân phối xả hàng Bybit
+🇻🇳 <b>Đánh Giá Cổ Phiếu VN:</b> Định giá PE < 10, G > 10%, dòng tiền & lãi suất
+🔍 <b>Kiểm Tra Lệnh & Báo Cáo Ngày:</b> Live Radar trực tiếp + Quản lý lệnh đang chạy
+
+💡 <i>Bấm các nút bên dưới hoặc gõ trực tiếp lệnh (/gold, /btc, /scalp, /h4, /check, /vnstock)!</i>"""
+                        send_telegram(menu_help, reply_markup=get_main_keyboard(), target_chat_id=chat_id)
                     elif text in ["/check", "check", "🔍 Kiểm Tra Lệnh & Báo Cáo Ngày"]:
                         handle_check_vip_trades(chat_id=chat_id)
                     elif text in ["/h4", "⚡ Tuyệt Chiêu H4 Lưỡng Lự", "h4", "H4", "breakout", "Breakout"]:
                         handle_h4_breakout(chat_id=chat_id)
-                    elif text in ["/scalp", "/vp", "/volumeprofile", "🎯 Scalping Volume Profile M5", "scalp", "Scalp", "SCALP", "vp", "VP"]:
+                    elif text in ["/scalp", "/vp", "/volumeprofile", "🎯 Scalping Volume Profile M5", "⚡ Scalping Vàng/BTC (Volume Profile M5)", "scalp", "Scalp", "SCALP", "vp", "VP"]:
                         handle_vp_scalping(chat_id=chat_id)
                     elif text in ["/btc", "👑 Phân Tích BTC", "btc", "BTC"]:
                         handle_btc(chat_id=chat_id)
