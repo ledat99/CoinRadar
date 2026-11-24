@@ -74,3 +74,4 @@
    - Khi vào chu kỳ sóng thuận (như Tháng 5, 6, 7, 9 của BTC), tài khoản tăng trưởng bùng nổ theo cấp số nhân (+18.43%, +14.69%).
 2. **Cột Tím VSA Wyckoff:**
    - Số lượng lệnh cả năm chỉ rơi vào **37 - 46 kèo** (~3 - 4 kèo/tháng). Không trade vô tội vạ, chỉ vào khi cá mập để lại nổ Volume hấp thụ tại cản.
+

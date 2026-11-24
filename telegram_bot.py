@@ -2,12 +2,15 @@ import os
 import json
 import time
 import datetime
+import random
+import string
 import requests
 import urllib.request
 import threading
 import http.server
 import socketserver
 import numpy as np
+from websocket import create_connection
 
 CONFIG = {
     'TELEGRAM_BOT_TOKEN': '9051874352:AAFrnfJ8Mm0QF4wBlz8V3vYjYiqz5_sIVF8',
@@ -18,6 +21,100 @@ CONFIG = {
 
 TZ_VN = datetime.timezone(datetime.timedelta(hours=7))
 HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+
+def get_oanda_klines(resolution='5', count=60):
+    """
+    Lấy nến chuẩn 100% từ OANDA:XAUUSD thông qua TradingView WebSocket.
+    Trả về list nến desc order (mới nhất ở index 0):
+    [[timestamp_ms, open, high, low, close, volume], ...]
+    """
+    ws = None
+    try:
+        ws = create_connection(
+            "wss://data.tradingview.com/socket.io/websocket",
+            header={"Origin": "https://data.tradingview.com"},
+            timeout=8
+        )
+        def send_msg(m, p):
+            payload = json.dumps({"m": m, "p": p}, separators=(",", ":"))
+            ws.send(f"~m~{len(payload)}~m~{payload}")
+
+        cs = "cs_" + "".join(random.choices(string.ascii_lowercase, k=12))
+        send_msg("set_auth_token", ["unauthorized_user_token"])
+        send_msg("chart_create_session", [cs, ""])
+        send_msg("resolve_symbol", [cs, "sds_sym_1", '={"symbol":"OANDA:XAUUSD","adjustment":"splits"}'])
+        send_msg("create_series", [cs, "sds_1", "s1", "sds_sym_1", str(resolution), count, ""])
+
+        bars = []
+        for _ in range(20):
+            msg = ws.recv()
+            if msg.startswith("~h~"):
+                ws.send(msg)
+                continue
+            if "~m~" in msg:
+                parts = msg.split("~m~")
+                for part in parts:
+                    if part and not part.isdigit():
+                        try:
+                            d = json.loads(part)
+                            if d.get("m") == "timescale_update":
+                                sds = d["p"][1].get("sds_1", {})
+                                if "s" in sds:
+                                    raw_bars = sds["s"]
+                                    for b in reversed(raw_bars):
+                                        v = b["v"]
+                                        bars.append([
+                                            int(v[0] * 1000),
+                                            float(v[1]),
+                                            float(v[2]),
+                                            float(v[3]),
+                                            float(v[4]),
+                                            float(v[5])
+                                        ])
+                                    break
+                        except Exception:
+                            pass
+            if bars:
+                break
+        return bars
+    except Exception as e:
+        print(f"Lỗi WebSocket OANDA ({resolution}): {e}")
+        return []
+    finally:
+        if ws:
+            try:
+                ws.close()
+            except Exception:
+                pass
+
+def get_binance_klines(symbol='BTCUSDT', interval='5m', limit=60):
+    """
+    Lấy nến chuẩn 100% từ Binance REST API cho BTC hoặc ETH hoặc Altcoins.
+    Trả về list nến desc order (mới nhất ở index 0):
+    [[timestamp_ms, open, high, low, close, volume], ...]
+    """
+    try:
+        mapping = {'5': '5m', '15': '15m', '60': '1h', '240': '4h', 'D': '1d', 'W': '1w'}
+        iv = mapping.get(str(interval), interval)
+        url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval={iv}&limit={limit}"
+        req = urllib.request.Request(url, headers=HEADERS)
+        with urllib.request.urlopen(req, timeout=8) as r:
+            data = json.loads(r.read().decode())
+        bars = []
+        for k in reversed(data):
+            bars.append([
+                int(k[0]),
+                float(k[1]),
+                float(k[2]),
+                float(k[3]),
+                float(k[4]),
+                float(k[5])
+            ])
+        return bars
+    except Exception as e:
+        print(f"Lỗi Binance klines ({symbol} {interval}): {e}")
+        return []
+
 
 # Cache lưu trữ các mức cản H4 để cố định điểm vào lệnh trong phiên H4
 PLAN_CACHE = {
@@ -138,22 +235,15 @@ def check_m15_cisd_reversal(asset, signal):
     """
     try:
         if asset == 'GOLD':
-            url = 'https://api.bybit.com/v5/market/kline?category=linear&symbol=XAUUSDT&interval=15&limit=10'
-            req = urllib.request.Request(url, headers=HEADERS)
-            with urllib.request.urlopen(req, timeout=5) as r:
-                data = json.loads(r.read().decode())
-                klines = data['result']['list']
-            if len(klines) < 3: return False, "Thiếu dữ liệu M15"
+            klines = get_oanda_klines('15', 10)
+            if len(klines) < 3: return False, "Thiếu dữ liệu M15 OANDA"
             c1, c2 = klines[1], klines[2]
             o1, cl1, h1, l1 = float(c1[1]), float(c1[4]), float(c1[2]), float(c1[3])
             o2, cl2, h2, l2 = float(c2[1]), float(c2[4]), float(c2[2]), float(c2[3])
         else: # BTC
-            url = 'https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=15m&limit=10'
-            req = urllib.request.Request(url, headers=HEADERS)
-            with urllib.request.urlopen(req, timeout=5) as r:
-                klines = json.loads(r.read().decode())
-            if len(klines) < 3: return False, "Thiếu dữ liệu M15"
-            c1, c2 = klines[-2], klines[-3]
+            klines = get_binance_klines('BTCUSDT', '15m', 10)
+            if len(klines) < 3: return False, "Thiếu dữ liệu M15 Binance"
+            c1, c2 = klines[1], klines[2]
             o1, cl1, h1, l1 = float(c1[1]), float(c1[4]), float(c1[2]), float(c1[3])
             o2, cl2, h2, l2 = float(c2[1]), float(c2[4]), float(c2[2]), float(c2[3])
 
@@ -1306,10 +1396,7 @@ def calculate_btc_h4_plan():
         
     try:
         def get_kline(interval='15', limit=30):
-            url = f'https://api.bybit.com/v5/market/kline?category=linear&symbol=BTCUSDT&interval={interval}&limit={limit}'
-            req = urllib.request.Request(url, headers=HEADERS)
-            with urllib.request.urlopen(req, timeout=12) as r:
-                return json.loads(r.read().decode())['result']['list']
+            return get_binance_klines('BTCUSDT', interval, limit)
 
         w_klines = get_kline('W', 25)
         d_klines = get_kline('D', 25)
@@ -1609,7 +1696,7 @@ def calculate_gold_h4_plan():
         current_gold = round(data['close'], 2)
         bid = round(data.get('bid') or (current_gold - 0.35), 2)
         ask = round(data.get('ask') or (current_gold + 0.35), 2)
-        data_source = "TradingView (OANDA:XAUUSD - Chuẩn MT5)"
+        data_source = "TradingView (OANDA:XAUUSD - Chuẩn MT5 100%)"
         
         # 1. BIAS ĐA KHUNG (TUẦN W1 & NGÀY D1)
         w1_bear = data['close|1W'] < data['EMA20|1W']
@@ -1617,26 +1704,22 @@ def calculate_gold_h4_plan():
         w1_bias = "🔴 GIẢM (BEARISH)" if w1_bear else "🟢 TĂNG (BULLISH)"
         d1_bias = "🔴 GIẢM (BEARISH)" if d1_bear else "🟢 TĂNG (BULLISH)"
         
-        # 2. Lấy dữ liệu H1 klines từ Bybit XAUUSDT và tính Valid Swing High / Low & Order Block (OB) SMC
-        url_gold_kline = 'https://api.bybit.com/v5/market/kline?category=linear&symbol=XAUUSDT&interval=60&limit=60'
-        req_g = urllib.request.Request(url_gold_kline, headers=HEADERS)
-        with urllib.request.urlopen(req_g, timeout=8) as r:
-            gold_h1_klines = json.loads(r.read().decode())['result']['list']
-
+        # 2. Lấy dữ liệu H1 klines TRỰC TIẾP TỪ OANDA:XAUUSD (TradingView WebSocket) & tính Valid Swing High / Low & Order Block (OB) SMC
+        gold_h1_klines = get_oanda_klines('60', 60)
         sh_raw, b_ob_raw, sl_raw, bull_ob_raw = find_smc_swings_and_ob(gold_h1_klines, is_gold=True)
-        delta = current_gold - float(gold_h1_klines[0][4])
+        delta = 0.0 # Dữ liệu 100% OANDA, hoàn toàn không có độ lệch sàn (delta = 0)
         
-        major_res = round(sh_raw['high'] + delta, 2)
-        b_ob_top = round(b_ob_raw['top'] + delta, 2)
-        b_ob_bot = round(b_ob_raw['bottom'] + delta, 2)
-        b_ob_mid = round(b_ob_raw['mid'] + delta, 2)
+        major_res = round(sh_raw['high'], 2)
+        b_ob_top = round(b_ob_raw['top'], 2)
+        b_ob_bot = round(b_ob_raw['bottom'], 2)
+        b_ob_mid = round(b_ob_raw['mid'], 2)
         sh_time = sh_raw['time']
         sh_filter = sh_raw.get('filter', 'Duyệt Qua InsideBar')
 
-        major_sup = round(sl_raw['low'] + delta, 2)
-        bull_ob_top = round(bull_ob_raw['top'] + delta, 2)
-        bull_ob_bot = round(bull_ob_raw['bottom'] + delta, 2)
-        bull_ob_mid = round(bull_ob_raw['mid'] + delta, 2)
+        major_sup = round(sl_raw['low'], 2)
+        bull_ob_top = round(bull_ob_raw['top'], 2)
+        bull_ob_bot = round(bull_ob_raw['bottom'], 2)
+        bull_ob_mid = round(bull_ob_raw['mid'], 2)
         sl_time = sl_raw['time']
         sl_filter = sl_raw.get('filter', 'Duyệt Qua InsideBar')
 
@@ -1646,17 +1729,14 @@ def calculate_gold_h4_plan():
         m15_ema20 = round(data['EMA20|15'], 2)
         h4_ema20 = round(data['EMA20|240'], 2)
         
-        # 3. Phân tích cấu trúc M15 (Structure Timeframe - Chống Cản Tàu) & Vùng HVN/POC
+        # 3. Phân tích cấu trúc M15 TRỰC TIẾP TỪ OANDA:XAUUSD (Structure Timeframe - Chống Cản Tàu) & Vùng HVN/POC
         try:
-            url_gold_m15 = 'https://api.bybit.com/v5/market/kline?category=linear&symbol=XAUUSDT&interval=15&limit=30'
-            req_gm15 = urllib.request.Request(url_gold_m15, headers=HEADERS)
-            with urllib.request.urlopen(req_gm15, timeout=8) as r:
-                gold_m15_klines = json.loads(r.read().decode())['result']['list']
+            gold_m15_klines = get_oanda_klines('15', 30)
             poc_raw, hvn_l_raw, hvn_u_raw = calculate_keyvolume_nodes(gold_m15_klines)
-            poc_gold_m15 = round(poc_raw + delta, 2)
-            hvn_lower = round(hvn_l_raw + delta, 2)
-            hvn_upper = round(hvn_u_raw + delta, 2)
-            m15_struct = analyze_m15_structure(gold_m15_klines, delta=delta, is_gold=True)
+            poc_gold_m15 = round(poc_raw, 2)
+            hvn_lower = round(hvn_l_raw, 2)
+            hvn_upper = round(hvn_u_raw, 2)
+            m15_struct = analyze_m15_structure(gold_m15_klines, delta=0.0, is_gold=True)
         except Exception:
             poc_gold_m15 = round((m15_high + m15_low + m15_ema20) / 3.0, 2)
             hvn_lower = round(m15_low, 2)
@@ -1664,15 +1744,12 @@ def calculate_gold_h4_plan():
             gold_m15_klines = []
             m15_struct = {'has_bear_bos': False, 'has_bull_bos': False, 'choch_bear_level': m15_low, 'choch_bull_level': m15_high}
         
-        # 4. Phân tích khung M5 (Khung vào lệnh Entry theo chuẩn SMC)
+        # 4. Phân tích khung M5 TRỰC TIẾP TỪ OANDA:XAUUSD (Khung vào lệnh Entry theo chuẩn SMC)
         try:
-            url_gold_m5 = 'https://api.bybit.com/v5/market/kline?category=linear&symbol=XAUUSDT&interval=5&limit=30'
-            req_gm5 = urllib.request.Request(url_gold_m5, headers=HEADERS)
-            with urllib.request.urlopen(req_gm5, timeout=12) as r:
-                gold_m5_klines = json.loads(r.read().decode())['result']['list']
+            gold_m5_klines = get_oanda_klines('5', 30)
             m5_info = analyze_m5_entry(gold_m5_klines)
-            m5_entry_high = round(m5_info['m5_high'] + delta, 2)
-            m5_entry_low = round(m5_info['m5_low'] + delta, 2)
+            m5_entry_high = round(m5_info['m5_high'], 2)
+            m5_entry_low = round(m5_info['m5_low'], 2)
         except Exception:
             m5_info = {
                 'has_multi_tops': False,
@@ -1937,22 +2014,19 @@ def calculate_h4_breakout_plan(symbol='BTCUSDT', is_gold=False):
     try:
         delta = 0.0
         if is_gold:
-            # Đồng bộ giá Vàng theo OANDA:XAUUSD
-            plan_gold = calculate_gold_h4_plan()
-            curr_gold_ref = plan_gold['current_price']
-            url = 'https://api.bybit.com/v5/market/kline?category=linear&symbol=XAUUSDT&interval=240&limit=5'
-            req = urllib.request.Request(url, headers=HEADERS)
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                klines = json.loads(resp.read().decode())['result']['list']
-            bybit_close = float(klines[0][4])
-            delta = curr_gold_ref - bybit_close
-            curr_p = curr_gold_ref
-        else:
-            url = 'https://api.bybit.com/v5/market/kline?category=linear&symbol=BTCUSDT&interval=240&limit=5'
-            req = urllib.request.Request(url, headers=HEADERS)
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                klines = json.loads(resp.read().decode())['result']['list']
+            # Lấy nến H4 trực tiếp từ OANDA:XAUUSD (chuẩn MT5 100%)
+            klines = get_oanda_klines('240', 10)
+            if not klines:
+                raise Exception("Không thể lấy nến H4 OANDA")
             curr_p = float(klines[0][4])
+            delta = 0.0
+        else:
+            # Lấy nến H4 trực tiếp từ Binance BTCUSDT
+            klines = get_binance_klines('BTCUSDT', '4h', 10)
+            if not klines:
+                raise Exception("Không thể lấy nến H4 Binance")
+            curr_p = float(klines[0][4])
+            delta = 0.0
 
         c0, c1, c2 = klines[0], klines[1], klines[2]
         
@@ -2183,41 +2257,18 @@ def analyze_scalp_vp_plan(asset='GOLD'):
     - Cơ chế L-Shape hôm trước: yVAL & yPOC tụ đáy -> M5 phản ứng giá -> Target xoay trục về yVAH!
     - Cơ chế P-Shape hôm trước: yVAH & yPOC tụ đỉnh -> M5 phản ứng giá -> Target xoay trục về yVAL!
     - Đồng thời theo dõi Developing VP & Daily Open (DO) của hôm nay.
+    - 100% chuẩn OANDA:XAUUSD cho Vàng và Binance BTCUSDT cho Bitcoin.
     """
-    symbol = 'XAUUSDT' if asset == 'GOLD' else 'BTCUSDT'
-    url = f'https://api.bybit.com/v5/market/kline?category=linear&symbol={symbol}&interval=5&limit=600'
-    req = urllib.request.Request(url, headers=HEADERS)
-    with urllib.request.urlopen(req, timeout=10) as r:
-        klines = json.loads(r.read().decode())['result']['list']
-
-    delta = 0.0
+    symbol = 'OANDA:XAUUSD' if asset == 'GOLD' else 'BTCUSDT'
     if asset == 'GOLD':
-        # Đồng bộ 100% chuẩn theo sàn OANDA:XAUUSD (TradingView / MT5)
-        try:
-            plan_g = calculate_gold_h4_plan()
-            oanda_p = plan_g['current_price']
-            bybit_close = float(klines[0][4])
-            delta = round(oanda_p - bybit_close, 2)
-            curr_p = oanda_p
-        except Exception:
-            curr_p = float(klines[0][4])
-            delta = 0.0
+        klines = get_oanda_klines('5', 600)
     else:
-        curr_p = float(klines[0][4])
+        klines = get_binance_klines('BTCUSDT', '5m', 600)
 
-    # Hiệu chỉnh toàn bộ nến lịch sử theo đúng giá OANDA
-    if delta != 0.0:
-        calibrated_klines = []
-        for k in klines:
-            calibrated_klines.append([
-                k[0],
-                float(k[1]) + delta,
-                float(k[2]) + delta,
-                float(k[3]) + delta,
-                float(k[4]) + delta,
-                float(k[5])
-            ])
-        klines = calibrated_klines
+    if not klines:
+        return None
+
+    curr_p = float(klines[0][4])
     now_utc = datetime.datetime.now(datetime.timezone.utc)
     
     # 1. Xác định khung thời gian phiên Hôm Nay và Hôm Qua
@@ -2534,30 +2585,29 @@ def handle_vp_scalping(chat_id=None):
 # ==========================================
 # 3. QUÉT COIN THEO PHIÊN 1H - CỐ ĐỊNH ENTRY
 # ==========================================
-def scan_coins_bybit(mode='long', limit=3):
+def scan_coins_binance(mode='long', limit=3):
     now = time.time()
     cache_key = 'COINS_LONG' if mode == 'long' else 'COINS_SHORT'
     # Giữ cố định danh sách coin và điểm vào trong 1 tiếng (3600s)
     if PLAN_CACHE[cache_key]['data'] and (now - PLAN_CACHE[cache_key]['time'] < 3600):
         return PLAN_CACHE[cache_key]['data']
         
-    url = 'https://api.bybit.com/v5/market/tickers?category=linear'
+    url = 'https://api.binance.com/api/v3/ticker/24hr'
     req = urllib.request.Request(url, headers=HEADERS)
     with urllib.request.urlopen(req, timeout=10) as resp:
-        data = json.loads(resp.read().decode())
-        tickers = data['result']['list']
+        tickers = json.loads(resp.read().decode())
         
     usdt_tickers = []
     for d in tickers:
         sym = d['symbol']
-        vol = float(d.get('turnover24h', 0))
+        vol = float(d.get('quoteVolume', 0))
         if sym.endswith('USDT') and vol > 15000000:
-            change_pct = float(d.get('price24hPcnt', 0)) * 100.0
+            change_pct = float(d.get('priceChangePercent', 0))
             usdt_tickers.append({
                 'symbol': sym.replace('USDT', '/USDT'),
                 'price': float(d['lastPrice']),
-                'high_24h': float(d['highPrice24h']),
-                'low_24h': float(d['lowPrice24h']),
+                'high_24h': float(d['highPrice']),
+                'low_24h': float(d['lowPrice']),
                 'change': change_pct,
                 'vol_m': vol / 1000000
             })
@@ -2617,9 +2667,11 @@ def scan_coins_bybit(mode='long', limit=3):
     PLAN_CACHE[cache_key]['time'] = now
     return results
 
+scan_coins_bybit = scan_coins_binance
+
 def handle_scan(mode='long', chat_id=None):
     try:
-        results = scan_coins_bybit(mode=mode, limit=3)
+        results = scan_coins_binance(mode=mode, limit=3)
         header = "🚀 [TOP COIN TIỀM NĂNG TĂNG - LONG]" if mode == 'long' else "📉 [TOP COIN TIỀM NĂNG GIẢM - SHORT]"
         msg = f"<b>{header} (KẾ HOẠCH CỐ ĐỊNH THEO PHIÊN)</b>\n━━━━━━━━━━━━━━━━━━"
         
@@ -2662,11 +2714,10 @@ def scan_meme_breakout_coins(limit=3):
     }
     MAJORS_EXCLUDE = {'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'USDCUSDT'}
 
-    url = 'https://api.bybit.com/v5/market/tickers?category=linear'
+    url = 'https://api.binance.com/api/v3/ticker/24hr'
     req = urllib.request.Request(url, headers=HEADERS)
     with urllib.request.urlopen(req, timeout=10) as resp:
-        data = json.loads(resp.read().decode())
-        tickers = data['result']['list']
+        tickers = json.loads(resp.read().decode())
 
     candidates = []
     for d in tickers:
@@ -2674,8 +2725,8 @@ def scan_meme_breakout_coins(limit=3):
         if not sym.endswith('USDT'): continue
         if sym in TRADFI_EXCLUDE or sym in MAJORS_EXCLUDE: continue
         
-        vol_usd = float(d.get('turnover24h', 0))
-        change_pct = float(d.get('price24hPcnt', 0)) * 100.0
+        vol_usd = float(d.get('quoteVolume', 0))
+        change_pct = float(d.get('priceChangePercent', 0))
         
         # Tiêu chuẩn: Vol >= 70M USD (ưu tiên >= 100M) và đang có đà bơm (change > 0.5%)
         if vol_usd >= 70_000_000 and change_pct >= 0.5:
@@ -2685,8 +2736,8 @@ def scan_meme_breakout_coins(limit=3):
                 'price': float(d['lastPrice']),
                 'change_pct': round(change_pct, 2),
                 'vol_m': round(vol_usd / 1_000_000, 1),
-                'high_24h': float(d['highPrice24h']),
-                'low_24h': float(d['lowPrice24h'])
+                'high_24h': float(d['highPrice']),
+                'low_24h': float(d['lowPrice'])
             })
 
     # Ưu tiên các coin đạt mốc 100M+ và có đà tăng mạnh nhất
@@ -2697,10 +2748,8 @@ def scan_meme_breakout_coins(limit=3):
     for c in selected:
         sym = c['symbol']
         try:
-            k_url = f'https://api.bybit.com/v5/market/kline?category=linear&symbol={sym}&interval=60&limit=12'
-            k_req = urllib.request.Request(k_url, headers=HEADERS)
-            with urllib.request.urlopen(k_req, timeout=5) as r:
-                klines = json.loads(r.read().decode())['result']['list']
+            klines = get_binance_klines(sym, interval='1h', limit=12)
+            if not klines or len(klines) < 4: continue
             
             curr_k = klines[0]
             prev_k = klines[1]
@@ -2756,7 +2805,7 @@ def scan_meme_breakout_coins(limit=3):
 
 def handle_meme_coins(chat_id=None):
     """Báo cáo danh sách Coin Rác / Altcoin bùng nổ có Volume khủng (> 100M USD) & Momentum mua vào"""
-    send_telegram("⏳ <i>Đang quét toàn sàn Bybit lọc Coin Rác có Volume > $100M & Lực mua chủ động...</i>", target_chat_id=chat_id)
+    send_telegram("⏳ <i>Đang quét toàn sàn Binance lọc Coin Rác có Volume > $100M & Lực mua chủ động...</i>", target_chat_id=chat_id)
     try:
         coins = scan_meme_breakout_coins(limit=4)
         if not coins:
@@ -2797,35 +2846,35 @@ def handle_meme_coins(chat_id=None):
         send_telegram(f"⚠️ Lỗi quét Coin Rác: {e}", reply_markup=get_main_keyboard(), target_chat_id=chat_id)
 
 # ==========================================
-# 3.3 TRA CỨU GIÁ LIVE THỊ TRƯỜNG (VÀNG - BITCOIN - ETHEREUM)
+# 3.3 TRA CỨU GIÁ LIVE THỊ TRƯỜNG (VÀNG OANDA - BITCOIN BINANCE - ETHEREUM BINANCE)
 # ==========================================
 def get_live_market_prices():
-    """Lấy giá tức thời thời gian thực của Vàng (OANDA MT5 & Bybit), Bitcoin (BTCUSDT) và Ethereum (ETHUSDT)"""
+    """Lấy giá tức thời thời gian thực của Vàng (OANDA:XAUUSD), Bitcoin (Binance BTCUSDT) và Ethereum (Binance ETHUSDT)"""
     results = {}
-    now_dt = datetime.datetime.now(TZ_VN)
-    time_str = now_dt.strftime('%H:%M:%S %d/%m/%Y')
+    now_dt = datetime.timezone(datetime.timedelta(hours=7))
+    time_str = datetime.datetime.now(now_dt).strftime('%H:%M:%S %d/%m/%Y')
     
-    # 1. Bybit Linear Tickers (XAUUSDT, BTCUSDT, ETHUSDT)
+    # 1. Binance Tickers (BTCUSDT, ETHUSDT)
     try:
-        url = 'https://api.bybit.com/v5/market/tickers?category=linear'
+        url = 'https://api.binance.com/api/v3/ticker/24hr'
         req = urllib.request.Request(url, headers=HEADERS)
         with urllib.request.urlopen(req, timeout=5) as r:
-            tickers = json.loads(r.read().decode())['result']['list']
-            t_map = {t['symbol']: t for t in tickers if t['symbol'] in ['BTCUSDT', 'ETHUSDT', 'XAUUSDT']}
-            for sym in ['BTCUSDT', 'ETHUSDT', 'XAUUSDT']:
+            tickers = json.loads(r.read().decode())
+            t_map = {t['symbol']: t for t in tickers if t['symbol'] in ['BTCUSDT', 'ETHUSDT']}
+            for sym in ['BTCUSDT', 'ETHUSDT']:
                 if sym in t_map:
                     t = t_map[sym]
                     results[sym] = {
                         'price': float(t['lastPrice']),
-                        'change': float(t.get('price24hPcnt', 0)) * 100.0,
-                        'high': float(t.get('highPrice24h', 0)),
-                        'low': float(t.get('lowPrice24h', 0)),
-                        'vol_m': float(t.get('turnover24h', 0)) / 1_000_000
+                        'change': float(t.get('priceChangePercent', 0)),
+                        'high': float(t.get('highPrice', 0)),
+                        'low': float(t.get('lowPrice', 0)),
+                        'vol_m': float(t.get('quoteVolume', 0)) / 1_000_000
                     }
     except Exception as e:
-        print(f"Lỗi lấy giá Bybit: {e}")
+        print(f"Lỗi lấy giá Binance: {e}")
 
-    # 2. OANDA Gold MT5 từ TradingView
+    # 2. OANDA Gold MT5 từ TradingView Scanner
     oanda_price = None
     try:
         tv_url = 'https://scanner.tradingview.com/cfd/scan'
@@ -2850,29 +2899,25 @@ def get_live_market_prices():
     except Exception as e:
         print(f"Lỗi lấy giá OANDA TradingView: {e}")
 
-    return {'time': time_str, 'bybit': results, 'oanda': oanda_price}
+    return {'time': time_str, 'binance': results, 'oanda': oanda_price}
 
 def handle_live_price(chat_id=None):
-    """Hiển thị bảng giá tức thời Vàng, BTC, ETH theo thời gian thực kèm Đỉnh/Đáy ngày (HOD / LOD)"""
+    """Hiển thị bảng giá tức thời Vàng (OANDA:XAUUSD) và BTC/ETH (Binance) theo thời gian thực kèm Đỉnh/Đáy ngày (HOD / LOD)"""
     try:
         data = get_live_market_prices()
         time_str = data['time']
-        b = data['bybit']
+        b = data['binance']
         oanda = data['oanda']
 
-        # Gold
-        gold_oanda_p = oanda['price'] if oanda else b.get('XAUUSDT', {}).get('price', 0)
+        # Gold OANDA
+        gold_oanda_p = oanda['price'] if oanda else 0.0
         gold_bid = oanda['bid'] if oanda else gold_oanda_p
         gold_ask = oanda['ask'] if oanda else gold_oanda_p
-        gold_oanda_high = oanda['high'] if oanda else b.get('XAUUSDT', {}).get('high', 0)
-        gold_oanda_low = oanda['low'] if oanda else b.get('XAUUSDT', {}).get('low', 0)
-        gold_bybit = b.get('XAUUSDT', {})
-        gold_bb_p = gold_bybit.get('price', 0)
-        gold_chg = gold_bybit.get('change', 0)
-        gold_low = gold_bybit.get('low', 0)
-        gold_high = gold_bybit.get('high', 0)
+        gold_oanda_high = oanda['high'] if oanda else gold_oanda_p
+        gold_oanda_low = oanda['low'] if oanda else gold_oanda_p
+        gold_chg = oanda['change'] if oanda else 0.0
 
-        # BTC
+        # BTC Binance
         btc = b.get('BTCUSDT', {})
         btc_p = btc.get('price', 0)
         btc_chg = btc.get('change', 0)
@@ -2880,7 +2925,7 @@ def handle_live_price(chat_id=None):
         btc_high = btc.get('high', 0)
         btc_vol = btc.get('vol_m', 0)
 
-        # ETH
+        # ETH Binance
         eth = b.get('ETHUSDT', {})
         eth_p = eth.get('price', 0)
         eth_chg = eth.get('change', 0)
@@ -2894,23 +2939,28 @@ def handle_live_price(chat_id=None):
 
         msg = f"""💵 <b>[BẢNG GIÁ LIVE THỜI GIAN THỰC]</b> 💵
 ━━━━━━━━━━━━━━━━━━
-🥇 <b>VÀNG (XAUUSD):</b>
-• <b>OANDA (Chuẩn MT5):</b> <b>${gold_oanda_p:,.2f}</b> (Bid: <code>${gold_bid:,.2f}</code> | Ask: <code>${gold_ask:,.2f}</code>)
+🥇 <b>VÀNG (XAUUSD - SÀN OANDA):</b>
+• <b>Thị giá OANDA:</b> <b>${gold_oanda_p:,.2f}</b> ({g_emoji} <b>{gold_chg:+.2f}%</b>)
+• <b>Bid / Ask:</b> <code>${gold_bid:,.2f}</code> / <code>${gold_ask:,.2f}</code>
 • 🔺 <b>Đỉnh ngày (HOD):</b> <code>${gold_oanda_high:,.2f}</code> | 🔻 <b>Đáy ngày (LOD):</b> <code>${gold_oanda_low:,.2f}</code>
-• <b>Bybit Linear:</b> <b>${gold_bb_p:,.2f}</b> ({g_emoji} <b>{gold_chg:+.2f}%</b> | 24h: <code>${gold_low:,.2f}</code> - <code>${gold_high:,.2f}</code>)
+• 🏛️ <i>Chuẩn MT5 & TradingView OANDA (100% không chênh lệch sàn)</i>
 
-👑 <b>BITCOIN (BTCUSDT):</b>
-• <b>Thị giá:</b> <b>${btc_p:,.1f} USD</b> ({b_emoji} <b>{btc_chg:+.2f}%</b>)
+👑 <b>BITCOIN (BTCUSDT - SÀN BINANCE):</b>
+• <b>Thị giá Binance:</b> <b>${btc_p:,.1f} USD</b> ({b_emoji} <b>{btc_chg:+.2f}%</b>)
 • 🔺 <b>Đỉnh ngày (HOD):</b> <code>${btc_high:,.1f} USD</code> | 🔻 <b>Đáy ngày (LOD):</b> <code>${btc_low:,.1f} USD</code>
 • 🌊 <b>Volume 24h:</b> <b>${btc_vol:,.0f}M USDT</b>
 
-💎 <b>ETHEREUM (ETHUSDT):</b>
-• <b>Thị giá:</b> <b>${eth_p:,.2f} USD</b> ({e_emoji} <b>{eth_chg:+.2f}%</b>)
+💎 <b>ETHEREUM (ETHUSDT - SÀN BINANCE):</b>
+• <b>Thị giá Binance:</b> <b>${eth_p:,.2f} USD</b> ({e_emoji} <b>{eth_chg:+.2f}%</b>)
 • 🔺 <b>Đỉnh ngày (HOD):</b> <code>${eth_high:,.2f} USD</code> | 🔻 <b>Đáy ngày (LOD):</b> <code>${eth_low:,.2f} USD</code>
 • 🌊 <b>Volume 24h:</b> <b>${eth_vol:,.0f}M USDT</b>
 ━━━━━━━━━━━━━━━━━━
 ⏱️ <i>Cập nhật lúc: {time_str}</i>
 💡 <i>Bấm nút <b>💵 Xem Giá Live (Vàng/BTC/ETH)</b> bất kỳ lúc nào để làm mới giá ngay!</i>"""
+
+        send_telegram(msg, reply_markup=get_main_keyboard(), target_chat_id=chat_id)
+    except Exception as e:
+        send_telegram(f"⚠️ Lỗi lấy giá live: {e}", reply_markup=get_main_keyboard(), target_chat_id=chat_id)
 
         send_telegram(msg, reply_markup=get_main_keyboard(), target_chat_id=chat_id)
     except Exception as e:
@@ -3278,17 +3328,18 @@ Tài khoản của bạn hiện tại chưa được cấp quyền sử dụng h
                     if text in ["/start", "menu", "Menu", "⚙️ Menu Hỗ Trợ"]:
                         menu_help = """🤖 <b>BẢNG ĐIỀU KHIỂN & MENU TÍNH NĂNG BOT:</b>
 ━━━━━━━━━━━━━━━━━━
-💵 <b>Xem Giá Live:</b> Cập nhật tức thời giá Vàng (OANDA MT5 & Bybit), Bitcoin, Ethereum
+💵 <b>Xem Giá Live:</b> Cập nhật tức thời giá Vàng (OANDA MT5), Bitcoin & Ethereum (Binance)
 📊 <b>Tổng Kết Kèo TP/SL:</b> Tổng kết hiệu suất Win/Loss/BE, Winrate %, chi tiết Entry/SL/TP từng kèo
-👑 <b>Phân Tích BTC:</b> Bias W1/D1 + SMC KeyVolume H1 & M5
-🥇 <b>Phân Tích VÀNG (XAU):</b> Chuẩn OANDA MT5 + SMC H1 OB
+👑 <b>Phân Tích BTC:</b> Bias W1/D1 + SMC KeyVolume H1 & M5 (Binance)
+🥇 <b>Phân Tích VÀNG (XAU):</b> Chuẩn OANDA MT5 100% + SMC H1 OB
 🎯 <b>Scalping Volume Profile M5:</b> Đánh xoay trục L-Shape/P-Shape hôm trước (yVAL/yVAH) & dPOC
 ⚡ <b>Tuyệt Chiêu H4 Lưỡng Lự:</b> Bắt bứt phá Breakout nến H4
 💣 <b>Săn Coin Rác (Vol > $100M):</b> Bắt momentum mua vào, SL 5% - 9% (Nói KHÔNG với bắt dao rơi / Buy the dip)
-📈 <b>Tìm Coin TĂNG (LONG):</b> Lọc coin tích lũy gom hàng Bybit
-📉 <b>Tìm Coin GIẢM (SHORT):</b> Lọc coin phân phối xả hàng Bybit
+📈 <b>Tìm Coin TĂNG (LONG):</b> Lọc coin tích lũy gom hàng Binance
+📉 <b>Tìm Coin GIẢM (SHORT):</b> Lọc coin phân phối xả hàng Binance
 🇻🇳 <b>Đánh Giá Cổ Phiếu VN:</b> Định giá PE < 10, G > 10%, dòng tiền & lãi suất
 🔍 <b>Kiểm Tra Lệnh & Báo Cáo Ngày:</b> Live Radar trực tiếp + Quản lý lệnh đang chạy
+
 
 💡 <i>Bấm các nút bên dưới hoặc gõ trực tiếp lệnh (/price, /tongket, /gold, /btc, /scalp, /meme, /h4, /check, /vnstock)!</i>"""
                         send_telegram(menu_help, reply_markup=get_main_keyboard(), target_chat_id=chat_id)

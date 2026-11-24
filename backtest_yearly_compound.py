@@ -392,3 +392,4 @@ if __name__ == '__main__':
     run_yearly_compound_backtest('GOLD', 'XAUUSDc')
     # Chạy Bitcoin
     run_yearly_compound_backtest('BTC', 'BTCUSDc')
+
