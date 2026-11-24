@@ -79,11 +79,27 @@ def save_vip_history(history):
     except Exception as e:
         print(f"Lỗi save_vip_history: {e}")
 
-def record_new_vip_trade(asset, symbol, signal, entry_price, entry_stop, sl, tp1, tp2, sl_dist):
+def record_new_vip_trade(asset, symbol, signal, entry_price, entry_stop, sl, tp1, tp2, sl_dist, is_limit=False, current_price=None):
     trades = load_vip_trades()
     # Chỉ cho phép duy nhất 1 lệnh active cho mỗi symbol để chống spam tuyệt đối
     trades = [t for t in trades if t.get('symbol') != symbol]
     now_dt = datetime.datetime.now(TZ_VN)
+
+    # Xác định trạng thái lệnh: Đã khớp ngay (Market) hay đang chờ Limit (Pending)
+    is_filled = True
+    status = 'RUNNING'
+    tol = 0.6 if asset == 'GOLD' else 35.0
+    if current_price:
+        if signal == 'SHORT' and entry_price > current_price + tol:
+            is_filled = False
+            status = 'PENDING_LIMIT'
+        elif signal == 'LONG' and entry_price < current_price - tol:
+            is_filled = False
+            status = 'PENDING_LIMIT'
+    elif is_limit:
+        is_filled = False
+        status = 'PENDING_LIMIT'
+
     new_t = {
         'id': f"{asset}_{int(time.time())}",
         'asset': asset,
@@ -98,9 +114,10 @@ def record_new_vip_trade(asset, symbol, signal, entry_price, entry_stop, sl, tp1
         'sl_dist': sl_dist,
         'tp1_hit': False,
         'tp2_hit': False,
+        'is_filled': is_filled,
         'entry_time': now_dt.strftime('%H:%M %d/%m'),
         'entry_timestamp': time.time(),
-        'status': 'RUNNING'
+        'status': status
     }
     trades.append(new_t)
     save_vip_trades(trades)
@@ -132,7 +149,102 @@ def check_and_update_vip_trades(curr_gold_p, curr_btc_p):
         tp1 = t['tp1']
         tp2 = t['tp2']
 
-        # 1. KIỂM TRA LỆNH SHORT
+        # 0. KIỂM TRA LỆNH CHỜ (PENDING LIMIT) ĐÃ KHỚP HAY CHƯA
+        if not t.get('is_filled', True):
+            if signal == 'SHORT':
+                # Giá đã hồi lên chạm hoặc vượt Entry Limit -> CHÍNH THỨC KHỚP LỆNH!
+                if curr_p >= entry_p:
+                    t['is_filled'] = True
+                    t['status'] = 'RUNNING'
+                    t['filled_time'] = time_str
+                    save_vip_trades(trades)
+                    msg_fill = f"""🔔 <b>[VIP: ĐÃ KHỚP LỆNH SELL LIMIT]</b> 🔔
+━━━━━━━━━━━━━━━━━━
+💰 Tài sản: <b>{sym_name}</b>
+📈 Lệnh: <b>🔴 SHORT</b>
+👉 <b>Đã khớp tại Entry:</b> <code>${entry_p:,.{dec}f}</code> (Giá hiện tại: <code>${curr_p:,.{dec}f}</code>)
+🛡️ <b>SL Gốc:</b> <code>${orig_sl:,.{dec}f}</code> | 🎯 <b>TP1:</b> <code>${tp1:,.{dec}f}</code> | 🎯 <b>TP2:</b> <code>${tp2:,.{dec}f}</code>
+⚡ <i>Hệ thống chính thức kích hoạt giám sát TP1 & dời SL về Hoà Vốn!</i>"""
+                    send_telegram(msg_fill, reply_markup=get_main_keyboard())
+                    remaining.append(t)
+                    continue
+                # Nếu giá rơi thẳng về mốc TP1 mà CHƯA từng quay lên đón Entry -> HUỶ SETUP (MISSED ENTRY)
+                elif curr_p <= tp1:
+                    t['status'] = 'CANCELLED_MISSED'
+                    t['close_time'] = time_str
+                    t['close_timestamp'] = time.time()
+                    t['profit'] = 0.0
+                    history.append(t)
+                    save_vip_history(history)
+                    msg_cancel = f"""⏳ <b>[VIP: HUỶ LỆNH SELL LIMIT - HẾT HIỆU LỰC]</b> ⏳
+━━━━━━━━━━━━━━━━━━
+💰 Tài sản: <b>{sym_name}</b>
+📈 Lệnh chờ: <b>🔴 SHORT LIMIT</b> tại <code>${entry_p:,.{dec}f}</code>
+⚠️ <b>Lý do:</b> Giá thị trường đã rơi thẳng về mốc TP1 (<code>${curr_p:,.{dec}f}</code>) mà không quay lại đón Entry.
+🛡️ <b>Hành động:</b> Tự động huỷ lệnh chờ để bảo toàn vốn, tuyệt đối không fomo đuổi giá!"""
+                    send_telegram(msg_cancel, reply_markup=get_main_keyboard())
+                    continue
+                # Nếu giá tăng vọt vượt qua SL trước khi khớp -> HUỶ SETUP
+                elif curr_p >= sl:
+                    t['status'] = 'CANCELLED_INVALID'
+                    t['close_time'] = time_str
+                    t['close_timestamp'] = time.time()
+                    t['profit'] = 0.0
+                    history.append(t)
+                    save_vip_history(history)
+                    continue
+                else:
+                    # Lệnh Limit vẫn đang nằm chờ khớp
+                    remaining.append(t)
+                    continue
+
+            elif signal == 'LONG':
+                # Giá đã hồi xuống chạm hoặc thủng Entry Limit -> CHÍNH THỨC KHỚP LỆNH!
+                if curr_p <= entry_p:
+                    t['is_filled'] = True
+                    t['status'] = 'RUNNING'
+                    t['filled_time'] = time_str
+                    save_vip_trades(trades)
+                    msg_fill = f"""🔔 <b>[VIP: ĐÃ KHỚP LỆNH BUY LIMIT]</b> 🔔
+━━━━━━━━━━━━━━━━━━
+💰 Tài sản: <b>{sym_name}</b>
+📈 Lệnh: <b>🟢 LONG</b>
+👉 <b>Đã khớp tại Entry:</b> <code>${entry_p:,.{dec}f}</code> (Giá hiện tại: <code>${curr_p:,.{dec}f}</code>)
+🛡️ <b>SL Gốc:</b> <code>${orig_sl:,.{dec}f}</code> | 🎯 <b>TP1:</b> <code>${tp1:,.{dec}f}</code> | 🎯 <b>TP2:</b> <code>${tp2:,.{dec}f}</code>
+⚡ <i>Hệ thống chính thức kích hoạt giám sát TP1 & dời SL về Hoà Vốn!</i>"""
+                    send_telegram(msg_fill, reply_markup=get_main_keyboard())
+                    remaining.append(t)
+                    continue
+                # Nếu giá tăng thẳng lên mốc TP1 mà CHƯA từng quay xuống đón Entry -> HUỶ SETUP (MISSED ENTRY)
+                elif curr_p >= tp1:
+                    t['status'] = 'CANCELLED_MISSED'
+                    t['close_time'] = time_str
+                    t['close_timestamp'] = time.time()
+                    t['profit'] = 0.0
+                    history.append(t)
+                    save_vip_history(history)
+                    msg_cancel = f"""⏳ <b>[VIP: HUỶ LỆNH BUY LIMIT - HẾT HIỆU LỰC]</b> ⏳
+━━━━━━━━━━━━━━━━━━
+💰 Tài sản: <b>{sym_name}</b>
+📈 Lệnh chờ: <b>🟢 BUY LIMIT</b> tại <code>${entry_p:,.{dec}f}</code>
+⚠️ <b>Lý do:</b> Giá thị trường đã tăng thẳng lên mốc TP1 (<code>${curr_p:,.{dec}f}</code>) mà không quay lại đón Entry.
+🛡️ <b>Hành động:</b> Tự động huỷ lệnh chờ để bảo toàn vốn, tuyệt đối không fomo đuổi giá!"""
+                    send_telegram(msg_cancel, reply_markup=get_main_keyboard())
+                    continue
+                elif curr_p <= sl:
+                    t['status'] = 'CANCELLED_INVALID'
+                    t['close_time'] = time_str
+                    t['close_timestamp'] = time.time()
+                    t['profit'] = 0.0
+                    history.append(t)
+                    save_vip_history(history)
+                    continue
+                else:
+                    # Lệnh Limit vẫn đang nằm chờ khớp
+                    remaining.append(t)
+                    continue
+
+        # 1. KIỂM TRA LỆNH SHORT (ĐÃ KHỚP ENTRY)
         if signal == 'SHORT':
             profit = round(entry_p - curr_p, dec)
             # A. Chạm TP1
@@ -477,8 +589,14 @@ def format_single_trade_block(t, index=None):
         badge = f"🛑 CẮT LỖ SL (-{abs(pnl):,.{dec}f} {unit})"
     elif status == 'TP1_HIT_RISK_FREE':
         badge = "⏳ ĐÃ CHẠM TP1 (DỜI BE - RUNNING)"
+    elif status == 'PENDING_LIMIT':
+        badge = "⏳ ĐANG CHỜ KHỚP LIMIT"
+    elif status == 'CANCELLED_MISSED':
+        badge = "🚫 HUỶ KÈO (GIÁ CHƯA KHỚP ENTRY ĐÃ CHẠY VỀ TP)"
+    elif status == 'CANCELLED_INVALID':
+        badge = "🚫 HUỶ KÈO (HẾT HIỆU LỰC)"
     else:
-        badge = "⏳ ĐANG CHẠY"
+        badge = f"⏳ {status}"
         
     entry_p = t.get('entry_price', 0)
     orig_sl = t.get('orig_sl', t.get('sl', 0))
@@ -501,7 +619,9 @@ def format_single_trade_block(t, index=None):
     return res
 
 def compute_trade_stats(trades_list):
-    total = len(trades_list)
+    # Lọc bỏ các kèo Limit bị huỷ do giá không quay lại đón Entry
+    executed_trades = [t for t in trades_list if t.get('status') not in ['CANCELLED_MISSED', 'CANCELLED_INVALID']]
+    total = len(executed_trades)
     if total == 0:
         return {
             'total': 0, 'wins': 0, 'losses': 0, 'be': 0, 'winrate': 0.0,
@@ -515,7 +635,7 @@ def compute_trade_stats(trades_list):
     gold_trades = 0
     btc_trades = 0
     
-    for t in trades_list:
+    for t in executed_trades:
         is_gold = (t.get('asset') == 'GOLD')
         profit = t.get('profit', 0)
         status = t.get('status', '')
@@ -3243,7 +3363,8 @@ def auto_diamond_alert_worker():
                         sl=plan_gold['sl'],
                         tp1=plan_gold['tp1'],
                         tp2=plan_gold['tp2'],
-                        sl_dist=plan_gold['sl_dist']
+                        sl_dist=plan_gold['sl_dist'],
+                        current_price=price_gold
                     )
 
             # 6. QUÉT TỰ ĐỘNG BẮN KÈO BITCOIN (BTCUSDT)
@@ -3299,7 +3420,8 @@ def auto_diamond_alert_worker():
                         sl=plan_btc['sl'],
                         tp1=plan_btc['tp1'],
                         tp2=plan_btc['tp2'],
-                        sl_dist=abs(entry_l - plan_btc['sl'])
+                        sl_dist=abs(entry_l - plan_btc['sl']),
+                        current_price=price_btc
                     )
 
             # 7. QUÉT TỰ ĐỘNG BẮN KÈO SCALPING DAILY VOLUME PROFILE M5 (VÀNG OANDA)
@@ -3343,7 +3465,8 @@ def auto_diamond_alert_worker():
                         sl=sl_g,
                         tp1=tp1_g,
                         tp2=tp2_g,
-                        sl_dist=p_gold_vp['risk']
+                        sl_dist=p_gold_vp['risk'],
+                        current_price=price_gold
                     )
 
             # 8. QUÉT TỰ ĐỘNG BẮN KÈO SCALPING DAILY VOLUME PROFILE M5 (BITCOIN)
@@ -3387,7 +3510,8 @@ def auto_diamond_alert_worker():
                         sl=sl_b,
                         tp1=tp1_b,
                         tp2=tp2_b,
-                        sl_dist=p_btc_vp['risk']
+                        sl_dist=p_btc_vp['risk'],
+                        current_price=price_btc
                     )
 
         except Exception as e:
