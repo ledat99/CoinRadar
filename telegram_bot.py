@@ -31,7 +31,9 @@ PLAN_CACHE = {
 
 LAST_ALERT_TIME = {
     'GOLD': 0,
-    'BTC': 0
+    'BTC': 0,
+    'GOLD_SCALP': 0,
+    'BTC_SCALP': 0
 }
 
 LAST_RADAR_ALERT = {
@@ -297,16 +299,17 @@ def handle_check_vip_trades(chat_id=None):
 
         plan_gold = calculate_gold_h4_plan()
         plan_btc = calculate_btc_h4_plan()
+        p_gold_vp = analyze_scalp_vp_plan('GOLD')
+        p_btc_vp = analyze_scalp_vp_plan('BTC')
+
         p_gold = plan_gold['current_price']
         p_btc = plan_btc['current_price']
 
-        msg = "🔍 <b>[BÁO CÁO TRẠNG THÁI LỆNH VIP & LỊCH SỬ GIAO DỊCH]</b>\n━━━━━━━━━━━━━━━━━━\n"
+        msg = "🔍 <b>[BÁO CÁO THỜI GIAN THỰC & THEO DÕI TÍN HIỆU BOT]</b>\n━━━━━━━━━━━━━━━━━━\n"
 
-        if not trades:
-            msg += "🟢 <b>Lệnh VIP Đang Chạy:</b> <i>Không có lệnh nào đang chạy!</i>\n"
-            msg += "• Hệ thống đang theo dõi sát sao cản OB H1 và nến M5 để đón cơ hội vào lệnh duy nhất.\n"
-        else:
-            msg += f"🔥 <b>Lệnh VIP Đang Theo Dõi ({len(trades)} lệnh):</b>\n\n"
+        # 1. PHẦN LỆNH ĐANG CHẠY (NẾU CÓ)
+        if trades:
+            msg += f"🔥 <b>LỆNH VIP ĐANG CHẠY ({len(trades)} lệnh):</b>\n\n"
             for i, t in enumerate(trades, 1):
                 is_gold = (t['asset'] == 'GOLD')
                 curr_p = p_gold if is_gold else p_btc
@@ -327,26 +330,55 @@ def handle_check_vip_trades(chat_id=None):
 
                 msg += f"<b>{i}. {sym} - {sgn}</b>\n"
                 msg += f"• Thời gian vào: <code>{t.get('entry_time', '')}</code>\n"
-                msg += f"• Giá vào (Entry): <code>${t['entry_price']:,.{dec}f}</code>\n"
-                msg += f"• Giá hiện tại: <code>${curr_p:,.{dec}f}</code>\n"
+                msg += f"• Giá vào (Entry): <code>${t['entry_price']:,.{dec}f}</code> | Hiện tại: <b>${curr_p:,.{dec}f}</b>\n"
                 msg += f"• Lãi/Lỗ tạm tính: {pnl_emoji} <b>{pnl_str}</b>\n"
                 msg += f"• Trạng thái: <b>{status_txt}</b>\n"
                 msg += f"• Stop Loss: <code>${t['sl']:,.{dec}f}</code>\n"
                 msg += f"• Mốc TP1: <code>${t['tp1']:,.{dec}f}</code> {'(✅ Đã Chạm)' if t.get('tp1_hit') else ''}\n"
                 msg += f"• Mốc TP2: <code>${t['tp2']:,.{dec}f}</code>\n\n"
+        else:
+            msg += "🟢 <b>Lệnh Đang Chạy:</b> <i>Chưa có lệnh mở (Đang rình điểm đẹp).</i>\n\n"
 
-        # Tóm tắt lịch sử lệnh đã đóng
-        msg += "━━━━━━━━━━━━━━━━━━\n📊 <b>TỔNG KẾT KÈO ĐÃ ĐÓNG:</b>\n"
+        # 2. RADAR GIÁM SÁT THỜI GIAN THỰC (LIVE RADAR MONITOR)
+        msg += "📡 <b>RADAR GIÁM SÁT THỊ TRƯỜNG & VÙNG CẢN:</b>\n"
+        
+        # Vàng Radar
+        dist_do_g = p_gold - p_gold_vp['daily_open']
+        dist_poc_g = p_gold - p_gold_vp['poc']
+        msg += f"""\n🥇 <b>VÀNG (XAUUSD MT5):</b> <b>${p_gold:,.2f}</b>
+• 🧭 <b>Bias Ngày:</b> {p_gold_vp['daily_bias']}
+• 🌅 <b>Daily Open:</b> <code>${p_gold_vp['daily_open']:,.2f}</code> (Cách {abs(dist_do_g):.1f} giá)
+• 📍 <b>dPOC (Khối lượng lớn nhất):</b> <code>${p_gold_vp['poc']:,.2f}</code> (Cách {abs(dist_poc_g):.1f} giá)
+• 🧱 <b>Khối Kháng Cự H1:</b> <code>[${plan_gold['b_ob_bot']:,.1f} - ${plan_gold['b_ob_top']:,.1f}]</code>
+• 🧱 <b>Khối Hỗ Trợ H1:</b> <code>[${plan_gold['bull_ob_bot']:,.1f} - ${plan_gold['bull_ob_top']:,.1f}]</code>
+• ⚡ <b>Hành động M5:</b> <i>{p_gold_vp['wick_info']}</i>
+👉 <b>Kèo Gợi Ý:</b> <b>{p_gold_vp['signal']}</b> | Entry: <code>${p_gold_vp['entry']:,.2f}</code> | SL: <code>${p_gold_vp['sl']:,.2f}</code> | TP1: <code>${p_gold_vp['tp1']:,.2f}</code>\n"""
+
+        # BTC Radar
+        dist_do_b = p_btc - p_btc_vp['daily_open']
+        dist_poc_b = p_btc - p_btc_vp['poc']
+        msg += f"""\n👑 <b>BITCOIN (BTCUSDT):</b> <b>${p_btc:,.1f}</b>
+• 🧭 <b>Bias Ngày:</b> {p_btc_vp['daily_bias']}
+• 🌅 <b>Daily Open:</b> <code>${p_btc_vp['daily_open']:,.1f}</code> (Cách {abs(dist_do_b):.1f} USD)
+• 📍 <b>dPOC:</b> <code>${p_btc_vp['poc']:,.1f}</code> (Cách {abs(dist_poc_b):.1f} USD)
+• 🧱 <b>Khối Kháng Cự H1:</b> <code>[${plan_btc['b_ob_bot']:,.1f} - ${plan_btc['b_ob_top']:,.1f}]</code>
+• 🧱 <b>Khối Hỗ Trợ H1:</b> <code>[${plan_btc['bull_ob_bot']:,.1f} - ${plan_btc['bull_ob_top']:,.1f}]</code>
+• ⚡ <b>Hành động M5:</b> <i>{p_btc_vp['wick_info']}</i>
+👉 <b>Kèo Gợi Ý:</b> <b>{p_btc_vp['signal']}</b> | Entry: <code>${p_btc_vp['entry']:,.1f}</code> | SL: <code>${p_btc_vp['sl']:,.1f}</code> | TP1: <code>${p_btc_vp['tp1']:,.1f}</code>\n"""
+
+        # 3. LỊCH SỬ KÈO & TỶ LỆ THẮNG
+        msg += "━━━━━━━━━━━━━━━━━━\n📜 <b>LỊCH SỬ GIAO DỊCH ĐÃ CHỐT:</b>\n"
         if not history:
-            msg += "• Chưa có lệnh nào được chốt trong chu kỳ hiện tại.\n"
+            msg += "• Chưa có lệnh nào được chốt trong chu kỳ hôm nay.\n"
+            msg += "<i>💡 Bot tự động rà quét mỗi 5 phút tại các mốc nến M5 chốt. Khi nến M5 chạm dPOC/OB H1 và rút râu nổ Volume, Bot sẽ tự động bắn kèo và ghi nhận ngay vào đây!</i>"
         else:
             total_closed = len(history)
             wins = [h for h in history if 'TP' in h.get('status', '') or h.get('status') == 'CLOSED_BREAKEVEN' or h.get('profit', 0) > 0]
             win_rate = (len(wins) / total_closed) * 100.0
             msg += f"• Tổng số kèo: <b>{total_closed}</b> | Thắng: <b>{len(wins)}</b> | Thua: <b>{total_closed - len(wins)}</b>\n"
             msg += f"• Tỷ lệ Winrate: <b>{win_rate:.1f}%</b> 🔥\n"
-            msg += "• 3 lệnh gần nhất:\n"
-            for h in history[-3:]:
+            msg += "• Các lệnh gần nhất:\n"
+            for h in history[-5:]:
                 sym = "VÀNG" if h.get('asset') == 'GOLD' else "BTC"
                 p_val = h.get('profit', 0)
                 sgn_p = f"+{p_val}" if p_val >= 0 else f"{p_val}"
@@ -1737,6 +1769,9 @@ def analyze_scalp_vp_plan(asset='GOLD'):
         'tp1': tp1,
         'tp2': tp2,
         'wick_info': wick_str,
+        'best_rejection': best_rejection,
+        'is_rejection_fresh': (best_rejection is not None and best_rejection['candle_idx'] <= 1),
+        'dist_to_entry': round(abs(curr_p - entry), 2),
         'candles_count': len(session_klines)
     }
 
@@ -2501,6 +2536,88 @@ def auto_diamond_alert_worker():
                         tp1=plan_btc['tp1'],
                         tp2=plan_btc['tp2'],
                         sl_dist=abs(entry_l - plan_btc['sl'])
+                    )
+
+            # 7. QUÉT TỰ ĐỘNG BẮN KÈO SCALPING DAILY VOLUME PROFILE M5 (VÀNG OANDA)
+            if not has_active_gold and (now - LAST_ALERT_TIME.get('GOLD_SCALP', 0) > 900):
+                p_gold_vp = analyze_scalp_vp_plan('GOLD')
+                if p_gold_vp and p_gold_vp.get('is_rejection_fresh') and p_gold_vp.get('dist_to_entry', 999) <= 4.5:
+                    price_gold = p_gold_vp['curr_p']
+                    entry_g = p_gold_vp['entry']
+                    sl_g = p_gold_vp['sl']
+                    tp1_g = p_gold_vp['tp1']
+                    tp2_g = p_gold_vp['tp2']
+                    s_emoji = "🟢 LONG (MUA)" if p_gold_vp['is_buy'] else "🔴 SHORT (BÁN)"
+                    action_s = "BUY" if p_gold_vp['is_buy'] else "SELL"
+                    
+                    msg_scalp_g = f"""🚨 <b>[TỰ ĐỘNG BÁO KÈO VIP: SCALPING NẢY VOLUME PROFILE NGÀY]</b> 🚨
+━━━━━━━━━━━━━━━━━━
+🥇 Tài sản: <b>VÀNG (OANDA:XAUUSD MT5)</b>
+💰 Giá hiện tại: <b>${price_gold:,.2f}</b>
+🌅 <b>Daily Open:</b> <code>${p_gold_vp['daily_open']:,.2f}</code> | 📍 <b>dPOC:</b> <code>${p_gold_vp['poc']:,.2f}</code>
+🧭 <b>Bias Ngày:</b> {p_gold_vp['daily_bias']}
+⚡ <b>Tín Hiệu M5:</b> <b>{p_gold_vp['wick_info']}</b>
+━━━━━━━━━━━━━━━━━━
+🚀 <b>LỆNH VÀO NGAY: {s_emoji}</b>
+👉 <b>Entry ({action_s} Limit / Now):</b> <code>${entry_g:,.2f}</code>
+🛡️ <b>Cắt lỗ (SL Bóp Chân Râu M5):</b> <code>${sl_g:,.2f}</code> (~{p_gold_vp['risk']} Giá)
+🎯 <b>Chốt lời 1 (TP1 - Chốt 75% | R:R 1:1.5):</b> <code>${tp1_g:,.2f}</code>
+🎯 <b>Chốt lời 2 (TP2 - Gồng Đỉnh/Đáy Ngày | R:R 1:3.5):</b> <code>${tp2_g:,.2f}</code>
+
+🧠 <b>Chiến Thuật:</b> Đánh nhịp phản xạ nảy giá tại dPOC. Chốt 75% tại TP1, chỉ gồng tiếp 25% nếu nến M5 nổ Volume phá đỉnh/đáy ngày!"""
+                    send_telegram(msg_scalp_g)
+                    LAST_ALERT_TIME['GOLD_SCALP'] = now
+                    record_new_vip_trade(
+                        asset='GOLD',
+                        symbol='XAUUSD',
+                        signal='LONG' if p_gold_vp['is_buy'] else 'SHORT',
+                        entry_price=entry_g,
+                        entry_stop=0,
+                        sl=sl_g,
+                        tp1=tp1_g,
+                        tp2=tp2_g,
+                        sl_dist=p_gold_vp['risk']
+                    )
+
+            # 8. QUÉT TỰ ĐỘNG BẮN KÈO SCALPING DAILY VOLUME PROFILE M5 (BITCOIN)
+            if not has_active_btc and (now - LAST_ALERT_TIME.get('BTC_SCALP', 0) > 900):
+                p_btc_vp = analyze_scalp_vp_plan('BTC')
+                if p_btc_vp and p_btc_vp.get('is_rejection_fresh') and p_btc_vp.get('dist_to_entry', 999) <= 150.0:
+                    price_btc = p_btc_vp['curr_p']
+                    entry_b = p_btc_vp['entry']
+                    sl_b = p_btc_vp['sl']
+                    tp1_b = p_btc_vp['tp1']
+                    tp2_b = p_btc_vp['tp2']
+                    s_emoji = "🟢 LONG (MUA)" if p_btc_vp['is_buy'] else "🔴 SHORT (BÁN)"
+                    action_s = "BUY" if p_btc_vp['is_buy'] else "SELL"
+                    
+                    msg_scalp_b = f"""🚨 <b>[TỰ ĐỘNG BÁO KÈO VIP: SCALPING NẢY VOLUME PROFILE NGÀY]</b> 🚨
+━━━━━━━━━━━━━━━━━━
+👑 Tài sản: <b>BITCOIN (BTCUSDT)</b>
+💰 Giá hiện tại: <b>${price_btc:,.1f}</b>
+🌅 <b>Daily Open:</b> <code>${p_btc_vp['daily_open']:,.1f}</code> | 📍 <b>dPOC:</b> <code>${p_btc_vp['poc']:,.1f}</code>
+🧭 <b>Bias Ngày:</b> {p_btc_vp['daily_bias']}
+⚡ <b>Tín Hiệu M5:</b> <b>{p_btc_vp['wick_info']}</b>
+━━━━━━━━━━━━━━━━━━
+🚀 <b>LỆNH VÀO NGAY: {s_emoji}</b>
+👉 <b>Entry ({action_s} Limit / Now):</b> <code>${entry_b:,.1f}</code>
+🛡️ <b>Cắt lỗ (SL Bóp Chân Râu M5):</b> <code>${sl_b:,.1f}</code> (~{p_btc_vp['risk']:,.1f} USD)
+🎯 <b>Chốt lời 1 (TP1 - Chốt 75% | R:R 1:1.5):</b> <code>${tp1_b:,.1f}</code>
+🎯 <b>Chốt lời 2 (TP2 - Gồng Đỉnh/Đáy Ngày | R:R 1:3.5):</b> <code>${tp2_b:,.1f}</code>
+
+🧠 <b>Chiến Thuật:</b> Đánh nhịp phản xạ nảy giá tại dPOC. Chốt 75% tại TP1, chỉ gồng tiếp 25% nếu nến M5 nổ Volume phá đỉnh/đáy ngày!"""
+                    send_telegram(msg_scalp_b)
+                    LAST_ALERT_TIME['BTC_SCALP'] = now
+                    record_new_vip_trade(
+                        asset='BTC',
+                        symbol='BTCUSDT',
+                        signal='LONG' if p_btc_vp['is_buy'] else 'SHORT',
+                        entry_price=entry_b,
+                        entry_stop=0,
+                        sl=sl_b,
+                        tp1=tp1_b,
+                        tp2=tp2_b,
+                        sl_dist=p_btc_vp['risk']
                     )
 
         except Exception as e:
