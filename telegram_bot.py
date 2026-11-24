@@ -1746,49 +1746,92 @@ def analyze_scalp_vp_plan(asset='GOLD'):
     if asset == 'GOLD':
         if is_buy:
             entry = round(best_rejection['low'] + 1.2, 2) if (best_rejection and abs(curr_p - best_rejection['low']) < 6.0) else round(max(vp['poc'], vp['val']), 2)
-            sl_ref = best_rejection['low'] if best_rejection else min(vp['val'], y_val)
-            sl = round(sl_ref - 2.2, 2)
+            # SL chuyên nghiệp: Phải bảo vệ dưới toàn bộ vùng đáy tích lũy yVAL / LOD với đệm an toàn 3-4 giá
+            if is_l_shape:
+                base_bottom = min(y_val, lod)
+                sl = round(min(base_bottom - 3.5, entry - 10.0), 2)
+            elif best_rejection:
+                sl = round(min(best_rejection['low'] - 3.5, entry - 9.0), 2)
+            else:
+                sl = round(min(vp['val'], y_val) - 3.5, 2)
+            
             risk = round(abs(entry - sl), 2)
-            if risk < 3.0:
-                risk = 4.0
+            # Khống chế SL chuẩn Volume Profile: từ 8.0 đến 16.0 giá (tránh bị bóp râu M5 cắn SL oan)
+            if risk < 8.0:
+                risk = 9.0
                 sl = round(entry - risk, 2)
+            elif risk > 18.0:
+                risk = 16.0
+                sl = round(entry - risk, 2)
+
             target_up = y_vah if is_l_shape else max(vp['vah'], hod)
-            tp1 = round(max(entry + risk * 1.5, (entry + target_up) / 2), 2)
-            tp2 = round(max(target_up, entry + risk * 3.5), 2)
+            tp1 = round(entry + max(risk * 1.3, 10.0), 2)
+            tp2 = round(max(target_up, entry + risk * 2.5), 2)
         else:
             entry = round(best_rejection['high'] - 1.2, 2) if (best_rejection and abs(curr_p - best_rejection['high']) < 6.0) else round(min(vp['poc'], vp['vah']), 2)
-            sl_ref = best_rejection['high'] if best_rejection else max(vp['vah'], y_vah)
-            sl = round(sl_ref + 2.2, 2)
+            # SL chuyên nghiệp: Phải bảo vệ trên toàn bộ vùng đỉnh phân phối yVAH / HOD với đệm an toàn 3-4 giá
+            if is_p_shape:
+                base_top = max(y_vah, hod)
+                sl = round(max(base_top + 3.5, entry + 10.0), 2)
+            elif best_rejection:
+                sl = round(max(best_rejection['high'] + 3.5, entry + 9.0), 2)
+            else:
+                sl = round(max(vp['vah'], y_vah) + 3.5, 2)
+
             risk = round(abs(sl - entry), 2)
-            if risk < 3.0:
-                risk = 4.0
+            if risk < 8.0:
+                risk = 9.0
                 sl = round(entry + risk, 2)
+            elif risk > 18.0:
+                risk = 16.0
+                sl = round(entry + risk, 2)
+
             target_down = y_val if is_p_shape else min(vp['val'], lod)
-            tp1 = round(min(entry - risk * 1.5, (entry + target_down) / 2), 2)
-            tp2 = round(min(target_down, entry - risk * 3.5), 2)
+            tp1 = round(entry - max(risk * 1.3, 10.0), 2)
+            tp2 = round(min(target_down, entry - risk * 2.5), 2)
     else: # BTC
         if is_buy:
             entry = round(best_rejection['low'] + 50.0, 1) if (best_rejection and abs(curr_p - best_rejection['low']) < 300.0) else round(max(vp['poc'], vp['val']), 1)
-            sl_ref = best_rejection['low'] if best_rejection else min(vp['val'], y_val)
-            sl = round(sl_ref - 120.0, 1)
+            if is_l_shape:
+                base_bottom = min(y_val, lod)
+                sl = round(min(base_bottom - 150.0, entry - 450.0), 1)
+            elif best_rejection:
+                sl = round(min(best_rejection['low'] - 150.0, entry - 450.0), 1)
+            else:
+                sl = round(min(vp['val'], y_val) - 150.0, 1)
+
             risk = round(abs(entry - sl), 1)
-            if risk < 100.0:
-                risk = 150.0
+            if risk < 400.0:
+                risk = 450.0
                 sl = round(entry - risk, 1)
+            elif risk > 900.0:
+                risk = 800.0
+                sl = round(entry - risk, 1)
+
             target_up = y_vah if is_l_shape else max(vp['vah'], hod)
-            tp1 = round(max(entry + risk * 1.5, (entry + target_up) / 2), 1)
-            tp2 = round(max(target_up, entry + risk * 3.5), 1)
+            tp1 = round(entry + max(risk * 1.3, 500.0), 1)
+            tp2 = round(max(target_up, entry + risk * 2.5), 1)
         else:
             entry = round(best_rejection['high'] - 50.0, 1) if (best_rejection and abs(curr_p - best_rejection['high']) < 300.0) else round(min(vp['poc'], vp['vah']), 1)
-            sl_ref = best_rejection['high'] if best_rejection else max(vp['vah'], y_vah)
-            sl = round(sl_ref + 120.0, 1)
+            if is_p_shape:
+                base_top = max(y_vah, hod)
+                sl = round(max(base_top + 150.0, entry + 450.0), 1)
+            elif best_rejection:
+                sl = round(max(best_rejection['high'] + 150.0, entry + 450.0), 1)
+            else:
+                sl = round(max(vp['vah'], y_vah) + 150.0, 1)
+
             risk = round(abs(sl - entry), 1)
-            if risk < 100.0:
-                risk = 150.0
+            if risk < 400.0:
+                risk = 450.0
                 sl = round(entry + risk, 1)
+            elif risk > 900.0:
+                risk = 800.0
+                sl = round(entry + risk, 1)
+
             target_down = y_val if is_p_shape else min(vp['val'], lod)
-            tp1 = round(min(entry - risk * 1.5, (entry + target_down) / 2), 1)
-            tp2 = round(min(target_down, entry - risk * 3.5), 1)
+            tp1 = round(entry - max(risk * 1.3, 500.0), 1)
+            tp2 = round(min(target_down, entry - risk * 2.5), 1)
 
     wick_str = f"Nến M5 test râu {best_rejection['pct']:.1f}% từ chối giá" if best_rejection else "Giá dao động quanh mốc Volume Profile"
 
