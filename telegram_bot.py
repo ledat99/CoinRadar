@@ -2190,7 +2190,34 @@ def analyze_scalp_vp_plan(asset='GOLD'):
     with urllib.request.urlopen(req, timeout=10) as r:
         klines = json.loads(r.read().decode())['result']['list']
 
-    curr_p = float(klines[0][4])
+    delta = 0.0
+    if asset == 'GOLD':
+        # Đồng bộ 100% chuẩn theo sàn OANDA:XAUUSD (TradingView / MT5)
+        try:
+            plan_g = calculate_gold_h4_plan()
+            oanda_p = plan_g['current_price']
+            bybit_close = float(klines[0][4])
+            delta = round(oanda_p - bybit_close, 2)
+            curr_p = oanda_p
+        except Exception:
+            curr_p = float(klines[0][4])
+            delta = 0.0
+    else:
+        curr_p = float(klines[0][4])
+
+    # Hiệu chỉnh toàn bộ nến lịch sử theo đúng giá OANDA
+    if delta != 0.0:
+        calibrated_klines = []
+        for k in klines:
+            calibrated_klines.append([
+                k[0],
+                float(k[1]) + delta,
+                float(k[2]) + delta,
+                float(k[3]) + delta,
+                float(k[4]) + delta,
+                float(k[5])
+            ])
+        klines = calibrated_klines
     now_utc = datetime.datetime.now(datetime.timezone.utc)
     
     # 1. Xác định khung thời gian phiên Hôm Nay và Hôm Qua
