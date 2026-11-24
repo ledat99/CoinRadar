@@ -26,7 +26,8 @@ PLAN_CACHE = {
     'COINS_LONG': {'time': 0, 'data': []},
     'COINS_SHORT': {'time': 0, 'data': []},
     'VN_STOCKS': {'time': 0, 'data': None},
-    'VP_SCALP': {'time': 0, 'data': None}
+    'VP_SCALP': {'time': 0, 'data': None},
+    'MEME_COINS': {'time': 0, 'data': []}
 }
 
 LAST_ALERT_TIME = {
@@ -485,9 +486,10 @@ def send_telegram(text, reply_markup=None, target_chat_id=None):
 def get_main_keyboard():
     return {
         "keyboard": [
-            [{"text": "📈 Tìm Coin TĂNG (LONG)"}, {"text": "📉 Tìm Coin GIẢM (SHORT)"}],
             [{"text": "👑 Phân Tích BTC"}, {"text": "🥇 Phân Tích VÀNG (XAU)"}],
             [{"text": "🎯 Scalping Volume Profile M5"}, {"text": "⚡ Tuyệt Chiêu H4 Lưỡng Lự"}],
+            [{"text": "💣 Săn Coin Rác (Vol > $100M)"}],
+            [{"text": "📈 Tìm Coin TĂNG (LONG)"}, {"text": "📉 Tìm Coin GIẢM (SHORT)"}],
             [{"text": "🇻🇳 Đánh Giá Cổ Phiếu VN"}, {"text": "🔍 Kiểm Tra Lệnh & Báo Cáo Ngày"}],
             [{"text": "⚙️ Menu Hỗ Trợ"}]
         ],
@@ -2039,6 +2041,163 @@ def handle_scan(mode='long', chat_id=None):
         send_telegram(f"Lỗi scan: {e}", reply_markup=get_main_keyboard(), target_chat_id=chat_id)
 
 # ==========================================
+# 3.2 SĂN COIN RÁC / ALTCOIN BÙNG NỔ (VOLUME > 100M USD, SL 5-9%, LỰC MUA CHỦ ĐỘNG)
+# ==========================================
+def scan_meme_breakout_coins(limit=3):
+    """
+    Săn Coin Rác / Altcoin bùng nổ có Volume khủng (> 100M USD):
+    - Tiêu chí thanh khoản: Volume 24h >= 100M USD (hoặc >= 70M USD nếu thị trường đi ngang).
+    - Tiêu chí dòng tiền: Volume Mua Vào Chủ Động (Momentum Breakout), tuyệt đối KHÔNG PHẢI BẮT ĐÁY (Buy the dip).
+    - Nến H1: Nến xanh đẩy hoặc nằm trên SMA6, biến động 24h dương (> 0.5%).
+    - Stop Loss: Khống chế trong biên độ 5.0% - 9.0% (bảo vệ dưới đáy nến H1).
+    - Take Profit: TP1 +8% đến +12% (R:R 1:1.5, chốt 50% & dời hoà), TP2 +18% đến +27% (R:R 1:3).
+    """
+    now = time.time()
+    if PLAN_CACHE.get('MEME_COINS', {}).get('data') and (now - PLAN_CACHE['MEME_COINS']['time'] < 900):
+        return PLAN_CACHE['MEME_COINS']['data']
+
+    TRADFI_EXCLUDE = {
+        'SOXLUSDT', 'NVDAUSDT', 'SOXSUSDT', 'SNDKUSDT', 'XAUUSDT', 'XAGUSDT', 
+        'SKHYNIXUSDT', 'MUUSDT', 'QQQUSDT', 'KORUUSDT', 'TSLAUSDT', 'AAPLUSDT', 
+        'MSFTUSDT', 'AMZNUSDT', 'GOOGLUSDT', 'METAUSDT', 'COINUSDT', 'SPCXUSDT'
+    }
+    MAJORS_EXCLUDE = {'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'USDCUSDT'}
+
+    url = 'https://api.bybit.com/v5/market/tickers?category=linear'
+    req = urllib.request.Request(url, headers=HEADERS)
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        data = json.loads(resp.read().decode())
+        tickers = data['result']['list']
+
+    candidates = []
+    for d in tickers:
+        sym = d['symbol']
+        if not sym.endswith('USDT'): continue
+        if sym in TRADFI_EXCLUDE or sym in MAJORS_EXCLUDE: continue
+        
+        vol_usd = float(d.get('turnover24h', 0))
+        change_pct = float(d.get('price24hPcnt', 0)) * 100.0
+        
+        # Tiêu chuẩn: Vol >= 70M USD (ưu tiên >= 100M) và đang có đà bơm (change > 0.5%)
+        if vol_usd >= 70_000_000 and change_pct >= 0.5:
+            candidates.append({
+                'symbol': sym,
+                'sym_clean': sym.replace('USDT', '/USDT'),
+                'price': float(d['lastPrice']),
+                'change_pct': round(change_pct, 2),
+                'vol_m': round(vol_usd / 1_000_000, 1),
+                'high_24h': float(d['highPrice24h']),
+                'low_24h': float(d['lowPrice24h'])
+            })
+
+    # Ưu tiên các coin đạt mốc 100M+ và có đà tăng mạnh nhất
+    candidates.sort(key=lambda x: (x['vol_m'] >= 100.0, x['change_pct']), reverse=True)
+    selected = candidates[:8]
+    
+    results = []
+    for c in selected:
+        sym = c['symbol']
+        try:
+            k_url = f'https://api.bybit.com/v5/market/kline?category=linear&symbol={sym}&interval=60&limit=12'
+            k_req = urllib.request.Request(k_url, headers=HEADERS)
+            with urllib.request.urlopen(k_req, timeout=5) as r:
+                klines = json.loads(r.read().decode())['result']['list']
+            
+            curr_k = klines[0]
+            prev_k = klines[1]
+            close_p = float(curr_k[4])
+            open_p = float(curr_k[1])
+            
+            # Kiểm tra Volume Mua Vào Chủ Động (Không phải bắt đáy dao rơi / buy the dip)
+            is_bull_candle = (close_p >= open_p) or (float(prev_k[4]) >= float(prev_k[1]))
+            closes = [float(k[4]) for k in klines]
+            sma6 = sum(closes[:6]) / 6
+            if not (is_bull_candle and close_p >= sma6):
+                continue
+                
+            # Tính SL chuẩn 5% - 10% (theo yêu cầu)
+            recent_low = min([float(k[3]) for k in klines[:4]])
+            raw_sl_pct = ((close_p - recent_low) / close_p) * 100.0
+            
+            if raw_sl_pct < 5.0:
+                sl_pct = 5.8
+            elif raw_sl_pct > 9.5:
+                sl_pct = 8.5
+            else:
+                sl_pct = round(raw_sl_pct + 0.8, 1)
+                
+            sl_price = round(close_p * (1.0 - sl_pct / 100.0), 6 if close_p < 1 else 4)
+            tp1_pct = round(sl_pct * 1.5, 1)
+            tp1_price = round(close_p * (1.0 + tp1_pct / 100.0), 6 if close_p < 1 else 4)
+            tp2_pct = round(sl_pct * 3.0, 1)
+            tp2_price = round(close_p * (1.0 + tp2_pct / 100.0), 6 if close_p < 1 else 4)
+
+            vol_label = f"🔥 ${c['vol_m']:.1f}M USD" if c['vol_m'] >= 100.0 else f"⚡ ${c['vol_m']:.1f}M USD"
+            
+            results.append({
+                'symbol': c['sym_clean'],
+                'price': close_p,
+                'change': c['change_pct'],
+                'vol_m': c['vol_m'],
+                'vol_label': vol_label,
+                'sl_pct': sl_pct,
+                'sl_price': sl_price,
+                'tp1_pct': tp1_pct,
+                'tp1_price': tp1_price,
+                'tp2_pct': tp2_pct,
+                'tp2_price': tp2_price
+            })
+            if len(results) >= limit:
+                break
+        except Exception as e:
+            continue
+
+    PLAN_CACHE['MEME_COINS'] = {'time': now, 'data': results}
+    return results
+
+def handle_meme_coins(chat_id=None):
+    """Báo cáo danh sách Coin Rác / Altcoin bùng nổ có Volume khủng (> 100M USD) & Momentum mua vào"""
+    send_telegram("⏳ <i>Đang quét toàn sàn Bybit lọc Coin Rác có Volume > $100M & Lực mua chủ động...</i>", target_chat_id=chat_id)
+    try:
+        coins = scan_meme_breakout_coins(limit=4)
+        if not coins:
+            send_telegram("⚠️ Hiện tại chưa có Coin Rác nào đạt đồng thời tiêu chí Volume > $70M-$100M và nến H1 đang có lực mua đẩy. Hãy thử lại sau ít phút!", reply_markup=get_main_keyboard(), target_chat_id=chat_id)
+            return
+
+        msg = f"""💣 <b>[RADAR SĂN COIN RÁC: VOLUME > $100M & LỰC MUA CHỦ ĐỘNG]</b> 💣
+━━━━━━━━━━━━━━━━━━
+🎯 <b>Tiêu Chí Sàng Lọc Nghiêm Ngặt:</b>
+• <b>Thanh khoản:</b> Khối lượng 24h <b>> 100 Triệu USD</b> (Cá mập gom hàng, không sợ trượt giá).
+• <b>Hành động giá:</b> <b>Volume Mua Vào Chủ Động (Momentum Breakout)</b> — Tuyệt đối KHÔNG bắt đáy dao rơi (Buy the dip)!
+• <b>Cắt lỗ an toàn:</b> <b>SL 5% - 9%</b> (Bảo vệ dưới chân nến H1).
+━━━━━━━━━━━━━━━━━━"""
+
+        for i, c in enumerate(coins, 1):
+            p = c['price']
+            p_str = f"${p:,.6f}" if p < 1 else f"${p:,.4f}"
+            sl_str = f"${c['sl_price']:,.6f}" if p < 1 else f"${c['sl_price']:,.4f}"
+            tp1_str = f"${c['tp1_price']:,.6f}" if p < 1 else f"${c['tp1_price']:,.4f}"
+            tp2_str = f"${c['tp2_price']:,.6f}" if p < 1 else f"${c['tp2_price']:,.4f}"
+            
+            msg += f"""
+{i}. 🚀 <b>{c['symbol']}</b> (Biến động 24h: <b>+{c['change']:.2f}%</b>)
+• 💰 <b>Thị giá:</b> <b>{p_str}</b> | 🌊 <b>Vol 24h:</b> <b>${c['vol_m']:.1f}M USD</b>
+👉 <b>Entry Vào Ngay:</b> <code>{p_str}</code> (Market / Đón râu M15)
+🛡️ <b>Cắt lỗ (SL):</b> <code>{sl_str}</code> (<b>-{c['sl_pct']}%</b>)
+🎯 <b>Chốt lời 1 (TP1 - Chốt 50% & Dời Hoà):</b> <code>{tp1_str}</code> (<b>+{c['tp1_pct']}%</b> | R:R 1:1.5)
+🎯 <b>Chốt lời 2 (TP2 - Gồng Ăn Sóng Pump):</b> <code>{tp2_str}</code> (<b>+{c['tp2_pct']}%</b> | R:R 1:3.0)
+"""
+
+        msg += f"""━━━━━━━━━━━━━━━━━━
+🛡️ <b>QUẢN LÝ VỐN COIN RÁC (Vốn mẫu: ${CONFIG['ACCOUNT_BALANCE']:,.0f}):</b>
+• Rủi ro tối đa 2%: <b>$40.0</b> (Quy mô vị thế: ~<b>$450 - $700</b> | Đòn bẩy an toàn: <b>2x - 3x</b> hoặc Spot)
+💡 <i>Chiến thuật: Khi chạm TP1 (+{coins[0]['tp1_pct']}%), lập tức chốt 50% và dời SL về hoà vốn để free-risk!</i>"""
+
+        send_telegram(msg, reply_markup=get_main_keyboard(), target_chat_id=chat_id)
+    except Exception as e:
+        send_telegram(f"⚠️ Lỗi quét Coin Rác: {e}", reply_markup=get_main_keyboard(), target_chat_id=chat_id)
+
+# ==========================================
 # 4. ĐÁNH GIÁ & LỌC CỔ PHIẾU VIỆT NAM (VN-INDEX, P/E < 10, G > 10%)
 # ==========================================
 VN_WATCHLIST = [
@@ -2404,15 +2563,18 @@ Tài khoản của bạn hiện tại chưa được cấp quyền sử dụng h
 🥇 <b>Phân Tích VÀNG (XAU):</b> Chuẩn OANDA MT5 + SMC H1 OB
 🎯 <b>Scalping Volume Profile M5:</b> Đánh xoay trục L-Shape/P-Shape hôm trước (yVAL/yVAH) & dPOC
 ⚡ <b>Tuyệt Chiêu H4 Lưỡng Lự:</b> Bắt bứt phá Breakout nến H4
+💣 <b>Săn Coin Rác (Vol > $100M):</b> Bắt momentum mua vào, SL 5% - 9% (Nói KHÔNG với bắt dao rơi / Buy the dip)
 📈 <b>Tìm Coin TĂNG (LONG):</b> Lọc coin tích lũy gom hàng Bybit
 📉 <b>Tìm Coin GIẢM (SHORT):</b> Lọc coin phân phối xả hàng Bybit
 🇻🇳 <b>Đánh Giá Cổ Phiếu VN:</b> Định giá PE < 10, G > 10%, dòng tiền & lãi suất
 🔍 <b>Kiểm Tra Lệnh & Báo Cáo Ngày:</b> Live Radar trực tiếp + Quản lý lệnh đang chạy
 
-💡 <i>Bấm các nút bên dưới hoặc gõ trực tiếp lệnh (/gold, /btc, /scalp, /h4, /check, /vnstock)!</i>"""
+💡 <i>Bấm các nút bên dưới hoặc gõ trực tiếp lệnh (/gold, /btc, /scalp, /meme, /h4, /check, /vnstock)!</i>"""
                         send_telegram(menu_help, reply_markup=get_main_keyboard(), target_chat_id=chat_id)
                     elif text in ["/check", "check", "🔍 Kiểm Tra Lệnh & Báo Cáo Ngày"]:
                         handle_check_vip_trades(chat_id=chat_id)
+                    elif text in ["/meme", "/coinrac", "/junk", "/gem", "/alt", "💣 Săn Coin Rác (Vol > $100M)", "coinrac", "coin rác", "Coin rác", "săn coin rác", "san coin rac"]:
+                        handle_meme_coins(chat_id=chat_id)
                     elif text in ["/h4", "⚡ Tuyệt Chiêu H4 Lưỡng Lự", "h4", "H4", "breakout", "Breakout"]:
                         handle_h4_breakout(chat_id=chat_id)
                     elif text in ["/scalp", "/vp", "/volumeprofile", "🎯 Scalping Volume Profile M5", "⚡ Scalping Vàng/BTC (Volume Profile M5)", "scalp", "Scalp", "SCALP", "vp", "VP"]:
