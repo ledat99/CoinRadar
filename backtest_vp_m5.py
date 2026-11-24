@@ -174,20 +174,24 @@ def run_backtest_month(asset='GOLD', symbol='XAUUSDc', count=6000):
             cl = float(r['close'])
             v = float(r['tick_volume'])
 
-            # Volume SMA(20)
+            # Volume SMA(20) & Chuẩn VSA Cột Tím (Ultra-High / Stopping Volume)
             past_vols = [float(curr_rates[k]['tick_volume']) for k in range(i - 20, i)]
             avg_vol = np.mean(past_vols) if past_vols else 1.0
-            is_vol_spike = (v >= 1.2 * avg_vol)
+            vol_ratio = v / avg_vol if avg_vol > 0 else 1.0
 
             candle_rng = h - l
             if candle_rng == 0:
                 continue
 
-            # A. KÈO BUY XOAY TRỤC (Chỉ đánh khi KHÔNG bị ngược xu hướng ngày)
             lower_wick = min(o, cl) - l
-            rejection_buy = (lower_wick >= 0.35 * candle_rng) and (l <= yval + (1.2 if is_gold else 70.0)) and (cl >= yval - (0.6 if is_gold else 30.0))
+            upper_wick = h - max(o, cl)
+            # Cột Tím VSA: Volume >= 1.8x (hoặc >= 1.6x nếu râu nến siêu dài >= 48% chuẩn Pinbar)
+            is_purple_vol = (vol_ratio >= 1.8) or (vol_ratio >= 1.6 and max(lower_wick, upper_wick) >= 0.48 * candle_rng)
 
-            if not daily_bear and (shape in ['L-Shape', 'D-Shape']) and rejection_buy and is_vol_spike:
+            # A. KÈO BUY XOAY TRỤC (Chỉ đánh khi KHÔNG bị ngược xu hướng ngày)
+            rejection_buy = (lower_wick >= 0.40 * candle_rng) and (l <= yval + (1.2 if is_gold else 70.0)) and (cl >= yval - (0.6 if is_gold else 30.0))
+
+            if not daily_bear and (shape in ['L-Shape', 'D-Shape']) and rejection_buy and is_purple_vol:
                 entry = cl
                 sl_calc = l - sl_buf
                 sl_dist = entry - sl_calc
@@ -211,10 +215,9 @@ def run_backtest_month(asset='GOLD', symbol='XAUUSDc', count=6000):
                 continue
 
             # B. KÈO SELL XOAY TRỤC (Chỉ đánh khi KHÔNG bị ngược xu hướng ngày)
-            upper_wick = h - max(o, cl)
-            rejection_sell = (upper_wick >= 0.35 * candle_rng) and (h >= yvah - (1.2 if is_gold else 70.0)) and (cl <= yvah + (0.6 if is_gold else 30.0))
+            rejection_sell = (upper_wick >= 0.40 * candle_rng) and (h >= yvah - (1.2 if is_gold else 70.0)) and (cl <= yvah + (0.6 if is_gold else 30.0))
 
-            if not daily_bull and (shape in ['P-Shape', 'D-Shape']) and rejection_sell and is_vol_spike:
+            if not daily_bull and (shape in ['P-Shape', 'D-Shape']) and rejection_sell and is_purple_vol:
                 entry = cl
                 sl_calc = h + sl_buf
                 sl_dist = sl_calc - entry

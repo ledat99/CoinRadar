@@ -32,8 +32,8 @@ input int               InpRows            = 50;          // Số hàng chia n�
 input double            InpVaPct           = 70.0;        // Tỷ lệ Value Area (%)
 input bool              InpUseTrendFilter  = true;        // Bộ lọc xu hướng ngày (Chống bắt dao rơi)
 input int               InpVolLen          = 20;          // Chu kỳ tính SMA Volume M5
-input double            InpVolMult         = 1.2;         // Volume M5 vượt SMA (ví dụ 1.2x)
-input double            InpWickRatio       = 0.35;        // Tỷ lệ râu nến tối thiểu (35% biên độ)
+input double            InpVolMult         = 1.8;         // Volume M5 chuẩn VSA Cột Tím (>= 1.8x SMA20)
+input double            InpWickRatio       = 0.40;        // Tỷ lệ râu nến tối thiểu (40% biên độ chuẩn Pinbar)
 
 input group "=== Quản Lý Lợi Nhuận & Rủi Ro (R:R) ==="
 input ENUM_ASSET_TYPE   InpAssetMode       = ASSET_AUTO;  // Chế độ tài sản
