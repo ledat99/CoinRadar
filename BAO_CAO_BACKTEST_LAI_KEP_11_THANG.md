@@ -1,77 +1,68 @@
-# 📊 BÁO CÁO BACKTEST LÃI KÉP 11 THÁNG (TỪ THÁNG 1 ĐẾN THÁNG 11/2026)
-## CHIẾN LƯỢC: SCALPING VOLUME PROFILE M5 + CỘT TÍM VSA WYCKOFF (STOPPING VOLUME)
-*Nguồn dữ liệu: Nến M5 thực tế từ MetaTrader 5 Broker Exness (63,669 nến Vàng & 94,309 nến Bitcoin).*
+# 📊 BÁO CÁO ĐỐI ĐẦU ĐỊNH LƯỢNG 11 THÁNG (2026): BOT M5 SCALPER VS BOT H1 MA NỮ (SENPAI THÀNH)
+## ĐÁNH GIÁ HIỆU SUẤT TRÊN DỮ LIỆU MT5 EXNESS THỰC TẾ (XAUUSD & BTCUSD)
 
 ---
 
-## 1. THIẾT LẬP BÀI TOÁN QUẢN LÝ VỐN LÃI KÉP (COMPOUNDING)
-- **Vốn khởi điểm (Starting Capital):** **$2,000.00 USD**.
-- **Cơ chế đánh theo % tài khoản:** Cố định **2.0% vốn hiện tại** cho mỗi lệnh.
-  - Lệnh có lãi $\rightarrow$ Lợi nhuận cộng trực tiếp vào vốn $\rightarrow$ Lệnh sau đánh trên số vốn lớn hơn (Lãi kép).
-  - Lệnh thua lỗ $\rightarrow$ Vốn giảm $\rightarrow$ Lệnh sau giảm rủi ro tiền mặt xuống để bảo toàn tài khoản.
-- **Tỷ lệ Chốt lời / Cắt lỗ (R:R):**
-  - **TP1:** R:R 1:1.2 $\rightarrow$ Chốt 50% khối lượng ($+1.2\%$ vốn) & dời SL về Entry hòa vốn.
-  - **TP2:** R:R 1:2.5 $\rightarrow$ Chốt nốt 50% khối lượng ($+2.5\%$ vốn). Tổng ăn trọn Full TP2 = $+3.7\%$ vốn.
-  - **Dính SL:** $-2.0\%$ vốn.
+## 1. ⚔️ TỔNG HỢP HIỆU SUẤT ĐỐI ĐẦU (11 THÁNG NĂM 2026)
+*Tài khoản khởi điểm: **$2,000.00 USD** | Rủi ro cố định: **$20.00 / lệnh (1% vốn)** | Khung giờ: **Phiên London & NY (07:00 - 20:00 UTC)***
+
+| Tiêu Chí So Sánh | ⚡ BOT M5 HIỆN TẠI (Volume Profile Scalper) | 🧙‍♀️ BOT H1 MỚI (Ma Nữ - Break & Retest) | Đánh Giá Chênh Lệch |
+| :--- | :---: | :---: | :---: |
+| **Tổng số lệnh (Trades)** | **1,314 lệnh** (~120 lệnh/tháng) | **471 lệnh** (~42 lệnh/tháng) | H1 giảm 64% số lệnh rác, tránh overtrade |
+| **Khoảng cách SL TB (Vàng)** | **$8.89 / oz** (Bóp SL ngắn) | **$16.11 / oz** (Đệm SL ngoài râu) | H1 có biên độ chịu rung lắc gấp 1.8 lần |
+| **Khoảng cách SL TB (BTC)** | **$217.9 / coin** (Dễ bị quét râu M5) | **$354.1 / coin** (SL chuẩn cấu trúc) | H1 an toàn trước râu nến giật phiên Mỹ |
+| **Tỷ lệ Thắng (Win Rate)** | **42.5%** (559 Thắng / 755 Thua) | **43.7%** (206 Thắng / 265 Thua) | H1 giữ win rate ổn định |
+| **Tỷ lệ R:R Trung Bình** | **1:1.2R – 1:1.6R** | **1:1.5R – 1:2.0R** | H1 có R:R tốt hơn nhờ "Độ nảy thị trường" |
+| **Lợi Nhuận Ròng (Net PnL)** | **-$1,492.00 USD (-74.6% ROI)** ❌ | **+$880.00 USD (+44.0% ROI)** 🚀 | **H1 vượt trội +$2,372.0 USD** |
+| **Tụt Giảm Tối Đa (Max DD)** | **$1,688.00 (84.4%)** | **$370.00 (18.5%)** | H1 kiểm soát rủi ro an toàn gấp 4.5 lần |
 
 ---
 
-## 2. 👑 KẾT QUẢ BITCOIN (BTCUSD - MT5)
+## 2. 📅 BẢNG SO SÁNH LỢI NHUẬN TỪNG THÁNG TRONG NĂM 2026
 
-### 📈 Bảng Chi Tiết Từng Tháng (Tháng 1 đến Tháng 11):
-| Tháng | Số Kèo | Full TP2 | TP1 + BE | Dính SL | Winrate (%) | PnL Tháng ($) | Vốn Cuối Tháng | Tăng Trưởng (%) |
-| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **2026-01** | 7 | 0 | 3 | 4 | 42.9% | -$88.05 | $1,911.95 | -4.40% |
-| **2026-02** | 4 | 0 | 3 | 1 | 75.0% | +$30.03 | $1,941.97 | +1.57% |
-| **2026-03** | 3 | 1 | 1 | 1 | 66.7% | +$55.26 | $1,997.23 | +2.85% |
-| **2026-04** | 4 | 0 | 1 | 3 | 25.0% | -$94.90 | $1,902.34 | -4.75% |
-| **2026-05** | 6 | 4 | 2 | 0 | **100.0%** | **+$350.68** | **$2,253.01** | **+18.43%** 🚀 |
-| **2026-06** | 6 | 2 | 2 | 2 | 66.7% | +$130.04 | $2,383.06 | +5.77% |
-| **2026-07** | 3 | 2 | 0 | 1 | 66.7% | +$128.36 | $2,511.41 | +5.39% |
-| **2026-08** | 2 | 0 | 0 | 2 | 0.0% | -$99.45 | $2,411.96 | -3.96% |
-| **2026-09** | 6 | 4 | 1 | 1 | **83.3%** | **+$354.29** | **$2,766.25** | **+14.69%** 🚀 |
-| **2026-10** | 1 | 1 | 0 | 0 | **100.0%** | +$102.35 | **$2,868.60** | +3.70% |
-| **2026-11** | 4 | 0 | 0 | 4 | 0.0% | -$222.69 | $2,645.91 | -7.76% |
-
-### 🏆 Tổng Kết BTC Sau 11 Tháng:
-* **Vốn ban đầu:** $2,000.00
-* **Vốn hiện tại:** **$2,645.91**
-* **Lợi nhuận ròng (Net Profit):** **+$645.91 (+32.30% ROI)**
-* **Tỷ lệ thắng (Winrate):** **58.7%** (27 kèo có lãi / 46 kèo)
-* **Tụt giảm vốn tối đa (Max Drawdown):** **7.76%** (Kiểm soát rủi ro tuyệt hảo)
+| Tháng | Vàng M5 ($) | Vàng H1 ($) | BTC M5 ($) | BTC H1 ($) | ⚡ TỔNG M5 ($) | 🧙‍♀️ TỔNG H1 ($) | Hệ Thống Thắng Thế |
+| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **2026-01** | -$68.0 | +$40.0 | -$108.0 | -$20.0 | **-$176.0** | **+$20.0** | 🧙‍♀️ H1 Ma Nữ |
+| **2026-02** | -$156.0 | +$70.0 | -$124.0 | +$90.0 | **-$280.0** | **+$160.0** | 🧙‍♀️ H1 Ma Nữ |
+| **2026-03** | +$364.0 | +$200.0 | -$356.0 | +$280.0 | **+$8.0** | **+$480.0** | 🧙‍♀️ H1 Ma Nữ |
+| **2026-04** | -$92.0 | +$180.0 | -$64.0 | -$30.0 | **-$156.0** | **+$150.0** | 🧙‍♀️ H1 Ma Nữ |
+| **2026-05** | -$40.0 | +$30.0 | -$216.0 | +$80.0 | **-$256.0** | **+$110.0** | 🧙‍♀️ H1 Ma Nữ |
+| **2026-06** | +$80.0 | +$150.0 | -$48.0 | +$130.0 | **+$32.0** | **+$280.0** | 🧙‍♀️ H1 Ma Nữ |
+| **2026-07** | +$28.0 | -$280.0 | -$4.0 | -$50.0 | **+$24.0** | **-$330.0** | ⚡ M5 Scalper |
+| **2026-08** | -$292.0 | +$130.0 | -$276.0 | +$20.0 | **-$568.0** | **+$150.0** | 🧙‍♀️ H1 Ma Nữ |
+| **2026-09** | -$156.0 | -$80.0 | +$40.0 | +$120.0 | **-$116.0** | **+$40.0** | 🧙‍♀️ H1 Ma Nữ |
+| **2026-10** | +$376.0 | +$30.0 | -$48.0 | -$190.0 | **+$328.0** | **-$160.0** | ⚡ M5 Scalper |
+| **2026-11** | -$156.0 | -$20.0 | -$176.0 | $0.0 | **-$332.0** | **-$20.0** | 🧙‍♀️ H1 Ma Nữ |
+| **TỔNG KẾT**| **-$112.0** | **+$450.0** | **-$1,380.0** | **+$430.0** | **-$1,492.0 (-74.6%)** | **+$880.0 (+44.0%)** | 🏆 **H1 Thắng 9/11 Tháng** |
 
 ---
 
-## 3. 🥇 KẾT QUẢ VÀNG (XAUUSD - MT5)
+## 3. 🔍 PHÂN TÍCH NGUYÊN NHÂN & VẤN ĐỀ CỦA TỪNG HỆ THỐNG
 
-### 📈 Bảng Chi Tiết Từng Tháng (Tháng 1 đến Tháng 11):
-| Tháng | Số Kèo | Full TP2 | TP1 + BE | Dính SL | Winrate (%) | PnL Tháng ($) | Vốn Cuối Tháng | Tăng Trưởng (%) |
-| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **2026-01** | 1 | 0 | 1 | 0 | 100.0% | +$24.00 | $2,024.00 | +1.20% |
-| **2026-02** | 2 | 1 | 0 | 1 | 50.0% | +$32.91 | $2,056.91 | +1.63% |
-| **2026-03** | 5 | 2 | 0 | 3 | 40.0% | +$24.95 | $2,081.86 | +1.21% |
-| **2026-04** | 5 | 2 | 0 | 3 | 40.0% | +$25.25 | $2,107.11 | +1.21% |
-| **2026-05** | 4 | 1 | 2 | 1 | **75.0%** | +$85.96 | $2,193.07 | +4.08% |
-| **2026-06** | 4 | 1 | 2 | 1 | **75.0%** | +$89.47 | **$2,282.54** | +4.08% |
-| **2026-07** | 3 | 0 | 1 | 2 | 33.3% | -$64.08 | $2,218.46 | -2.81% |
-| **2026-08** | 4 | 1 | 0 | 3 | 25.0% | -$53.21 | $2,165.25 | -2.40% |
-| **2026-09** | 4 | 1 | 0 | 3 | 25.0% | -$51.93 | $2,113.32 | -2.40% |
-| **2026-10** | 4 | 1 | 0 | 3 | 25.0% | -$50.69 | $2,062.63 | -2.40% |
-| **2026-11** | 1 | 0 | 0 | 1 | 0.0% | -$41.25 | $2,021.38 | -2.00% |
+### ❌ Điểm yếu của Bot M5 Hiện Tại (Volume Profile Scalper):
+1. **Hội chứng "Bóp SL quá ngắn" (Chết vì Spread và Quét Râu M5):**
+   - Trên khung M5, SL chỉ cách Entry $2 - $4 với Vàng và $60 - $150 với BTC. 
+   - Khi phiên Mỹ mở cửa, chỉ cần 1 nhịp giãn spread của sàn hoặc 1 cây nến giật râu quét thanh khoản là lệnh dính SL ngay lập tức, sau đó giá mới đi đúng hướng kỳ vọng $\rightarrow$ **Kills winrate**.
+2. **Tần suất quá dày (Overtrading):**
+   - Đánh hơn 1,300 lệnh/năm khiến chi phí Commission và Spread ăn mòn hết lợi nhuận.
+   - Thua chuỗi 4-5 lệnh liên tiếp trong những ngày sideway không có xu hướng rõ ràng.
 
-### 🏆 Tổng Kết Vàng Sau 11 Tháng:
-* **Vốn ban đầu:** $2,000.00
-* **Vốn hiện tại:** **$2,021.38**
-* **Lợi nhuận ròng (Net Profit):** **+$21.38 (+1.07% ROI)**
-* **Tỷ lệ thắng (Winrate):** **43.2%** (16 kèo có lãi / 37 kèo)
-* **Tụt giảm vốn tối đa (Max Drawdown):** **13.21%**
+### ✅ Điểm mạnh của Bot H1 Ma Nữ (Senpai Thành):
+1. **Lệnh Chờ Stop Order (Đi theo quán tính thị trường):**
+   - Không bắt dao rơi khi giá đang hồi. Chỉ khớp lệnh khi nến H1 đã hoàn thành râu hồi và giá quay đầu break qua đỉnh/đáy nến trước $\rightarrow$ Xác nhận lực mua/bán thực sự đã nhập cuộc.
+2. **Khoảng đệm SL theo Râu Nến H1 an toàn:**
+   - SL cách $12 - $18 trên Vàng và $300 - $600 trên BTC $\rightarrow$ Hấp thụ hoàn toàn các nhịp giật râu ngẫu nhiên trong phiên.
+3. **Quy luật Độ Nảy Thị Trường ("Lùi bao nhiêu tiến bấy nhiêu"):**
+   - Đạt tỷ lệ R:R từ 1:1.5R đến 1:2.0R một cách ổn định, mang lại kỳ vọng toán học (Expected Value) dương.
 
 ---
 
-## 4. ĐÁNH GIÁ VÀ NHẬN XÉT CỦA HỆ THỐNG
-1. **Sức mạnh của Lãi Kép & Quản lý vốn theo %:**
-   - Dù có chuỗi thua ở một số tháng biến động mạnh, tài khoản không bao giờ bị tổn thương nặng vì mỗi lần thua, số tiền mất tự động giảm theo quy mô vốn hiện tại.
-   - Khi vào chu kỳ sóng thuận (như Tháng 5, 6, 7, 9 của BTC), tài khoản tăng trưởng bùng nổ theo cấp số nhân (+18.43%, +14.69%).
-2. **Cột Tím VSA Wyckoff:**
-   - Số lượng lệnh cả năm chỉ rơi vào **37 - 46 kèo** (~3 - 4 kèo/tháng). Không trade vô tội vạ, chỉ vào khi cá mập để lại nổ Volume hấp thụ tại cản.
+## 4. 🚀 CẢI TIẾN & KẾ HOẠCH VẬN HÀNH SONG SONG (HYBRID DUAL-BOT)
 
+Để bạn có thể quan sát, so sánh và đánh giá thực tế trong quá trình giao dịch live:
+1. **Chạy song song 2 Module độc lập trong Bot:**
+   - ⚡ **Module 1 - M5 Scalp (Volume Profile):** Tiếp tục rà soát cản VAH/VAL/POC nổ cột tím VSA để bắt các nhịp phản ứng nhanh trong ngày.
+   - 🧙‍♀️ **Module 2 - H1 Swing (Ma Nữ):** Quét cản Linechart H1, phát hiện nến Breakout và nến Perfect Wick Retest, bắn tín hiệu Stop Order (Buy Stop / Sell Stop) với SL/TP rộng rãi.
+2. **Báo Cáo Độc Lập Qua Telegram:**
+   - Lệnh của hệ thống nào sẽ được gắn nhãn riêng biệt rõ ràng.
+   - Lệnh `/tongket` và `/baocao` sẽ phân tách kết quả của 2 bot song song để bạn theo dõi tỷ lệ thắng và PnL trực tiếp hàng ngày/hàng tuần.
