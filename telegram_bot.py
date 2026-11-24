@@ -1801,92 +1801,69 @@ def analyze_scalp_vp_plan(asset='GOLD'):
     if asset == 'GOLD':
         if is_buy:
             entry = round(best_rejection['low'] + 1.2, 2) if (best_rejection and abs(curr_p - best_rejection['low']) < 6.0) else round(max(vp['poc'], vp['val']), 2)
-            # SL chuyên nghiệp: Phải bảo vệ dưới toàn bộ vùng đáy tích lũy yVAL / LOD với đệm an toàn 3-4 giá
-            if is_l_shape:
-                base_bottom = min(y_val, lod)
-                sl = round(min(base_bottom - 3.5, entry - 10.0), 2)
-            elif best_rejection:
-                sl = round(min(best_rejection['low'] - 3.5, entry - 9.0), 2)
-            else:
-                sl = round(min(vp['val'], y_val) - 3.5, 2)
-            
+            # Tinh chỉnh SL chuẩn theo Low Volume / VAL / POC: đệm an toàn 1.8-2.5 giá ngoài chân râu bảo vệ
+            base_bottom = confirmed_defense['low'] if confirmed_defense else (best_rejection['low'] if best_rejection else min(y_val, vp['val']))
+            sl = round(base_bottom - 2.0, 2)
             risk = round(abs(entry - sl), 2)
-            # Khống chế SL chuẩn Volume Profile: từ 8.0 đến 16.0 giá (tránh bị bóp râu M5 cắn SL oan)
-            if risk < 8.0:
-                risk = 9.0
+            # Khống chế khoảng cách SL hợp lý: từ 5.5 đến 9.0 giá (không quá ngắn bị quét, không quá xa làm xấu R:R)
+            if risk < 5.5:
+                risk = 6.5
                 sl = round(entry - risk, 2)
-            elif risk > 18.0:
-                risk = 16.0
+            elif risk > 9.0:
+                risk = 8.5
                 sl = round(entry - risk, 2)
 
             target_up = y_vah if is_l_shape else max(vp['vah'], hod)
-            tp1 = round(entry + max(risk * 1.3, 10.0), 2)
-            tp2 = round(max(target_up, entry + risk * 2.5), 2)
+            tp1 = round(entry + risk * 1.5, 2)
+            tp2 = round(max(target_up, entry + risk * 2.8), 2)
         else:
             entry = round(best_rejection['high'] - 1.2, 2) if (best_rejection and abs(curr_p - best_rejection['high']) < 6.0) else round(min(vp['poc'], vp['vah']), 2)
-            # SL chuyên nghiệp: Phải bảo vệ trên toàn bộ vùng đỉnh phân phối yVAH / HOD với đệm an toàn 3-4 giá
-            if is_p_shape:
-                base_top = max(y_vah, hod)
-                sl = round(max(base_top + 3.5, entry + 10.0), 2)
-            elif best_rejection:
-                sl = round(max(best_rejection['high'] + 3.5, entry + 9.0), 2)
-            else:
-                sl = round(max(vp['vah'], y_vah) + 3.5, 2)
-
+            # Tinh chỉnh SL chuẩn theo High Volume / VAH / POC: đệm an toàn 1.8-2.5 giá ngoài đỉnh râu bảo vệ
+            base_top = confirmed_defense['high'] if confirmed_defense else (best_rejection['high'] if best_rejection else max(y_vah, vp['vah']))
+            sl = round(base_top + 2.0, 2)
             risk = round(abs(sl - entry), 2)
-            if risk < 8.0:
-                risk = 9.0
+            if risk < 5.5:
+                risk = 6.5
                 sl = round(entry + risk, 2)
-            elif risk > 18.0:
-                risk = 16.0
+            elif risk > 9.0:
+                risk = 8.5
                 sl = round(entry + risk, 2)
 
             target_down = y_val if is_p_shape else min(vp['val'], lod)
-            tp1 = round(entry - max(risk * 1.3, 10.0), 2)
-            tp2 = round(min(target_down, entry - risk * 2.5), 2)
+            tp1 = round(entry - risk * 1.5, 2)
+            tp2 = round(min(target_down, entry - risk * 2.8), 2)
     else: # BTC
         if is_buy:
             entry = round(best_rejection['low'] + 50.0, 1) if (best_rejection and abs(curr_p - best_rejection['low']) < 300.0) else round(max(vp['poc'], vp['val']), 1)
-            if is_l_shape:
-                base_bottom = min(y_val, lod)
-                sl = round(min(base_bottom - 150.0, entry - 450.0), 1)
-            elif best_rejection:
-                sl = round(min(best_rejection['low'] - 150.0, entry - 450.0), 1)
-            else:
-                sl = round(min(vp['val'], y_val) - 150.0, 1)
-
+            base_bottom = confirmed_defense['low'] if confirmed_defense else (best_rejection['low'] if best_rejection else min(y_val, vp['val']))
+            sl = round(base_bottom - 100.0, 1)
             risk = round(abs(entry - sl), 1)
-            if risk < 400.0:
-                risk = 450.0
+            # Khống chế khoảng cách SL BTC hợp lý: từ 250 đến 420 USD
+            if risk < 250.0:
+                risk = 300.0
                 sl = round(entry - risk, 1)
-            elif risk > 900.0:
-                risk = 800.0
+            elif risk > 450.0:
+                risk = 380.0
                 sl = round(entry - risk, 1)
 
             target_up = y_vah if is_l_shape else max(vp['vah'], hod)
-            tp1 = round(entry + max(risk * 1.3, 500.0), 1)
-            tp2 = round(max(target_up, entry + risk * 2.5), 1)
+            tp1 = round(entry + risk * 1.5, 1)
+            tp2 = round(max(target_up, entry + risk * 2.8), 1)
         else:
             entry = round(best_rejection['high'] - 50.0, 1) if (best_rejection and abs(curr_p - best_rejection['high']) < 300.0) else round(min(vp['poc'], vp['vah']), 1)
-            if is_p_shape:
-                base_top = max(y_vah, hod)
-                sl = round(max(base_top + 150.0, entry + 450.0), 1)
-            elif best_rejection:
-                sl = round(max(best_rejection['high'] + 150.0, entry + 450.0), 1)
-            else:
-                sl = round(max(vp['vah'], y_vah) + 150.0, 1)
-
+            base_top = confirmed_defense['high'] if confirmed_defense else (best_rejection['high'] if best_rejection else max(y_vah, vp['vah']))
+            sl = round(base_top + 100.0, 1)
             risk = round(abs(sl - entry), 1)
-            if risk < 400.0:
-                risk = 450.0
+            if risk < 250.0:
+                risk = 300.0
                 sl = round(entry + risk, 1)
-            elif risk > 900.0:
-                risk = 800.0
+            elif risk > 450.0:
+                risk = 380.0
                 sl = round(entry + risk, 1)
 
             target_down = y_val if is_p_shape else min(vp['val'], lod)
-            tp1 = round(entry - max(risk * 1.3, 500.0), 1)
-            tp2 = round(min(target_down, entry - risk * 2.5), 1)
+            tp1 = round(entry - risk * 1.5, 1)
+            tp2 = round(min(target_down, entry - risk * 2.8), 1)
 
     wick_str = f"Nến M5 test râu {best_rejection['pct']:.1f}%" if best_rejection else "Giá dao động quanh mốc Volume Profile"
     dec = 2 if asset == 'GOLD' else 1
@@ -2291,7 +2268,7 @@ def get_live_market_prices():
         tv_url = 'https://scanner.tradingview.com/cfd/scan'
         tv_payload = json.dumps({
             "symbols": {"tickers": ["OANDA:XAUUSD"]},
-            "columns": ["close", "bid", "ask", "change"]
+            "columns": ["close", "open", "high", "low", "bid", "ask", "change"]
         }).encode()
         tv_req = urllib.request.Request(tv_url, data=tv_payload, headers={'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0'})
         with urllib.request.urlopen(tv_req, timeout=5) as resp:
@@ -2300,9 +2277,12 @@ def get_live_market_prices():
                 row = data['data'][0]['d']
                 oanda_price = {
                     'price': float(row[0]),
-                    'bid': float(row[1]) if row[1] else float(row[0]),
-                    'ask': float(row[2]) if row[2] else float(row[0]),
-                    'change': float(row[3]) if row[3] else 0.0
+                    'open': float(row[1]) if row[1] else float(row[0]),
+                    'high': float(row[2]) if row[2] else float(row[0]),
+                    'low': float(row[3]) if row[3] else float(row[0]),
+                    'bid': float(row[4]) if row[4] else float(row[0]),
+                    'ask': float(row[5]) if row[5] else float(row[0]),
+                    'change': float(row[6]) if row[6] else 0.0
                 }
     except Exception as e:
         print(f"Lỗi lấy giá OANDA TradingView: {e}")
@@ -2310,7 +2290,7 @@ def get_live_market_prices():
     return {'time': time_str, 'bybit': results, 'oanda': oanda_price}
 
 def handle_live_price(chat_id=None):
-    """Hiển thị bảng giá tức thời Vàng, BTC, ETH theo thời gian thực"""
+    """Hiển thị bảng giá tức thời Vàng, BTC, ETH theo thời gian thực kèm Đỉnh/Đáy ngày (HOD / LOD)"""
     try:
         data = get_live_market_prices()
         time_str = data['time']
@@ -2321,6 +2301,8 @@ def handle_live_price(chat_id=None):
         gold_oanda_p = oanda['price'] if oanda else b.get('XAUUSDT', {}).get('price', 0)
         gold_bid = oanda['bid'] if oanda else gold_oanda_p
         gold_ask = oanda['ask'] if oanda else gold_oanda_p
+        gold_oanda_high = oanda['high'] if oanda else b.get('XAUUSDT', {}).get('high', 0)
+        gold_oanda_low = oanda['low'] if oanda else b.get('XAUUSDT', {}).get('low', 0)
         gold_bybit = b.get('XAUUSDT', {})
         gold_bb_p = gold_bybit.get('price', 0)
         gold_chg = gold_bybit.get('change', 0)
@@ -2351,18 +2333,18 @@ def handle_live_price(chat_id=None):
 ━━━━━━━━━━━━━━━━━━
 🥇 <b>VÀNG (XAUUSD):</b>
 • <b>OANDA (Chuẩn MT5):</b> <b>${gold_oanda_p:,.2f}</b> (Bid: <code>${gold_bid:,.2f}</code> | Ask: <code>${gold_ask:,.2f}</code>)
-• <b>Bybit Linear:</b> <b>${gold_bb_p:,.2f}</b> ({g_emoji} <b>{gold_chg:+.2f}%</b>)
-• Biên độ 24h: <code>${gold_low:,.2f}</code> ➔ <code>${gold_high:,.2f}</code>
+• 🔺 <b>Đỉnh ngày (HOD):</b> <code>${gold_oanda_high:,.2f}</code> | 🔻 <b>Đáy ngày (LOD):</b> <code>${gold_oanda_low:,.2f}</code>
+• <b>Bybit Linear:</b> <b>${gold_bb_p:,.2f}</b> ({g_emoji} <b>{gold_chg:+.2f}%</b> | 24h: <code>${gold_low:,.2f}</code> - <code>${gold_high:,.2f}</code>)
 
 👑 <b>BITCOIN (BTCUSDT):</b>
 • <b>Thị giá:</b> <b>${btc_p:,.1f} USD</b> ({b_emoji} <b>{btc_chg:+.2f}%</b>)
-• Biên độ 24h: <code>${btc_low:,.1f}</code> ➔ <code>${btc_high:,.1f}</code>
-• Volume 24h: <b>${btc_vol:,.0f}M USDT</b>
+• 🔺 <b>Đỉnh ngày (HOD):</b> <code>${btc_high:,.1f} USD</code> | 🔻 <b>Đáy ngày (LOD):</b> <code>${btc_low:,.1f} USD</code>
+• 🌊 <b>Volume 24h:</b> <b>${btc_vol:,.0f}M USDT</b>
 
 💎 <b>ETHEREUM (ETHUSDT):</b>
 • <b>Thị giá:</b> <b>${eth_p:,.2f} USD</b> ({e_emoji} <b>{eth_chg:+.2f}%</b>)
-• Biên độ 24h: <code>${eth_low:,.2f}</code> ➔ <code>${eth_high:,.2f}</code>
-• Volume 24h: <b>${eth_vol:,.0f}M USDT</b>
+• 🔺 <b>Đỉnh ngày (HOD):</b> <code>${eth_high:,.2f} USD</code> | 🔻 <b>Đáy ngày (LOD):</b> <code>${eth_low:,.2f} USD</code>
+• 🌊 <b>Volume 24h:</b> <b>${eth_vol:,.0f}M USDT</b>
 ━━━━━━━━━━━━━━━━━━
 ⏱️ <i>Cập nhật lúc: {time_str}</i>
 💡 <i>Bấm nút <b>💵 Xem Giá Live (Vàng/BTC/ETH)</b> bất kỳ lúc nào để làm mới giá ngay!</i>"""
