@@ -353,9 +353,9 @@ def handle_check_vip_trades(chat_id=None):
 • 📍 <b>dPOC Hôm Nay:</b> <code>${p_gold_vp['poc']:,.2f}</code> (Cách {abs(dist_poc_g):.1f} giá)
 • 🧱 <b>Khối Kháng Cự H1:</b> <code>[${plan_gold['b_ob_bot']:,.1f} - ${plan_gold['b_ob_top']:,.1f}]</code>
 • 🧱 <b>Khối Hỗ Trợ H1:</b> <code>[${plan_gold['bull_ob_bot']:,.1f} - ${plan_gold['bull_ob_top']:,.1f}]</code>
+• 🛡️ <b>Bảo Vệ Cản M5:</b> {p_gold_vp['defense_badge']}
 • ⚡ <b>Hành động M5:</b> <i>{p_gold_vp['wick_info']}</i>
-👉 <b>Kèo Gợi Ý:</b> <b>{p_gold_vp['signal']}</b>
-   Entry: <code>${p_gold_vp['entry']:,.2f}</code> | SL: <code>${p_gold_vp['sl']:,.2f}</code> | TP1: <code>${p_gold_vp['tp1']:,.2f}</code> | TP2: <code>${p_gold_vp['tp2']:,.2f}</code>\n"""
+👉 <b>Kế Hoạch:</b> {p_gold_vp['action_plan_text']}\n"""
 
         # BTC Radar
         dist_do_b = p_btc - p_btc_vp['daily_open']
@@ -367,9 +367,9 @@ def handle_check_vip_trades(chat_id=None):
 • 📍 <b>dPOC Hôm Nay:</b> <code>${p_btc_vp['poc']:,.1f}</code> (Cách {abs(dist_poc_b):.1f} USD)
 • 🧱 <b>Khối Kháng Cự H1:</b> <code>[${plan_btc['b_ob_bot']:,.1f} - ${plan_btc['b_ob_top']:,.1f}]</code>
 • 🧱 <b>Khối Hỗ Trợ H1:</b> <code>[${plan_btc['bull_ob_bot']:,.1f} - ${plan_btc['bull_ob_top']:,.1f}]</code>
+• 🛡️ <b>Bảo Vệ Cản M5:</b> {p_btc_vp['defense_badge']}
 • ⚡ <b>Hành động M5:</b> <i>{p_btc_vp['wick_info']}</i>
-👉 <b>Kèo Gợi Ý:</b> <b>{p_btc_vp['signal']}</b>
-   Entry: <code>${p_btc_vp['entry']:,.1f}</code> | SL: <code>${p_btc_vp['sl']:,.1f}</code> | TP1: <code>${p_btc_vp['tp1']:,.1f}</code> | TP2: <code>${p_btc_vp['tp2']:,.1f}</code>\n"""
+👉 <b>Kế Hoạch:</b> {p_btc_vp['action_plan_text']}\n"""
 
         # 3. LỊCH SỬ KÈO & TỶ LỆ THẮNG
         msg += "━━━━━━━━━━━━━━━━━━\n📜 <b>LỊCH SỬ GIAO DỊCH ĐÃ CHỐT:</b>\n"
@@ -1713,37 +1713,89 @@ def analyze_scalp_vp_plan(asset='GOLD'):
     else:
         daily_bias = f"🔴 BEARISH (Giá dưới Daily Open ${daily_open:,.1f})"
 
-    # 4. Tìm cây nến M5 có râu từ chối (Rejection Wick) gần nhất trong 5 nến gần đây
+    # 4. KIỂM TRA TÍN HIỆU VOLUME M5 BẢO VỆ VÙNG LOW VOLUME (VAL), POC HOẶC HIGH VOLUME (VAH)
+    avg_vol_m5 = sum([float(k[5]) for k in klines[1:21]]) / 20 if len(klines) >= 21 else 1.0
+    confirmed_defense = None
     best_rejection = None
-    for i in range(min(5, len(session_klines))):
-        k = session_klines[i]
-        o, h, l, c = float(k[1]), float(k[2]), float(k[3]), float(k[4])
-        rng = h - l
-        if rng > 0:
-            lw = min(o, c) - l
-            uw = h - max(o, c)
-            lw_pct = (lw / rng) * 100
-            uw_pct = (uw / rng) * 100
-            if lw_pct >= 35 and (best_rejection is None or lw_pct > best_rejection['pct']):
-                best_rejection = {'type': 'BULL', 'low': l, 'high': h, 'pct': lw_pct, 'candle_idx': i}
-            elif uw_pct >= 35 and (best_rejection is None or uw_pct > best_rejection['pct']):
-                best_rejection = {'type': 'BEAR', 'low': l, 'high': h, 'pct': uw_pct, 'candle_idx': i}
+    tol_val = 5.5 if asset == 'GOLD' else 350.0
 
-    # 5. Xác định Hướng Giao Dịch:
-    # Ưu tiên số 1: Cơ chế Xoay Trục Hôm Trước (L-Shape nảy về yVAH hoặc P-Shape dội về yVAL)
-    # Ưu tiên số 2: Phản ứng nến M5 tại dPOC / dVAL / dVAH hôm nay
-    if is_l_shape and curr_p <= y_vah:
-        is_buy = True
-        sig = 'BUY ROTATION (Tụ Đáy yVAL/yPOC Hôm Trước ➔ Tìm Về yVAH)'
-    elif is_p_shape and curr_p >= y_val:
-        is_buy = False
-        sig = 'SELL ROTATION (Tụ Đỉnh yVAH/yPOC Hôm Trước ➔ Tìm Về yVAL)'
-    elif best_rejection:
-        is_buy = (best_rejection['type'] == 'BULL')
-        sig = 'BUY SCALPING (Nảy Hỗ Trợ dPOC / dVAL)' if is_buy else 'SELL SCALPING (Dội Kháng Cự dPOC / dVAH)'
+    # Quét 5 nến M5 đã đóng gần nhất (indices 1 đến 5)
+    for i in range(1, min(6, len(session_klines))):
+        k = session_klines[i]
+        o, h, l, c, v = float(k[1]), float(k[2]), float(k[3]), float(k[4]), float(k[5])
+        rng = h - l
+        if rng <= 0: continue
+        lw = min(o, c) - l
+        uw = h - max(o, c)
+        lw_pct = (lw / rng) * 100
+        uw_pct = (uw / rng) * 100
+        vol_ratio = v / avg_vol_m5 if avg_vol_m5 > 0 else 1.0
+
+        if best_rejection is None or max(lw_pct, uw_pct) > best_rejection['pct']:
+            best_rejection = {
+                'type': 'BULL' if lw_pct >= uw_pct else 'BEAR',
+                'pct': max(lw_pct, uw_pct),
+                'candle_idx': i,
+                'low': l, 'high': h, 'close': c, 'open': o,
+                'vol_ratio': round(vol_ratio, 2)
+            }
+
+        # Điều kiện nổ Volume bảo vệ: Volume >= 1.20x trung bình (hoặc >= 1.05x nếu râu nến dài >= 45%)
+        is_vol_spike = (vol_ratio >= 1.20) or (vol_ratio >= 1.05 and max(lw_pct, uw_pct) >= 45.0)
+        if not is_vol_spike:
+            continue
+
+        # A. Kiểm tra bảo vệ Vùng Low Volume / VAL (đáy) hoặc POC (để BUY)
+        dist_yval = abs(l - y_val)
+        dist_dval = abs(l - vp['val'])
+        dist_poc = abs(l - vp['poc'])
+        min_bottom_dist = min(dist_yval, dist_dval, dist_poc)
+
+        if min_bottom_dist <= tol_val:
+            is_bull_shape = (lw_pct >= 35.0) or (c > o and (c - o)/rng >= 0.50)
+            if is_bull_shape and c >= min(y_val, vp['val'], vp['poc']) - (1.5 if asset == 'GOLD' else 60.0):
+                z_name = "LOW VOLUME (VAL ĐÁY)" if min_bottom_dist in (dist_yval, dist_dval) else "POC KIỂM SOÁT"
+                confirmed_defense = {
+                    'type': 'BULL',
+                    'zone_name': z_name,
+                    'candle_idx': i,
+                    'vol_ratio': round(vol_ratio, 2),
+                    'wick_pct': round(lw_pct, 1),
+                    'low': l, 'high': h, 'close': c, 'open': o
+                }
+                break
+
+        # B. Kiểm tra bảo vệ Vùng High Volume / VAH (đỉnh) hoặc POC (để SELL)
+        dist_yvah = abs(h - y_vah)
+        dist_dvah = abs(h - vp['vah'])
+        dist_poc_h = abs(h - vp['poc'])
+        min_top_dist = min(dist_yvah, dist_dvah, dist_poc_h)
+
+        if min_top_dist <= tol_val:
+            is_bear_shape = (uw_pct >= 35.0) or (o > c and (o - c)/rng >= 0.50)
+            if is_bear_shape and c <= max(y_vah, vp['vah'], vp['poc']) + (1.5 if asset == 'GOLD' else 60.0):
+                z_name = "HIGH VOLUME (VAH ĐỈNH)" if min_top_dist in (dist_yvah, dist_dvah) else "POC KIỂM SOÁT"
+                confirmed_defense = {
+                    'type': 'BEAR',
+                    'zone_name': z_name,
+                    'candle_idx': i,
+                    'vol_ratio': round(vol_ratio, 2),
+                    'wick_pct': round(uw_pct, 1),
+                    'low': l, 'high': h, 'close': c, 'open': o
+                }
+                break
+
+    is_defense_confirmed = (confirmed_defense is not None)
+    is_ready_to_enter = (is_defense_confirmed and confirmed_defense['candle_idx'] <= 2)
+
+    if is_defense_confirmed:
+        defense_badge = f"🔥 ĐÃ XÁC NHẬN BẢO VỆ {confirmed_defense['zone_name']} (Nến M5 nổ Vol x{confirmed_defense['vol_ratio']} + Rút râu {confirmed_defense['wick_pct']}%)"
+        is_buy = (confirmed_defense['type'] == 'BULL')
+        sig = f"{'BUY' if is_buy else 'SELL'} (Đã nổ Vol M5 bảo vệ {confirmed_defense['zone_name']})"
     else:
+        defense_badge = "⏳ CHƯA CÓ VOLUME M5 BẢO VỆ CẢN (Đang chờ nến M5 nổ Vol xác nhận giữ cản)"
         is_buy = (curr_p >= daily_open)
-        sig = 'BUY SCALPING (Nảy Hỗ Trợ dPOC / dVAL)' if is_buy else 'SELL SCALPING (Dội Kháng Cự dPOC / dVAH)'
+        sig = "BUY ROTATION (Tụ Đáy yVAL ➔ VAH)" if (is_l_shape and curr_p <= y_vah) else ("SELL ROTATION (Tụ Đỉnh yVAH ➔ VAL)" if (is_p_shape and curr_p >= y_val) else ("BUY SCALPING (Hỗ Trợ)" if is_buy else "SELL SCALPING (Kháng Cự)"))
 
     if asset == 'GOLD':
         if is_buy:
@@ -1835,7 +1887,13 @@ def analyze_scalp_vp_plan(asset='GOLD'):
             tp1 = round(entry - max(risk * 1.3, 500.0), 1)
             tp2 = round(min(target_down, entry - risk * 2.5), 1)
 
-    wick_str = f"Nến M5 test râu {best_rejection['pct']:.1f}% từ chối giá" if best_rejection else "Giá dao động quanh mốc Volume Profile"
+    wick_str = f"Nến M5 test râu {best_rejection['pct']:.1f}%" if best_rejection else "Giá dao động quanh mốc Volume Profile"
+    dec = 2 if asset == 'GOLD' else 1
+
+    if is_ready_to_enter:
+        action_plan_text = f"🔥 <b>{sig} (ĐÃ BẢO VỆ CẢN)</b>\n   👉 Entry: <code>${entry:,.{dec}f}</code> | 🛡️ SL: <code>${sl:,.{dec}f}</code> | 🎯 TP1: <code>${tp1:,.{dec}f}</code> | 🎯 TP2: <code>${tp2:,.{dec}f}</code>"
+    else:
+        action_plan_text = "⏸️ <b>ĐANG RÌNH:</b> <i>Chưa có nến M5 nổ Volume bảo vệ cản Low Vol/POC/High Vol — Tuyệt đối không vào sớm để tránh cắn SL!</i>"
 
     return {
         'asset': asset,
@@ -1864,6 +1922,11 @@ def analyze_scalp_vp_plan(asset='GOLD'):
         'tp2': tp2,
         'wick_info': wick_str,
         'best_rejection': best_rejection,
+        'confirmed_defense': confirmed_defense,
+        'is_defense_confirmed': is_defense_confirmed,
+        'is_ready_to_enter': is_ready_to_enter,
+        'defense_badge': defense_badge,
+        'action_plan_text': action_plan_text,
         'is_rejection_fresh': (best_rejection is not None and best_rejection['candle_idx'] <= 1),
         'dist_to_entry': round(abs(curr_p - entry), 2),
         'candles_count': len(session_klines)
@@ -1897,13 +1960,10 @@ def handle_vp_scalping(chat_id=None):
 
 📊 <b>Volume Profile Hôm Nay:</b>
 • dPOC: <code>${p_gold['poc']:,.2f}</code> | dVAL: <code>${p_gold['val']:,.2f}</code> | dVAH: <code>${p_gold['vah']:,.2f}</code>
+• 🛡️ <b>Xác Nhận Volume M5:</b> {p_gold['defense_badge']}
 • ⚡ <b>Hành động giá M5:</b> <i>{p_gold['wick_info']}</i>
 
-🚀 <b>KẾ HOẠCH VÀO LỆNH: {g_emoji} {p_gold['signal']}</b>
-👉 <b>Điểm vào (Entry):</b> <code>${p_gold['entry']:,.2f}</code>
-🛡️ <b>Cắt lỗ (SL Bóp Chân Râu M5):</b> <code>${p_gold['sl']:,.2f}</code> (~{p_gold['risk']} Giá)
-🎯 <b>TP1 (Chốt 50% | Giữa Đường):</b> <code>${p_gold['tp1']:,.2f}</code>
-🎯 <b>TP2 (Target Mục Tiêu Chính):</b> <code>${p_gold['tp2']:,.2f}</code>
+{p_gold['action_plan_text']}
 
 ━━━━━━━━━━━━━━━━━━
 👑 <b>2. BITCOIN (BTCUSDT - 00:00 UTC):</b>
@@ -1916,18 +1976,16 @@ def handle_vp_scalping(chat_id=None):
 
 📊 <b>Volume Profile Hôm Nay:</b>
 • dPOC: <code>${p_btc['poc']:,.1f}</code> | dVAL: <code>${p_btc['val']:,.1f}</code> | dVAH: <code>${p_btc['vah']:,.1f}</code>
+• 🛡️ <b>Xác Nhận Volume M5:</b> {p_btc['defense_badge']}
 • ⚡ <b>Hành động giá M5:</b> <i>{p_btc['wick_info']}</i>
 
-🚀 <b>KẾ HOẠCH VÀO LỆNH: {b_emoji} {p_btc['signal']}</b>
-👉 <b>Điểm vào (Entry):</b> <code>${p_btc['entry']:,.1f}</code>
-🛡️ <b>Cắt lỗ (SL Bóp Chân Râu M5):</b> <code>${p_btc['sl']:,.1f}</code> (~{p_btc['risk']:,.1f} USD)
-🎯 <b>TP1 (Chốt 50% | Giữa Đường):</b> <code>${p_btc['tp1']:,.1f}</code>
-🎯 <b>TP2 (Target Mục Tiêu Chính):</b> <code>${p_btc['tp2']:,.1f}</code>
+{p_btc['action_plan_text']}
 
 ━━━━━━━━━━━━━━━━━━
-🧠 <b>BẢN CHẤT XOAY TRỤC VAL ➔ VAH:</b>
-1. <b>Khi yVAL & yPOC tụ ở đáy (L-Shape):</b> Phe mua hấp thụ cạn kiệt lực bán. Nến M5 có phản ứng giá ➔ Giá sẽ phóng như tên lửa tìm về <b>yVAH</b>!
-2. <b>Khi yVAH & yPOC tụ ở đỉnh (P-Shape):</b> Phe bán phân phối chặn đầu. Nến M5 từ chối ➔ Giá sẽ rơi tìm về <b>yVAL</b>!"""
+🧠 <b>BẢN CHẤT BẢO VỆ LOW VOLUME / POC / HIGH VOLUME:</b>
+1. <b>Bảo vệ Low Volume / yVAL (Đáy):</b> Phe mua hấp thụ toàn bộ lực bán, nến M5 nổ Volume rút chân đóng cửa TRÊN cản ➔ Đảm bảo hỗ trợ vững chắc trước khi nảy về <b>yVAH</b>!
+2. <b>Bảo vệ High Volume / yVAH (Đỉnh):</b> Phe bán chặn đầu phân phối, nến M5 nổ Volume rút râu đóng cửa DƯỚI cản ➔ Đảm bảo kháng cự giữ vững trước khi rơi về <b>yVAL</b>!
+3. <b>Khi CHƯA có nến nổ Volume bảo vệ cản:</b> Kiên nhẫn đứng ngoài rình, tuyệt đối không vào lệnh sớm để tránh bị nến xả quét SL!"""
         send_telegram(msg, reply_markup=get_main_keyboard(), target_chat_id=chat_id)
     except Exception as e:
         send_telegram(f"⚠️ Lỗi tính toán Scalping Volume Profile: {e}", reply_markup=get_main_keyboard(), target_chat_id=chat_id)
@@ -2808,7 +2866,7 @@ def auto_diamond_alert_worker():
             # 7. QUÉT TỰ ĐỘNG BẮN KÈO SCALPING DAILY VOLUME PROFILE M5 (VÀNG OANDA)
             if not has_active_gold and (now - LAST_ALERT_TIME.get('GOLD_SCALP', 0) > 900):
                 p_gold_vp = analyze_scalp_vp_plan('GOLD')
-                if p_gold_vp and p_gold_vp.get('is_rejection_fresh') and p_gold_vp.get('dist_to_entry', 999) <= 4.5:
+                if p_gold_vp and p_gold_vp.get('is_ready_to_enter') and p_gold_vp.get('dist_to_entry', 999) <= 5.0:
                     price_gold = p_gold_vp['curr_p']
                     entry_g = p_gold_vp['entry']
                     sl_g = p_gold_vp['sl']
@@ -2816,24 +2874,25 @@ def auto_diamond_alert_worker():
                     tp2_g = p_gold_vp['tp2']
                     s_emoji = "🟢 LONG (MUA)" if p_gold_vp['is_buy'] else "🔴 SHORT (BÁN)"
                     action_s = "BUY" if p_gold_vp['is_buy'] else "SELL"
+                    z_name = p_gold_vp.get('confirmed_defense', {}).get('zone_name', 'Cản Volume')
                     
-                    msg_scalp_g = f"""🚨 <b>[TỰ ĐỘNG BÁO KÈO VIP: SCALPING VOLUME PROFILE NGÀY]</b> 🚨
+                    msg_scalp_g = f"""🚨 <b>[TỰ ĐỘNG BÁO KÈO VIP: NỔ VOLUME M5 BẢO VỆ CẢN]</b> 🚨
 ━━━━━━━━━━━━━━━━━━
 🥇 Tài sản: <b>VÀNG (OANDA:XAUUSD MT5)</b>
 💰 Giá hiện tại: <b>${price_gold:,.2f}</b>
+🛡️ <b>Xác Nhận Volume M5:</b> {p_gold_vp['defense_badge']}
 🏛️ <b>VP Hôm Trước ({p_gold_vp['y_shape']}):</b>
 • yVAL: <code>${p_gold_vp['y_val']:,.2f}</code> | yPOC: <code>${p_gold_vp['y_poc']:,.2f}</code> | yVAH: <code>${p_gold_vp['y_vah']:,.2f}</code>
 🌅 <b>Hôm Nay:</b> Open: <code>${p_gold_vp['daily_open']:,.2f}</code> | dPOC: <code>${p_gold_vp['poc']:,.2f}</code>
 🧭 <b>Bias:</b> {p_gold_vp['daily_bias']}
-⚡ <b>Tín Hiệu M5:</b> <b>{p_gold_vp['wick_info']}</b>
 ━━━━━━━━━━━━━━━━━━
 🚀 <b>LỆNH VÀO NGAY: {s_emoji}</b>
 👉 <b>Entry ({action_s} Limit / Now):</b> <code>${entry_g:,.2f}</code>
-🛡️ <b>Cắt lỗ (SL Bóp Chân Râu M5):</b> <code>${sl_g:,.2f}</code> (~{p_gold_vp['risk']} Giá)
+🛡️ <b>Cắt lỗ (SL An Toàn Ngoài Cản):</b> <code>${sl_g:,.2f}</code> (~{p_gold_vp['risk']} Giá)
 🎯 <b>Chốt lời 1 (TP1 - Chốt 75%):</b> <code>${tp1_g:,.2f}</code>
 🎯 <b>Chốt lời 2 (TP2 - Mục Tiêu Xoay Trục {p_gold_vp['y_shape']}):</b> <code>${tp2_g:,.2f}</code>
 
-🧠 <b>Chiến Thuật:</b> {p_gold_vp['y_shape_desc']} Chốt 75% tại TP1, dời BE gồng 25% về TP2!"""
+🧠 <b>Chiến Thuật:</b> Đã có nến M5 nổ Volume xác nhận bảo vệ vùng {z_name}. Chốt 75% tại TP1, dời BE gồng 25% về TP2!"""
                     send_telegram(msg_scalp_g)
                     LAST_ALERT_TIME['GOLD_SCALP'] = now
                     record_new_vip_trade(
@@ -2851,7 +2910,7 @@ def auto_diamond_alert_worker():
             # 8. QUÉT TỰ ĐỘNG BẮN KÈO SCALPING DAILY VOLUME PROFILE M5 (BITCOIN)
             if not has_active_btc and (now - LAST_ALERT_TIME.get('BTC_SCALP', 0) > 900):
                 p_btc_vp = analyze_scalp_vp_plan('BTC')
-                if p_btc_vp and p_btc_vp.get('is_rejection_fresh') and p_btc_vp.get('dist_to_entry', 999) <= 150.0:
+                if p_btc_vp and p_btc_vp.get('is_ready_to_enter') and p_btc_vp.get('dist_to_entry', 999) <= 250.0:
                     price_btc = p_btc_vp['curr_p']
                     entry_b = p_btc_vp['entry']
                     sl_b = p_btc_vp['sl']
@@ -2859,24 +2918,25 @@ def auto_diamond_alert_worker():
                     tp2_b = p_btc_vp['tp2']
                     s_emoji = "🟢 LONG (MUA)" if p_btc_vp['is_buy'] else "🔴 SHORT (BÁN)"
                     action_s = "BUY" if p_btc_vp['is_buy'] else "SELL"
+                    z_name_b = p_btc_vp.get('confirmed_defense', {}).get('zone_name', 'Cản Volume')
                     
-                    msg_scalp_b = f"""🚨 <b>[TỰ ĐỘNG BÁO KÈO VIP: SCALPING VOLUME PROFILE NGÀY]</b> 🚨
+                    msg_scalp_b = f"""🚨 <b>[TỰ ĐỘNG BÁO KÈO VIP: NỔ VOLUME M5 BẢO VỆ CẢN]</b> 🚨
 ━━━━━━━━━━━━━━━━━━
 👑 Tài sản: <b>BITCOIN (BTCUSDT)</b>
 💰 Giá hiện tại: <b>${price_btc:,.1f}</b>
+🛡️ <b>Xác Nhận Volume M5:</b> {p_btc_vp['defense_badge']}
 🏛️ <b>VP Hôm Trước ({p_btc_vp['y_shape']}):</b>
 • yVAL: <code>${p_btc_vp['y_val']:,.1f}</code> | yPOC: <code>${p_btc_vp['y_poc']:,.1f}</code> | yVAH: <code>${p_btc_vp['y_vah']:,.1f}</code>
 🌅 <b>Hôm Nay:</b> Open: <code>${p_btc_vp['daily_open']:,.1f}</code> | dPOC: <code>${p_btc_vp['poc']:,.1f}</code>
 🧭 <b>Bias:</b> {p_btc_vp['daily_bias']}
-⚡ <b>Tín Hiệu M5:</b> <b>{p_btc_vp['wick_info']}</b>
 ━━━━━━━━━━━━━━━━━━
 🚀 <b>LỆNH VÀO NGAY: {s_emoji}</b>
 👉 <b>Entry ({action_s} Limit / Now):</b> <code>${entry_b:,.1f}</code>
-🛡️ <b>Cắt lỗ (SL Bóp Chân Râu M5):</b> <code>${sl_b:,.1f}</code> (~{p_btc_vp['risk']:,.1f} USD)
+🛡️ <b>Cắt lỗ (SL An Toàn Ngoài Cản):</b> <code>${sl_b:,.1f}</code> (~{p_btc_vp['risk']:,.1f} USD)
 🎯 <b>Chốt lời 1 (TP1 - Chốt 75%):</b> <code>${tp1_b:,.1f}</code>
 🎯 <b>Chốt lời 2 (TP2 - Mục Tiêu Xoay Trục {p_btc_vp['y_shape']}):</b> <code>${tp2_b:,.1f}</code>
 
-🧠 <b>Chiến Thuật:</b> {p_btc_vp['y_shape_desc']} Chốt 75% tại TP1, dời BE gồng 25% về TP2!"""
+🧠 <b>Chiến Thuật:</b> Đã có nến M5 nổ Volume xác nhận bảo vệ vùng {z_name_b}. Chốt 75% tại TP1, dời BE gồng 25% về TP2!"""
                     send_telegram(msg_scalp_b)
                     LAST_ALERT_TIME['BTC_SCALP'] = now
                     record_new_vip_trade(
