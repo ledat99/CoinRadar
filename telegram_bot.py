@@ -409,6 +409,23 @@ def check_and_update_vip_trades(curr_gold_p, curr_btc_p):
                 remaining.append(t)
                 continue
 
+            # A2. Trailing Lock: Khi đạt +1.5R -> Khóa chặt +0.8R lợi nhuận
+            risk = abs(entry_p - orig_sl)
+            if t.get('tp1_hit') and not t.get('locked_in'):
+                if curr_p <= entry_p - (risk * 1.5):
+                    t['locked_in'] = True
+                    t['sl'] = round(entry_p - (risk * 0.8), dec)
+                    t['status'] = 'LOCKED_PROFIT_0.8R'
+                    save_vip_trades(trades)
+                    msg_lock = f"""🛡️ <b>[VIP: ĐÃ KHÓA LÃI BẬC THANG +0.8R!]</b> 🛡️
+━━━━━━━━━━━━━━━━━━
+💰 Tài sản: <b>{sym_name}</b>
+📈 Lệnh: <b>🔴 SHORT</b>
+👉 <b>Entry:</b> <code>${entry_p:,.{dec}f}</code> | <b>Giá Hiện Tại:</b> <code>${curr_p:,.{dec}f}</code> (Đạt +1.5R)
+🔒 <b>SL Mới:</b> <code>${t['sl']:,.{dec}f}</code> (Bảo toàn chắc chắn <b>+0.8R</b>!)
+⚡ <i>Không để lợi nhuận đảo chiều về 0. Lệnh tiếp tục gồng về TP2 (${tp2:,.{dec}f})!</i>"""
+                    send_telegram(msg_lock, reply_markup=get_main_keyboard())
+
             # B. Chạm TP2 hoặc Gồng Dài Runner theo CISD M15
             if t.get('tp1_hit') and curr_p <= tp2:
                 t['tp2_hit'] = True
@@ -468,7 +485,22 @@ def check_and_update_vip_trades(curr_gold_p, curr_btc_p):
                 t['close_price'] = curr_p
                 t['close_time'] = time_str
                 t['close_timestamp'] = time.time()
-                if t.get('tp1_hit'):
+                if t.get('locked_in'):
+                    t['status'] = 'CLOSED_LOCK_PROFIT'
+                    t['profit'] = round(abs(entry_p - tp1) * 0.5 + abs(risk * 0.8) * 0.5, dec)
+                    msg = f"""🛡️ <b>[VIP ĐÓNG LỆNH KHÓA LÃI +0.8R BẢO TOÀN THÀNH QUẢ]</b> 🛡️
+━━━━━━━━━━━━━━━━━━
+💰 Tài sản: <b>{sym_name}</b>
+📈 Lệnh: <b>🔴 SHORT</b>
+👉 <b>Entry:</b> <code>${entry_p:,.{dec}f}</code>
+🔒 <b>SL Khóa Lãi Đã Khớp:</b> <code>${sl:,.{dec}f}</code> (+0.8R)
+🎯 <b>TP1 Đã Ăn:</b> <code>${tp1:,.{dec}f}</code> (+1.2R)
+🎉 <b>KẾT QUẢ: BẢO TOÀN TRỌN VẸN LÃI DƯƠNG!</b>
+• 50% khối lượng chốt tại TP1 (+{abs(entry_p - tp1):,.{dec}f} {unit}).
+• 50% khối lượng chốt tại SL Khóa Lãi (+{abs(risk * 0.8):,.{dec}f} {unit}).
+• <b>Tổng Lợi Nhuận: +{abs(t['profit']):,.{dec}f} {unit}</b>
+🟢 Hệ thống đã giải phóng slot, chờ đón cơ hội đẹp tiếp theo!"""
+                elif t.get('tp1_hit'):
                     t['status'] = 'CLOSED_BREAKEVEN'
                     t['profit'] = round(abs(entry_p - tp1) * 0.5, dec) # Đã ăn 50% ở TP1
                     msg = f"""🛡️ <b>[VIP ĐÓNG LỆNH HOÀ VỐN - BẢO TOÀN LÃI TP1]</b> 🛡️
@@ -535,6 +567,23 @@ def check_and_update_vip_trades(curr_gold_p, curr_btc_p):
                 remaining.append(t)
                 continue
 
+            # A2. Trailing Lock: Khi đạt +1.5R -> Khóa chặt +0.8R lợi nhuận
+            risk = abs(entry_p - orig_sl)
+            if t.get('tp1_hit') and not t.get('locked_in'):
+                if curr_p >= entry_p + (risk * 1.5):
+                    t['locked_in'] = True
+                    t['sl'] = round(entry_p + (risk * 0.8), dec)
+                    t['status'] = 'LOCKED_PROFIT_0.8R'
+                    save_vip_trades(trades)
+                    msg_lock = f"""🛡️ <b>[VIP: ĐÃ KHÓA LÃI BẬC THANG +0.8R!]</b> 🛡️
+━━━━━━━━━━━━━━━━━━
+💰 Tài sản: <b>{sym_name}</b>
+📈 Lệnh: <b>🟢 LONG</b>
+👉 <b>Entry:</b> <code>${entry_p:,.{dec}f}</code> | <b>Giá Hiện Tại:</b> <code>${curr_p:,.{dec}f}</code> (Đạt +1.5R)
+🔒 <b>SL Mới:</b> <code>${t['sl']:,.{dec}f}</code> (Bảo toàn chắc chắn <b>+0.8R</b>!)
+⚡ <i>Không để lợi nhuận đảo chiều về 0. Lệnh tiếp tục gồng về TP2 (${tp2:,.{dec}f})!</i>"""
+                    send_telegram(msg_lock, reply_markup=get_main_keyboard())
+
             # B. Chạm TP2 hoặc Gồng Dài Runner theo CISD M15
             if t.get('tp1_hit') and curr_p >= tp2:
                 t['tp2_hit'] = True
@@ -593,7 +642,22 @@ def check_and_update_vip_trades(curr_gold_p, curr_btc_p):
                 t['close_price'] = curr_p
                 t['close_time'] = time_str
                 t['close_timestamp'] = time.time()
-                if t.get('tp1_hit'):
+                if t.get('locked_in'):
+                    t['status'] = 'CLOSED_LOCK_PROFIT'
+                    t['profit'] = round(abs(tp1 - entry_p) * 0.5 + abs(risk * 0.8) * 0.5, dec)
+                    msg = f"""🛡️ <b>[VIP ĐÓNG LỆNH KHÓA LÃI +0.8R BẢO TOÀN THÀNH QUẢ]</b> 🛡️
+━━━━━━━━━━━━━━━━━━
+💰 Tài sản: <b>{sym_name}</b>
+📈 Lệnh: <b>🟢 LONG</b>
+👉 <b>Entry:</b> <code>${entry_p:,.{dec}f}</code>
+🔒 <b>SL Khóa Lãi Đã Khớp:</b> <code>${sl:,.{dec}f}</code> (+0.8R)
+🎯 <b>TP1 Đã Ăn:</b> <code>${tp1:,.{dec}f}</code> (+1.2R)
+🎉 <b>KẾT QUẢ: BẢO TOÀN TRỌN VẸN LÃI DƯƠNG!</b>
+• 50% khối lượng chốt tại TP1 (+{abs(tp1 - entry_p):,.{dec}f} {unit}).
+• 50% khối lượng chốt tại SL Khóa Lãi (+{abs(risk * 0.8):,.{dec}f} {unit}).
+• <b>Tổng Lợi Nhuận: +{abs(t['profit']):,.{dec}f} {unit}</b>
+🟢 Hệ thống đã giải phóng slot, chờ đón cơ hội đẹp tiếp theo!"""
+                elif t.get('tp1_hit'):
                     t['status'] = 'CLOSED_BREAKEVEN'
                     t['profit'] = round(abs(tp1 - entry_p) * 0.5, dec)
                     msg = f"""🛡️ <b>[VIP ĐÓNG LỆNH HOÀ VỐN - BẢO TOÀN LÃI TP1]</b> 🛡️
@@ -1481,8 +1545,8 @@ def calculate_btc_h4_plan():
             if sell_risk < 150.0:
                 sell_sl = round(sell_entry + 200.0, 1)
                 sell_risk = round(sell_sl - sell_entry, 1)
-            sell_tp1 = round(sell_entry - (sell_risk * 1.5), 1)
-            sell_tp2 = round(sell_entry - (sell_risk * 3.0), 1)
+            sell_tp1 = round(sell_entry - (sell_risk * 1.2), 1)
+            sell_tp2 = round(sell_entry - (sell_risk * 2.0), 1)
         else:
             sell_entry = round(bearish_ob['bottom'], 1)
             sell_sl = round(max(bearish_ob['top'] + 150.0, swing_high + 100.0), 1)
@@ -1491,7 +1555,7 @@ def calculate_btc_h4_plan():
                 sell_sl = round(sell_entry + 300.0, 1)
                 sell_risk = round(sell_sl - sell_entry, 1)
             sell_tp1 = round(sell_entry - (sell_risk * 1.2), 1)
-            sell_tp2 = round(sell_entry - (sell_risk * 2.5), 1)
+            sell_tp2 = round(sell_entry - (sell_risk * 2.0), 1)
 
         # 2. Kịch bản CANH BUY (tại Hỗ Trợ H1):
         if is_early_bull and buy_conf:
@@ -1501,8 +1565,8 @@ def calculate_btc_h4_plan():
             if buy_risk < 150.0:
                 buy_sl = round(buy_entry - 200.0, 1)
                 buy_risk = round(buy_entry - buy_sl, 1)
-            buy_tp1 = round(buy_entry + (buy_risk * 1.5), 1)
-            buy_tp2 = round(buy_entry + (buy_risk * 3.0), 1)
+            buy_tp1 = round(buy_entry + (buy_risk * 1.2), 1)
+            buy_tp2 = round(buy_entry + (buy_risk * 2.0), 1)
         else:
             buy_entry = round(bullish_ob['top'], 1)
             buy_sl = round(min(bullish_ob['bottom'] - 150.0, swing_low - 100.0), 1)
@@ -1511,7 +1575,7 @@ def calculate_btc_h4_plan():
                 buy_sl = round(buy_entry - 300.0, 1)
                 buy_risk = round(buy_entry - buy_sl, 1)
             buy_tp1 = round(buy_entry + (buy_risk * 1.2), 1)
-            buy_tp2 = round(buy_entry + (buy_risk * 2.5), 1)
+            buy_tp2 = round(buy_entry + (buy_risk * 2.0), 1)
 
         # Hướng ưu tiên theo xu hướng Tuần/Ngày
         priority_dir = "🔴 CANH SELL (Ưu tiên theo xu hướng Giảm W1/D1)" if (w1_bear and d1_bear) else ("🟢 CANH BUY (Ưu tiên theo xu hướng Tăng)" if (not w1_bear and not d1_bear) else "⚡ LINH HOẠT (Đánh theo phản ứng tại 2 Vùng Cản)")
@@ -1636,7 +1700,7 @@ def handle_btc(chat_id=None):
 👉 <b>Entry Sell:</b> <code>${plan['sell_entry']:,.1f}</code>
 🛡️ <b>Stop Loss:</b> <code>${plan['sell_sl']:,.1f}</code> (~{plan['sell_risk']:,.1f} USD)
 🎯 <b>TP1 (Ăn {plan['sell_risk']*1.2:,.1f} USD | Chốt 50% & Dời Hoà):</b> <code>${plan['sell_tp1']:,.1f}</code>
-🎯 <b>TP2 (Ăn {plan['sell_risk']*2.5:,.1f} USD):</b> <code>${plan['sell_tp2']:,.1f}</code>
+🎯 <b>TP2 (Ăn {plan['sell_risk']*2.0:,.1f} USD):</b> <code>${plan['sell_tp2']:,.1f}</code>
 
 ━━━━━━━━━━━━━━━━━━
 🟢 <b>2. VÙNG CANH BUY (Hỗ Trợ H1):</b>
@@ -1645,7 +1709,7 @@ def handle_btc(chat_id=None):
 👉 <b>Entry Buy:</b> <code>${plan['buy_entry']:,.1f}</code>
 🛡️ <b>Stop Loss:</b> <code>${plan['buy_sl']:,.1f}</code> (~{plan['buy_risk']:,.1f} USD)
 🎯 <b>TP1 (Ăn {plan['buy_risk']*1.2:,.1f} USD | Chốt 50% & Dời Hoà):</b> <code>${plan['buy_tp1']:,.1f}</code>
-🎯 <b>TP2 (Ăn {plan['buy_risk']*2.5:,.1f} USD):</b> <code>${plan['buy_tp2']:,.1f}</code>
+🎯 <b>TP2 (Ăn {plan['buy_risk']*2.0:,.1f} USD):</b> <code>${plan['buy_tp2']:,.1f}</code>
 
 ━━━━━━━━━━━━━━━━━━
 🧠 <b>TRẠNG THÁI HIỆN TẠI:</b>
@@ -1816,8 +1880,8 @@ def calculate_gold_h4_plan():
             if sell_risk < 3.5:
                 sell_sl = round(sell_entry + 5.0, 2)
                 sell_risk = round(sell_sl - sell_entry, 2)
-            sell_tp1 = round(sell_entry - (sell_risk * 1.5), 2)
-            sell_tp2 = round(sell_entry - (sell_risk * 3.0), 2)
+            sell_tp1 = round(sell_entry - (sell_risk * 1.2), 2)
+            sell_tp2 = round(sell_entry - (sell_risk * 2.0), 2)
         else:
             sell_entry = round(b_ob_bot, 2)
             sell_sl = round(max(b_ob_top + 4.0, major_res + 2.5), 2)
@@ -1829,7 +1893,7 @@ def calculate_gold_h4_plan():
                 sell_sl = round(sell_entry + 20.0, 2)
                 sell_risk = round(sell_sl - sell_entry, 2)
             sell_tp1 = round(sell_entry - (sell_risk * 1.2), 2)
-            sell_tp2 = round(sell_entry - (sell_risk * 2.5), 2)
+            sell_tp2 = round(sell_entry - (sell_risk * 2.0), 2)
 
         # 2. Kịch bản CANH BUY (tại Hỗ Trợ H1):
         if is_early_bull and buy_conf:
@@ -1839,8 +1903,8 @@ def calculate_gold_h4_plan():
             if buy_risk < 3.5:
                 buy_sl = round(buy_entry - 5.0, 2)
                 buy_risk = round(buy_entry - buy_sl, 2)
-            buy_tp1 = round(buy_entry + (buy_risk * 1.5), 2)
-            buy_tp2 = round(buy_entry + (buy_risk * 3.0), 2)
+            buy_tp1 = round(buy_entry + (buy_risk * 1.2), 2)
+            buy_tp2 = round(buy_entry + (buy_risk * 2.0), 2)
         else:
             buy_entry = round(bull_ob_top, 2)
             buy_sl = round(min(bull_ob_bot - 4.0, major_sup - 2.5), 2)
@@ -1852,7 +1916,7 @@ def calculate_gold_h4_plan():
                 buy_sl = round(buy_entry - 20.0, 2)
                 buy_risk = round(buy_entry - buy_sl, 2)
             buy_tp1 = round(buy_entry + (buy_risk * 1.2), 2)
-            buy_tp2 = round(buy_entry + (buy_risk * 2.5), 2)
+            buy_tp2 = round(buy_entry + (buy_risk * 2.0), 2)
 
         # Hướng ưu tiên theo xu hướng Tuần/Ngày
         priority_dir = "🔴 CANH SELL (Ưu tiên theo xu hướng Giảm W1/D1)" if (w1_bear and d1_bear) else ("🟢 CANH BUY (Ưu tiên theo xu hướng Tăng)" if (not w1_bear and not d1_bear) else "⚡ LINH HOẠT (Đánh theo phản ứng tại 2 Vùng Cản)")
@@ -1979,7 +2043,7 @@ def handle_gold(chat_id=None):
 👉 <b>Entry Sell:</b> <code>${plan['sell_entry']:,.2f}</code>
 🛡️ <b>Stop Loss:</b> <code>${plan['sell_sl']:,.2f}</code> (~{plan['sell_risk']:,.1f} Giá)
 🎯 <b>TP1 (Ăn {plan['sell_risk']*1.2:,.1f} Giá | Chốt 50% & Dời Hoà):</b> <code>${plan['sell_tp1']:,.2f}</code>
-🎯 <b>TP2 (Ăn {plan['sell_risk']*2.5:,.1f} Giá):</b> <code>${plan['sell_tp2']:,.2f}</code>
+🎯 <b>TP2 (Ăn {plan['sell_risk']*2.0:,.1f} Giá):</b> <code>${plan['sell_tp2']:,.2f}</code>
 
 ━━━━━━━━━━━━━━━━━━
 🟢 <b>2. VÙNG CANH BUY (Hỗ Trợ H1):</b>
@@ -1988,7 +2052,7 @@ def handle_gold(chat_id=None):
 👉 <b>Entry Buy:</b> <code>${plan['buy_entry']:,.2f}</code>
 🛡️ <b>Stop Loss:</b> <code>${plan['buy_sl']:,.2f}</code> (~{plan['buy_risk']:,.1f} Giá)
 🎯 <b>TP1 (Ăn {plan['buy_risk']*1.2:,.1f} Giá | Chốt 50% & Dời Hoà):</b> <code>${plan['buy_tp1']:,.2f}</code>
-🎯 <b>TP2 (Ăn {plan['buy_risk']*2.5:,.1f} Giá):</b> <code>${plan['buy_tp2']:,.2f}</code>
+🎯 <b>TP2 (Ăn {plan['buy_risk']*2.0:,.1f} Giá):</b> <code>${plan['buy_tp2']:,.2f}</code>
 
 ━━━━━━━━━━━━━━━━━━
 🧠 <b>TRẠNG THÁI HIỆN TẠI:</b>
@@ -2428,8 +2492,8 @@ def analyze_scalp_vp_plan(asset='GOLD'):
                 sl = round(entry - risk, 2)
 
             target_up = y_vah if is_l_shape else max(vp['vah'], hod)
-            tp1 = round(entry + risk * 1.5, 2)
-            tp2 = round(max(target_up, entry + risk * 2.8), 2)
+            tp1 = round(entry + risk * 1.2, 2)
+            tp2 = round(entry + risk * 2.0, 2)
         else:
             entry = round(best_rejection['high'] - 1.2, 2) if (best_rejection and abs(curr_p - best_rejection['high']) < 6.0) else round(min(vp['poc'], vp['vah']), 2)
             # Tinh chỉnh SL chuẩn theo High Volume / VAH / POC: đệm an toàn 1.8-2.5 giá ngoài đỉnh râu bảo vệ
@@ -2444,8 +2508,8 @@ def analyze_scalp_vp_plan(asset='GOLD'):
                 sl = round(entry + risk, 2)
 
             target_down = y_val if is_p_shape else min(vp['val'], lod)
-            tp1 = round(entry - risk * 1.5, 2)
-            tp2 = round(min(target_down, entry - risk * 2.8), 2)
+            tp1 = round(entry - risk * 1.2, 2)
+            tp2 = round(entry - risk * 2.0, 2)
     else: # BTC
         if is_buy:
             entry = round(best_rejection['low'] + 50.0, 1) if (best_rejection and abs(curr_p - best_rejection['low']) < 300.0) else round(max(vp['poc'], vp['val']), 1)
@@ -2461,8 +2525,8 @@ def analyze_scalp_vp_plan(asset='GOLD'):
                 sl = round(entry - risk, 1)
 
             target_up = y_vah if is_l_shape else max(vp['vah'], hod)
-            tp1 = round(entry + risk * 1.5, 1)
-            tp2 = round(max(target_up, entry + risk * 2.8), 1)
+            tp1 = round(entry + risk * 1.2, 1)
+            tp2 = round(entry + risk * 2.0, 1)
         else:
             entry = round(best_rejection['high'] - 50.0, 1) if (best_rejection and abs(curr_p - best_rejection['high']) < 300.0) else round(min(vp['poc'], vp['vah']), 1)
             base_top = confirmed_defense['high'] if confirmed_defense else (best_rejection['high'] if best_rejection else max(y_vah, vp['vah']))
@@ -2476,8 +2540,8 @@ def analyze_scalp_vp_plan(asset='GOLD'):
                 sl = round(entry + risk, 1)
 
             target_down = y_val if is_p_shape else min(vp['val'], lod)
-            tp1 = round(entry - risk * 1.5, 1)
-            tp2 = round(min(target_down, entry - risk * 2.8), 1)
+            tp1 = round(entry - risk * 1.2, 1)
+            tp2 = round(entry - risk * 2.0, 1)
 
     wick_str = f"Nến M5 test râu {best_rejection['pct']:.1f}%" if best_rejection else "Giá dao động quanh mốc Volume Profile"
     dec = 2 if asset == 'GOLD' else 1

@@ -38,7 +38,10 @@ input double            InpWickRatio       = 0.40;        // Tỷ lệ râu nế
 input group "=== Quản Lý Lợi Nhuận & Rủi Ro (R:R) ==="
 input ENUM_ASSET_TYPE   InpAssetMode       = ASSET_AUTO;  // Chế độ tài sản
 input double            InpRR_TP1          = 1.2;         // Tỷ lệ R:R cho TP1 (Chốt 50% & Dời Hoà)
-input double            InpRR_TP2          = 2.5;         // Tỷ lệ R:R cho TP2 (Gồng hết sóng)
+input double            InpRR_TP2          = 2.0;         // Tỷ lệ R:R cho TP2 (Điểm ngọt 2.0R tối ưu 41.2% sóng)
+input bool              InpUseTrailingLock = true;        // Bật khóa lãi bậc thang (Trailing Lock-in)
+input double            InpLockTriggerRR   = 1.5;         // Mức R:R kích hoạt khóa lãi (+1.5R)
+input double            InpLockProfitRR    = 0.8;         // Mức R:R khóa cứng bảo toàn (+0.8R)
 input bool              InpUseM15Runner    = true;        // Bật chế độ Gồng Dài theo CISD M15 (Không chốt non TP2)
 input double            InpMinRunnerRR     = 2.2;         // Bắt đầu quét CISD M15 khi đạt R:R >= 2.2
 input double            InpGoldMinSL       = 5.5;         // [Vàng] SL tối thiểu (giá)
@@ -281,22 +284,37 @@ void ManageOpenTrades()
                ExtTrade.PositionModify(ticket, open_p, InpUseM15Runner ? 0.0 : curr_tp);
             }
             // Cơ chế Gồng Dài Runner theo CISD M15 (khi đã dời hoà vốn)
-            else if(InpUseM15Runner && curr_sl >= open_p)
+            else if(curr_sl >= open_p)
             {
-               double cur_rr = (curr_p - open_p) / ExtMinSL;
-               if(cur_rr >= InpMinRunnerRR)
+               // Khóa lãi bậc thang: khi giá đạt +1.5R, nâng SL lên +0.8R để tránh bị tuột về hoà vốn
+               if(InpUseTrailingLock && curr_sl < open_p + ExtMinSL * InpLockProfitRR)
                {
-                  MqlRates m15_rates[];
-                  if(CopyRates(_Symbol, PERIOD_M15, 1, 3, m15_rates) >= 2)
+                  double lock_trigger = open_p + ExtMinSL * InpLockTriggerRR;
+                  if(curr_p >= lock_trigger)
                   {
-                     int sz = ArraySize(m15_rates);
-                     bool is_cisd_bear = (m15_rates[sz - 1].close < m15_rates[sz - 1].open) && 
-                                         (m15_rates[sz - 1].close < MathMin(m15_rates[sz - 2].open, m15_rates[sz - 2].close)) && 
-                                         (m15_rates[sz - 2].close > m15_rates[sz - 2].open);
-                     if(is_cisd_bear)
+                     double locked_sl = NormalizeDouble(open_p + ExtMinSL * InpLockProfitRR, _Digits);
+                     ExtTrade.PositionModify(ticket, locked_sl, curr_tp);
+                     Print("🛡️ [TRAILING LOCK BUY] Giá đã đạt +", InpLockTriggerRR, "R. Tự động nâng SL khóa cứng +", InpLockProfitRR, "R tại: ", locked_sl);
+                  }
+               }
+
+               if(InpUseM15Runner)
+               {
+                  double cur_rr = (curr_p - open_p) / ExtMinSL;
+                  if(cur_rr >= InpMinRunnerRR)
+                  {
+                     MqlRates m15_rates[];
+                     if(CopyRates(_Symbol, PERIOD_M15, 1, 3, m15_rates) >= 2)
                      {
-                        ExtTrade.PositionClose(ticket);
-                        Print("🏁 [M15 CISD BEARISH] Xuất hiện Change in State of Delivery đảo chiều! Đóng toàn bộ phần Runner BUY. Lời: +", DoubleToString(cur_rr, 1), "R");
+                        int sz = ArraySize(m15_rates);
+                        bool is_cisd_bear = (m15_rates[sz - 1].close < m15_rates[sz - 1].open) && 
+                                            (m15_rates[sz - 1].close < MathMin(m15_rates[sz - 2].open, m15_rates[sz - 2].close)) && 
+                                            (m15_rates[sz - 2].close > m15_rates[sz - 2].open);
+                        if(is_cisd_bear)
+                        {
+                           ExtTrade.PositionClose(ticket);
+                           Print("🏁 [M15 CISD BEARISH] Xuất hiện Change in State of Delivery đảo chiều! Đóng toàn bộ phần Runner BUY. Lời: +", DoubleToString(cur_rr, 1), "R");
+                        }
                      }
                   }
                }
@@ -318,22 +336,37 @@ void ManageOpenTrades()
                ExtTrade.PositionModify(ticket, open_p, InpUseM15Runner ? 0.0 : curr_tp);
             }
             // Cơ chế Gồng Dài Runner theo CISD M15 (khi đã dời hoà vốn)
-            else if(InpUseM15Runner && curr_sl <= open_p)
+            else if(curr_sl <= open_p)
             {
-               double cur_rr = (open_p - curr_p) / ExtMinSL;
-               if(cur_rr >= InpMinRunnerRR)
+               // Khóa lãi bậc thang: khi giá đạt +1.5R, nâng SL lên +0.8R để tránh bị tuột về hoà vốn
+               if(InpUseTrailingLock && curr_sl > open_p - ExtMinSL * InpLockProfitRR)
                {
-                  MqlRates m15_rates[];
-                  if(CopyRates(_Symbol, PERIOD_M15, 1, 3, m15_rates) >= 2)
+                  double lock_trigger = open_p - ExtMinSL * InpLockTriggerRR;
+                  if(curr_p <= lock_trigger)
                   {
-                     int sz = ArraySize(m15_rates);
-                     bool is_cisd_bull = (m15_rates[sz - 1].close > m15_rates[sz - 1].open) && 
-                                         (m15_rates[sz - 1].close > MathMax(m15_rates[sz - 2].open, m15_rates[sz - 2].close)) && 
-                                         (m15_rates[sz - 2].close < m15_rates[sz - 2].open);
-                     if(is_cisd_bull)
+                     double locked_sl = NormalizeDouble(open_p - ExtMinSL * InpLockProfitRR, _Digits);
+                     ExtTrade.PositionModify(ticket, locked_sl, curr_tp);
+                     Print("🛡️ [TRAILING LOCK SELL] Giá đã đạt +", InpLockTriggerRR, "R. Tự động nâng SL khóa cứng +", InpLockProfitRR, "R tại: ", locked_sl);
+                  }
+               }
+
+               if(InpUseM15Runner)
+               {
+                  double cur_rr = (open_p - curr_p) / ExtMinSL;
+                  if(cur_rr >= InpMinRunnerRR)
+                  {
+                     MqlRates m15_rates[];
+                     if(CopyRates(_Symbol, PERIOD_M15, 1, 3, m15_rates) >= 2)
                      {
-                        ExtTrade.PositionClose(ticket);
-                        Print("🏁 [M15 CISD BULLISH] Xuất hiện Change in State of Delivery đảo chiều! Đóng toàn bộ phần Runner SELL. Lời: +", DoubleToString(cur_rr, 1), "R");
+                        int sz = ArraySize(m15_rates);
+                        bool is_cisd_bull = (m15_rates[sz - 1].close > m15_rates[sz - 1].open) && 
+                                            (m15_rates[sz - 1].close > MathMax(m15_rates[sz - 2].open, m15_rates[sz - 2].close)) && 
+                                            (m15_rates[sz - 2].close < m15_rates[sz - 2].open);
+                        if(is_cisd_bull)
+                        {
+                           ExtTrade.PositionClose(ticket);
+                           Print("🏁 [M15 CISD BULLISH] Xuất hiện Change in State of Delivery đảo chiều! Đóng toàn bộ phần Runner SELL. Lời: +", DoubleToString(cur_rr, 1), "R");
+                        }
                      }
                   }
                }
