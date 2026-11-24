@@ -140,3 +140,15 @@ Khi lệnh được kích hoạt, EA tự động theo dõi từng tick giá:
    - Tự động dời **SL về đúng giá Entry (Hoà Vốn)**.
    - Kể từ lúc này, **vị thế trở thành Free-Risk (100% không thể thua được nữa)**.
 3. **Khi giá chạm TP2**: Tự động chốt lời nốt 50% khối lượng còn lại, bỏ túi trọn vẹn sóng xoay trục R:R 1:2.5.
+
+---
+
+## 7. CẬP NHẬT: VÀO LỆNH MARKET TRÊN BOT TELEGRAM & EA
+- **Cơ chế Khớp Lệnh Thị Trường (Market Execution):** Thay vì đặt Limit Order (dễ bị hụt entry khi nến M5 rút râu giật mạnh), cả Telegram Bot và EA đều vào lệnh trực tiếp tại giá hiện tại (`Market Order`) ngay khi nến M5 đóng cửa xác nhận nổ Volume Profile tại vùng cản.
+- **Tính toán TP/SL:**
+  - `Entry` = Giá thị trường ngay thời điểm phát tín hiệu / đóng nến M5.
+  - `SL` = Đặt ngoài râu nến M5 phòng thủ.
+  - `TP1` = R:R 1:1.2 (Chốt 50% & kéo SL về Entry hoà vốn).
+  - `TP2` = R:R 1:2.5 (Chốt 50% còn lại gồng về cản đối diện/POC).
+- **Lợi ích:** Không bao giờ bị miss kèo, loại bỏ hoàn toàn tình trạng "lệnh chưa khớp mà giá đã chạy tới TP1".
+

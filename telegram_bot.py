@@ -3318,11 +3318,20 @@ def auto_diamond_alert_worker():
             if not has_active_gold and is_gold_ready:
                 if now - LAST_ALERT_TIME['GOLD'] > 1200: # Cooldown giữa các kèo
                     price_gold = plan_gold['current_price']
-                    entry_gold = plan_gold['entry_limit']
+                    entry_gold = price_gold # Vào ngay theo giá thị trường Market để không bị miss kèo!
+                    sl_gold = plan_gold['sl']
+                    sl_dist_gold = abs(entry_gold - sl_gold)
+                    if plan_gold['signal'] == 'SHORT':
+                        tp1_gold = round(entry_gold - sl_dist_gold * 1.2, 2)
+                        tp2_gold = round(entry_gold - sl_dist_gold * 2.5, 2)
+                    else:
+                        tp1_gold = round(entry_gold + sl_dist_gold * 1.2, 2)
+                        tp2_gold = round(entry_gold + sl_dist_gold * 2.5, 2)
+
                     s_emoji = "🔴 SHORT (BÁN)" if plan_gold['signal'] == 'SHORT' else "🟢 LONG (MUA)"
                     is_rej = 'REJECTION KEYVOLUME M5' in plan_gold.get('confirm_badge', '')
                     title_g = "🚨 <b>[TỰ ĐỘNG BÁO KÈO VIP: REJECTION KEYVOLUME M5 TẠI OB H1]</b> 🚨" if is_rej else "🚨 <b>[TỰ ĐỘNG BÁO KÈO VIP: ĐÃ PHÁ VỠ CẤU TRÚC M15 & KÍCH VOL M5]</b> 🚨"
-                    action_l = "LỆNH VÀO NGAY (Rejection Rút Râu + Nổ Vol M5 tại OB):" if is_rej else "LỆNH VÀO NGAY (M15 Đã Gãy Cấu Trúc + M5 Retest Kích Vol):"
+                    action_l = "LỆNH VÀO NGAY (Market Now - Khớp Tức Thì):"
                     msg = f"""{title_g}
 ━━━━━━━━━━━━━━━━━━
 📊 Nguồn biểu đồ: <b>TradingView (OANDA:XAUUSD - Chuẩn MT5)</b>
@@ -3342,9 +3351,9 @@ def auto_diamond_alert_worker():
    <code>${entry_gold:,.2f}</code>
 
 🛡️ <b>Cắt lỗ (SL Ngoài Râu M5):</b>
-   <code>${plan_gold['sl']:,.2f}</code> (~{plan_gold['sl_dist']:.1f} Giá)
-🎯 <b>Chốt lời 1 (TP1 - R:R 1:1.2 | Chốt 50% & Dời Hoà):</b> <code>${plan_gold['tp1']:,.2f}</code>
-🎯 <b>Chốt lời 2 (TP2 - R:R 1:2.5 | Gồng Về Cản):</b> <code>${plan_gold['tp2']:,.2f}</code>
+   <code>${sl_gold:,.2f}</code> (~{sl_dist_gold:.1f} Giá)
+🎯 <b>Chốt lời 1 (TP1 - R:R 1:1.2 | Chốt 50% & Dời Hoà):</b> <code>${tp1_gold:,.2f}</code>
+🎯 <b>Chốt lời 2 (TP2 - R:R 1:2.5 | Gồng Về Cản):</b> <code>${tp2_gold:,.2f}</code>
 
 🧠 <b>Kế hoạch xử lý:</b>
 {plan_gold['advice']}
@@ -3353,17 +3362,17 @@ def auto_diamond_alert_worker():
 • Rủi ro tối đa 2%: <b>$40.0</b> (tương đương 0.02 - 0.04 lot trên MT5)"""
                     send_telegram(msg)
                     LAST_ALERT_TIME['GOLD'] = now
-                    # Ghi nhận lệnh vào hệ thống theo dõi duy nhất 1 lệnh
+                    # Ghi nhận lệnh vào hệ thống theo dõi duy nhất 1 lệnh (Khớp Market ngay)
                     record_new_vip_trade(
                         asset='GOLD',
                         symbol='XAUUSD',
                         signal=plan_gold['signal'],
                         entry_price=entry_gold,
                         entry_stop=plan_gold.get('entry_stop', 0),
-                        sl=plan_gold['sl'],
-                        tp1=plan_gold['tp1'],
-                        tp2=plan_gold['tp2'],
-                        sl_dist=plan_gold['sl_dist'],
+                        sl=sl_gold,
+                        tp1=tp1_gold,
+                        tp2=tp2_gold,
+                        sl_dist=sl_dist_gold,
                         current_price=price_gold
                     )
 
@@ -3378,11 +3387,20 @@ def auto_diamond_alert_worker():
             if not has_active_btc and is_btc_ready:
                 if now - LAST_ALERT_TIME['BTC'] > 1200:
                     price_btc = plan_btc['current_price']
-                    entry_l = plan_btc['entry_limit']
+                    entry_l = price_btc # Khớp Market tức thì!
+                    sl_btc = plan_btc['sl']
+                    sl_dist_btc = abs(entry_l - sl_btc)
+                    if plan_btc['signal'] == 'SHORT':
+                        tp1_btc = round(entry_l - sl_dist_btc * 1.2, 1)
+                        tp2_btc = round(entry_l - sl_dist_btc * 2.5, 1)
+                    else:
+                        tp1_btc = round(entry_l + sl_dist_btc * 1.2, 1)
+                        tp2_btc = round(entry_l + sl_dist_btc * 2.5, 1)
+
                     s_emoji = "🔴 SHORT (BÁN)" if plan_btc['signal'] == 'SHORT' else "🟢 LONG (MUA)"
                     is_rej_b = 'REJECTION KEYVOLUME M5' in plan_btc.get('confirm_badge', '')
                     title_b = "🚨 <b>[TỰ ĐỘNG BÁO KÈO VIP: REJECTION KEYVOLUME M5 TẠI OB H1]</b> 🚨" if is_rej_b else "🚨 <b>[TỰ ĐỘNG BÁO KÈO VIP: ĐÃ PHÁ VỠ CẤU TRÚC M15 & KÍCH VOL M5]</b> 🚨"
-                    action_l_b = "LỆNH VÀO NGAY (Rejection Rút Râu + Nổ Vol M5 tại OB):" if is_rej_b else "LỆNH VÀO NGAY (M15 Đã Gãy Cấu Trúc + M5 Retest Kích Vol):"
+                    action_l_b = "LỆNH VÀO NGAY (Market Now - Khớp Tức Thì):"
                     msg = f"""{title_b}
 ━━━━━━━━━━━━━━━━━━
 💰 Giá BTC hiện tại: <b>${price_btc:,.1f}</b>
@@ -3400,9 +3418,9 @@ def auto_diamond_alert_worker():
 👉 <b>{action_l_b}:</b>
    <code>${entry_l:,.1f}</code>
 
-🛡️ <b>Cắt lỗ (SL Ngoài Râu M5):</b> <code>${plan_btc['sl']:,.1f}</code> (-{plan_btc['sl_pct']}%)
-🎯 <b>Chốt lời 1 (TP1 - R:R 1:1.2 | Chốt 50% & Dời Hoà):</b> <code>${plan_btc['tp1']:,.1f}</code>
-🎯 <b>Chốt lời 2 (TP2 - R:R 1:2.5 | Gồng Theo Sóng):</b> <code>${plan_btc['tp2']:,.1f}</code>
+🛡️ <b>Cắt lỗ (SL Ngoài Râu M5):</b> <code>${sl_btc:,.1f}</code> (~{sl_dist_btc:,.1f} USD)
+🎯 <b>Chốt lời 1 (TP1 - R:R 1:1.2 | Chốt 50% & Dời Hoà):</b> <code>${tp1_btc:,.1f}</code>
+🎯 <b>Chốt lời 2 (TP2 - R:R 1:2.5 | Gồng Theo Sóng):</b> <code>${tp2_btc:,.1f}</code>
 
 🧠 <b>Kế hoạch xử lý:</b>
 {plan_btc['advice']}
@@ -3417,10 +3435,10 @@ def auto_diamond_alert_worker():
                         signal=plan_btc['signal'],
                         entry_price=entry_l,
                         entry_stop=plan_btc.get('entry_stop', 0),
-                        sl=plan_btc['sl'],
-                        tp1=plan_btc['tp1'],
-                        tp2=plan_btc['tp2'],
-                        sl_dist=abs(entry_l - plan_btc['sl']),
+                        sl=sl_btc,
+                        tp1=tp1_btc,
+                        tp2=tp2_btc,
+                        sl_dist=sl_dist_btc,
                         current_price=price_btc
                     )
 
@@ -3429,10 +3447,18 @@ def auto_diamond_alert_worker():
                 p_gold_vp = analyze_scalp_vp_plan('GOLD')
                 if p_gold_vp and p_gold_vp.get('is_ready_to_enter') and p_gold_vp.get('dist_to_entry', 999) <= 5.0:
                     price_gold = p_gold_vp['curr_p']
-                    entry_g = p_gold_vp['entry']
+                    entry_g = price_gold # Khớp Market tức thì!
                     sl_g = p_gold_vp['sl']
-                    tp1_g = p_gold_vp['tp1']
-                    tp2_g = p_gold_vp['tp2']
+                    sl_dist_g = abs(entry_g - sl_g)
+                    if p_gold_vp['is_buy']:
+                        tp1_g = round(entry_g + sl_dist_g * 1.2, 2)
+                        tp2_g = round(min(entry_g + sl_dist_g * 2.5, p_gold_vp['y_vah']), 2)
+                        if tp2_g <= tp1_g: tp2_g = round(entry_g + sl_dist_g * 2.5, 2)
+                    else:
+                        tp1_g = round(entry_g - sl_dist_g * 1.2, 2)
+                        tp2_g = round(max(entry_g - sl_dist_g * 2.5, p_gold_vp['y_val']), 2)
+                        if tp2_g >= tp1_g: tp2_g = round(entry_g - sl_dist_g * 2.5, 2)
+
                     s_emoji = "🟢 LONG (MUA)" if p_gold_vp['is_buy'] else "🔴 SHORT (BÁN)"
                     action_s = "BUY" if p_gold_vp['is_buy'] else "SELL"
                     z_name = p_gold_vp.get('confirmed_defense', {}).get('zone_name', 'Cản Volume')
@@ -3447,13 +3473,13 @@ def auto_diamond_alert_worker():
 🌅 <b>Hôm Nay:</b> Open: <code>${p_gold_vp['daily_open']:,.2f}</code> | dPOC: <code>${p_gold_vp['poc']:,.2f}</code>
 🧭 <b>Bias:</b> {p_gold_vp['daily_bias']}
 ━━━━━━━━━━━━━━━━━━
-🚀 <b>LỆNH VÀO NGAY: {s_emoji}</b>
-👉 <b>Entry ({action_s} Limit / Now):</b> <code>${entry_g:,.2f}</code>
-🛡️ <b>Cắt lỗ (SL An Toàn Ngoài Cản):</b> <code>${sl_g:,.2f}</code> (~{p_gold_vp['risk']} Giá)
-🎯 <b>Chốt lời 1 (TP1 - Chốt 75%):</b> <code>${tp1_g:,.2f}</code>
+🚀 <b>LỆNH VÀO NGAY (MARKET ENTRY): {s_emoji}</b>
+👉 <b>Giá Vào Ngay (Now):</b> <code>${entry_g:,.2f}</code>
+🛡️ <b>Cắt lỗ (SL An Toàn Ngoài Cản):</b> <code>${sl_g:,.2f}</code> (~{sl_dist_g:.1f} Giá)
+🎯 <b>Chốt lời 1 (TP1 - Chốt 50% & Dời Hoà):</b> <code>${tp1_g:,.2f}</code>
 🎯 <b>Chốt lời 2 (TP2 - Mục Tiêu Xoay Trục {p_gold_vp['y_shape']}):</b> <code>${tp2_g:,.2f}</code>
 
-🧠 <b>Chiến Thuật:</b> Đã có nến M5 nổ Volume xác nhận bảo vệ vùng {z_name}. Chốt 75% tại TP1, dời BE gồng 25% về TP2!"""
+🧠 <b>Chiến Thuật:</b> Đã có nến M5 nổ Volume xác nhận bảo vệ vùng {z_name}. Khớp Market ngay, chốt 50% tại TP1, dời BE gồng 50% về TP2!"""
                     send_telegram(msg_scalp_g)
                     LAST_ALERT_TIME['GOLD_SCALP'] = now
                     record_new_vip_trade(
@@ -3465,7 +3491,7 @@ def auto_diamond_alert_worker():
                         sl=sl_g,
                         tp1=tp1_g,
                         tp2=tp2_g,
-                        sl_dist=p_gold_vp['risk'],
+                        sl_dist=sl_dist_g,
                         current_price=price_gold
                     )
 
@@ -3474,10 +3500,18 @@ def auto_diamond_alert_worker():
                 p_btc_vp = analyze_scalp_vp_plan('BTC')
                 if p_btc_vp and p_btc_vp.get('is_ready_to_enter') and p_btc_vp.get('dist_to_entry', 999) <= 250.0:
                     price_btc = p_btc_vp['curr_p']
-                    entry_b = p_btc_vp['entry']
+                    entry_b = price_btc # Khớp Market tức thì!
                     sl_b = p_btc_vp['sl']
-                    tp1_b = p_btc_vp['tp1']
-                    tp2_b = p_btc_vp['tp2']
+                    sl_dist_b = abs(entry_b - sl_b)
+                    if p_btc_vp['is_buy']:
+                        tp1_b = round(entry_b + sl_dist_b * 1.2, 1)
+                        tp2_b = round(min(entry_b + sl_dist_b * 2.5, p_btc_vp['y_vah']), 1)
+                        if tp2_b <= tp1_b: tp2_b = round(entry_b + sl_dist_b * 2.5, 1)
+                    else:
+                        tp1_b = round(entry_b - sl_dist_b * 1.2, 1)
+                        tp2_b = round(max(entry_b - sl_dist_b * 2.5, p_btc_vp['y_val']), 1)
+                        if tp2_b >= tp1_b: tp2_b = round(entry_b - sl_dist_b * 2.5, 1)
+
                     s_emoji = "🟢 LONG (MUA)" if p_btc_vp['is_buy'] else "🔴 SHORT (BÁN)"
                     action_s = "BUY" if p_btc_vp['is_buy'] else "SELL"
                     z_name_b = p_btc_vp.get('confirmed_defense', {}).get('zone_name', 'Cản Volume')
@@ -3492,13 +3526,13 @@ def auto_diamond_alert_worker():
 🌅 <b>Hôm Nay:</b> Open: <code>${p_btc_vp['daily_open']:,.1f}</code> | dPOC: <code>${p_btc_vp['poc']:,.1f}</code>
 🧭 <b>Bias:</b> {p_btc_vp['daily_bias']}
 ━━━━━━━━━━━━━━━━━━
-🚀 <b>LỆNH VÀO NGAY: {s_emoji}</b>
-👉 <b>Entry ({action_s} Limit / Now):</b> <code>${entry_b:,.1f}</code>
-🛡️ <b>Cắt lỗ (SL An Toàn Ngoài Cản):</b> <code>${sl_b:,.1f}</code> (~{p_btc_vp['risk']:,.1f} USD)
-🎯 <b>Chốt lời 1 (TP1 - Chốt 75%):</b> <code>${tp1_b:,.1f}</code>
+🚀 <b>LỆNH VÀO NGAY (MARKET ENTRY): {s_emoji}</b>
+👉 <b>Giá Vào Ngay (Now):</b> <code>${entry_b:,.1f}</code>
+🛡️ <b>Cắt lỗ (SL An Toàn Ngoài Cản):</b> <code>${sl_b:,.1f}</code> (~{sl_dist_b:,.1f} USD)
+🎯 <b>Chốt lời 1 (TP1 - Chốt 50% & Dời Hoà):</b> <code>${tp1_b:,.1f}</code>
 🎯 <b>Chốt lời 2 (TP2 - Mục Tiêu Xoay Trục {p_btc_vp['y_shape']}):</b> <code>${tp2_b:,.1f}</code>
 
-🧠 <b>Chiến Thuật:</b> Đã có nến M5 nổ Volume xác nhận bảo vệ vùng {z_name_b}. Chốt 75% tại TP1, dời BE gồng 25% về TP2!"""
+🧠 <b>Chiến Thuật:</b> Đã có nến M5 nổ Volume xác nhận bảo vệ vùng {z_name_b}. Khớp Market ngay, chốt 50% tại TP1, dời BE gồng 50% về TP2!"""
                     send_telegram(msg_scalp_b)
                     LAST_ALERT_TIME['BTC_SCALP'] = now
                     record_new_vip_trade(
@@ -3510,7 +3544,7 @@ def auto_diamond_alert_worker():
                         sl=sl_b,
                         tp1=tp1_b,
                         tp2=tp2_b,
-                        sl_dist=p_btc_vp['risk'],
+                        sl_dist=sl_dist_b,
                         current_price=price_btc
                     )
 
