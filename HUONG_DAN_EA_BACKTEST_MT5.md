@@ -164,4 +164,20 @@ Khi lệnh được kích hoạt, EA tự động theo dõi từng tick giá:
   - **Vàng:** Lợi nhuận tăng vọt lên **+14.91 Giá net**, Tụt giảm vốn tối đa (Max Drawdown) giảm mạnh xuống **chỉ 2.0%**!
   - **Bitcoin:** Lọc sạch các pha quét nhiễu, hạn chế tối đa rủi ro cản tàu.
 
+---
+
+## 10. CƠ CHẾ GỒNG RUNNER THEO CISD M15 & SIDEWAY BREAKOUT
+- **Vào lệnh Sniper (M5 Entry):** Vào lệnh tại chóp cản khung M5 với SL siêu ngắn theo râu nến M5.
+- **Khóa lợi nhuận TP1:** Khi đạt R:R 1:1.2, chốt 50% khối lượng và kéo SL về Entry hòa vốn (100% Free-Risk).
+- **Gồng Dài Runner (50% còn lại):**
+  - Không chốt non tại TP2 cố định nếu nến và Volume đang đẩy mạnh.
+  - **Nếu gặp Sideway:** Nếu nến M15 nổ Volume Breakout tiếp diễn theo xu hướng $\rightarrow$ Tiếp tục gồng sóng!
+  - **Chỉ chốt toàn bộ khi xuất hiện CISD M15 (Change In State of Delivery):**
+    - Kèo BUY: Nến M15 đóng cửa sập thủng thân cây nến tăng gần nhất (chuyển sang Sell Program).
+    - Kèo SELL: Nến M15 đóng cửa vượt lên trên thân cây nến giảm gần nhất (chuyển sang Buy Program).
+- **Cài đặt trong EA MT5:**
+  - `InpUseM15Runner = true` (Bật gồng dài M15 Runner).
+  - `InpMinRunnerRR = 2.2` (Bắt đầu quét CISD M15 khi lệnh đã đạt lợi nhuận $\ge 2.2R$).
+
+
 

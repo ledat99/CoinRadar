@@ -123,6 +123,53 @@ def record_new_vip_trade(asset, symbol, signal, entry_price, entry_stop, sl, tp1
     save_vip_trades(trades)
     return new_t
 
+def check_m15_cisd_reversal(asset, signal):
+    """
+    Kiểm tra trạng thái Change in State of Delivery (CISD) trên khung M15:
+    - Đối với lệnh SHORT:
+      + Đang trong đà giảm mạnh (Bearish Delivery).
+      + Nếu nến M15 đóng cửa VƯỢT LÊN TRÊN GIÁ MỞ CỬA (hoặc ĐỈNH) của nến giảm trước đó
+        -> Xác nhận CISD Bullish (Dòng tiền chuyển sang Buy Program) -> Chốt lời toàn bộ Runner!
+    - Đối với lệnh LONG:
+      + Đang trong đà tăng mạnh (Bullish Delivery).
+      + Nếu nến M15 đóng cửa SẬP THỦNG GIÁ MỞ CỬA (hoặc ĐÁY) của nến tăng trước đó
+        -> Xác nhận CISD Bearish (Dòng tiền chuyển sang Sell Program) -> Chốt lời toàn bộ Runner!
+    - Nếu nến M15 phá vỡ Sideway tiếp diễn sóng kèm Volume -> Tiếp tục gồng!
+    """
+    try:
+        if asset == 'GOLD':
+            url = 'https://api.bybit.com/v5/market/kline?category=linear&symbol=XAUUSDT&interval=15&limit=10'
+            req = urllib.request.Request(url, headers=HEADERS)
+            with urllib.request.urlopen(req, timeout=5) as r:
+                data = json.loads(r.read().decode())
+                klines = data['result']['list']
+            if len(klines) < 3: return False, "Thiếu dữ liệu M15"
+            c1, c2 = klines[1], klines[2]
+            o1, cl1, h1, l1 = float(c1[1]), float(c1[4]), float(c1[2]), float(c1[3])
+            o2, cl2, h2, l2 = float(c2[1]), float(c2[4]), float(c2[2]), float(c2[3])
+        else: # BTC
+            url = 'https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=15m&limit=10'
+            req = urllib.request.Request(url, headers=HEADERS)
+            with urllib.request.urlopen(req, timeout=5) as r:
+                klines = json.loads(r.read().decode())
+            if len(klines) < 3: return False, "Thiếu dữ liệu M15"
+            c1, c2 = klines[-2], klines[-3]
+            o1, cl1, h1, l1 = float(c1[1]), float(c1[4]), float(c1[2]), float(c1[3])
+            o2, cl2, h2, l2 = float(c2[1]), float(c2[4]), float(c2[2]), float(c2[3])
+
+        if signal == 'SHORT':
+            is_cisd = (cl1 > o1) and (cl1 > max(o2, cl2)) and (cl2 < o2)
+            if is_cisd:
+                return True, "Nến M15 đóng nến xác nhận CISD BULLISH (Đảo chiều sang Buy Program)"
+        elif signal == 'LONG':
+            is_cisd = (cl1 < o1) and (cl1 < min(o2, cl2)) and (cl2 > o2)
+            if is_cisd:
+                return True, "Nến M15 đóng nến xác nhận CISD BEARISH (Đảo chiều sang Sell Program)"
+
+        return False, "Chưa có tín hiệu đảo chiều CISD (Xu hướng vẫn được bảo vệ)"
+    except Exception as e:
+        return False, str(e)
+
 def check_and_update_vip_trades(curr_gold_p, curr_btc_p):
     trades = load_vip_trades()
     if not trades:
@@ -272,31 +319,59 @@ def check_and_update_vip_trades(curr_gold_p, curr_btc_p):
                 remaining.append(t)
                 continue
 
-            # B. Chạm TP2 (Đóng lệnh toàn bộ)
+            # B. Chạm TP2 hoặc Gồng Dài Runner theo CISD M15
             if t.get('tp1_hit') and curr_p <= tp2:
                 t['tp2_hit'] = True
-                t['close_price'] = curr_p
-                t['close_time'] = time_str
-                t['close_timestamp'] = time.time()
-                t['profit'] = round(entry_p - curr_p, dec)
-                t['status'] = 'CLOSED_TP2'
-                history.append(t)
-                save_vip_history(history)
-                msg = f"""🎉 <b>[VIP CHỐT LỜI 2 (TP2) - FULL TAKE PROFIT ĐỈNH CAO]</b> 🎉
+                is_cisd_rev, cisd_reason = check_m15_cisd_reversal(t['asset'], 'SHORT')
+                
+                # Nếu chưa kích hoạt Runner Mode: Thông báo bắt đầu gồng sóng lớn
+                if not t.get('runner_active'):
+                    if not is_cisd_rev:
+                        t['runner_active'] = True
+                        save_vip_trades(trades)
+                        msg_runner = f"""🚀 <b>[VIP ĐÃ ĐẠT TP2 - BẬT CHẾ ĐỘ GỒNG RUNNER THEO CISD M15]</b> 🚀
 ━━━━━━━━━━━━━━━━━━
 💰 Tài sản: <b>{sym_name}</b>
 📈 Lệnh: <b>🔴 SHORT</b>
-👉 <b>Entry:</b> <code>${entry_p:,.{dec}f}</code>
-🛡️ <b>SL Ban Đầu:</b> <code>${orig_sl:,.{dec}f}</code>
-🎯 <b>Mốc TP1:</b> <code>${tp1:,.{dec}f}</code> | 🎯 <b>TP2:</b> <code>${tp2:,.{dec}f}</code> (✅ Đã Chạm)
-💵 <b>Giá Đóng (TP2):</b> <b>${curr_p:,.{dec}f}</b>
-🔥 <b>TỔNG LỢI NHUẬN TRỌN VẸN: +{abs(t['profit']):,.{dec}f} {unit} (R:R 1:2.5)!</b>
+👉 <b>Entry:</b> <code>${entry_p:,.{dec}f}</code> | 🎯 <b>TP2:</b> <code>${tp2:,.{dec}f}</code> (✅ Đã Chạm)
+💵 <b>Giá Hiện Tại:</b> <b>${curr_p:,.{dec}f}</b>
+🔥 <b>Lợi Nhuận Hiện Tại: +{abs(profit):,.{dec}f} {unit} (R:R > 1:2.5)!</b>
 ━━━━━━━━━━━━━━━━━━
-🏁 <b>KẾT THÚC KÈO VIP HOÀN HẢO:</b>
-• Đã bỏ túi toàn bộ lợi nhuận từ con sóng sập!
-🟢 Hệ thống đã giải phóng vị thế, sẵn sàng đón kèo VIP tiếp theo khi có nến M5 kích Volume!"""
-                send_telegram(msg, reply_markup=get_main_keyboard())
-                continue
+🧠 <b>CHIẾN THUẬT GỒNG SÓNG THÔNG MINH:</b>
+• Khung M15 đang đẩy mạnh, CHƯA XUẤT HIỆN tín hiệu đảo chiều CISD!
+• Không chốt non: Tiếp tục gồng phần Runner còn lại. Nếu giá đi Sideway mà nổ Volume Breakout thì tiếp tục gồng!
+• Lệnh chỉ chốt toàn bộ khi M15 xác nhận đóng nến CISD Bullish (Đảo chiều sang Buy Program)!"""
+                        send_telegram(msg_runner, reply_markup=get_main_keyboard())
+                        remaining.append(t)
+                        continue
+                
+                # Nếu đang trong Runner Mode và xuất hiện CISD M15 đảo chiều: Chốt lời toàn bộ!
+                if is_cisd_rev:
+                    t['close_price'] = curr_p
+                    t['close_time'] = time_str
+                    t['close_timestamp'] = time.time()
+                    t['profit'] = round(entry_p - curr_p, dec)
+                    t['status'] = 'CLOSED_RUNNER'
+                    history.append(t)
+                    save_vip_history(history)
+                    msg = f"""🏁 <b>[VIP CHỐT LỜI RUNNER ĐỈNH CAO - XUẤT HIỆN CISD M15]</b> 🏁
+━━━━━━━━━━━━━━━━━━
+💰 Tài sản: <b>{sym_name}</b>
+📈 Lệnh: <b>🔴 SHORT</b>
+👉 <b>Entry:</b> <code>${entry_p:,.{dec}f}</code> | 🛡️ <b>SL Gốc:</b> <code>${orig_sl:,.{dec}f}</code>
+💵 <b>Giá Chốt Lời Runner:</b> <b>${curr_p:,.{dec}f}</b>
+🔥 <b>TỔNG LỢI NHUẬN TRỌN VẸN: +{abs(t['profit']):,.{dec}f} {unit}!</b>
+━━━━━━━━━━━━━━━━━━
+⚡ <b>LÝ DO ĐÓNG VỊ THẾ:</b>
+• {cisd_reason}.
+• Toàn bộ sóng sập đã được vắt kiệt tối đa, bảo vệ trọn vẹn thành quả!
+🟢 Hệ thống đã giải phóng slot, sẵn sàng đón kèo VIP tiếp theo!"""
+                    send_telegram(msg, reply_markup=get_main_keyboard())
+                    continue
+                else:
+                    # Chưa có CISD đảo chiều -> Tiếp tục gồng sóng!
+                    remaining.append(t)
+                    continue
 
             # C. Chạm SL (Cắt lỗ hoặc Hoà Vốn)
             if curr_p >= sl:
@@ -370,31 +445,58 @@ def check_and_update_vip_trades(curr_gold_p, curr_btc_p):
                 remaining.append(t)
                 continue
 
-            # B. Chạm TP2
+            # B. Chạm TP2 hoặc Gồng Dài Runner theo CISD M15
             if t.get('tp1_hit') and curr_p >= tp2:
                 t['tp2_hit'] = True
-                t['close_price'] = curr_p
-                t['close_time'] = time_str
-                t['close_timestamp'] = time.time()
-                t['profit'] = round(curr_p - entry_p, dec)
-                t['status'] = 'CLOSED_TP2'
-                history.append(t)
-                save_vip_history(history)
-                msg = f"""🎉 <b>[VIP CHỐT LỜI 2 (TP2) - FULL TAKE PROFIT ĐỈNH CAO]</b> 🎉
+                is_cisd_rev, cisd_reason = check_m15_cisd_reversal(t['asset'], 'LONG')
+                
+                # Nếu chưa kích hoạt Runner Mode: Thông báo bắt đầu gồng sóng lớn
+                if not t.get('runner_active'):
+                    if not is_cisd_rev:
+                        t['runner_active'] = True
+                        save_vip_trades(trades)
+                        msg_runner = f"""🚀 <b>[VIP ĐÃ ĐẠT TP2 - BẬT CHẾ ĐỘ GỒNG RUNNER THEO CISD M15]</b> 🚀
 ━━━━━━━━━━━━━━━━━━
 💰 Tài sản: <b>{sym_name}</b>
 📈 Lệnh: <b>🟢 LONG</b>
-👉 <b>Entry:</b> <code>${entry_p:,.{dec}f}</code>
-🛡️ <b>SL Ban Đầu:</b> <code>${orig_sl:,.{dec}f}</code>
-🎯 <b>Mốc TP1:</b> <code>${tp1:,.{dec}f}</code> | 🎯 <b>TP2:</b> <code>${tp2:,.{dec}f}</code> (✅ Đã Chạm)
-💵 <b>Giá Đóng (TP2):</b> <b>${curr_p:,.{dec}f}</b>
-🔥 <b>TỔNG LỢI NHUẬN TRỌN VẸN: +{abs(t['profit']):,.{dec}f} {unit} (R:R 1:2.5)!</b>
+👉 <b>Entry:</b> <code>${entry_p:,.{dec}f}</code> | 🎯 <b>TP2:</b> <code>${tp2:,.{dec}f}</code> (✅ Đã Chạm)
+💵 <b>Giá Hiện Tại:</b> <b>${curr_p:,.{dec}f}</b>
+🔥 <b>Lợi Nhuận Hiện Tại: +{abs(profit):,.{dec}f} {unit} (R:R > 1:2.5)!</b>
 ━━━━━━━━━━━━━━━━━━
-🏁 <b>KẾT THÚC KÈO VIP HOÀN HẢO:</b>
-• Đã bỏ túi toàn bộ lợi nhuận từ con sóng tăng!
-🟢 Hệ thống đã giải phóng vị thế, sẵn sàng đón kèo VIP tiếp theo khi có nến M5 kích Volume!"""
-                send_telegram(msg, reply_markup=get_main_keyboard())
-                continue
+🧠 <b>CHIẾN THUẬT GỒNG SÓNG THÔNG MINH:</b>
+• Khung M15 đang đẩy mạnh, CHƯA XUẤT HIỆN tín hiệu đảo chiều CISD!
+• Không chốt non: Tiếp tục gồng phần Runner còn lại. Nếu giá đi Sideway mà nổ Volume Breakout thì tiếp tục gồng!
+• Lệnh chỉ chốt toàn bộ khi M15 xác nhận đóng nến CISD Bearish (Đảo chiều sang Sell Program)!"""
+                        send_telegram(msg_runner, reply_markup=get_main_keyboard())
+                        remaining.append(t)
+                        continue
+                
+                # Nếu đang trong Runner Mode và xuất hiện CISD M15 đảo chiều: Chốt lời toàn bộ!
+                if is_cisd_rev:
+                    t['close_price'] = curr_p
+                    t['close_time'] = time_str
+                    t['close_timestamp'] = time.time()
+                    t['profit'] = round(curr_p - entry_p, dec)
+                    t['status'] = 'CLOSED_RUNNER'
+                    history.append(t)
+                    save_vip_history(history)
+                    msg = f"""🏁 <b>[VIP CHỐT LỜI RUNNER ĐỈNH CAO - XUẤT HIỆN CISD M15]</b> 🏁
+━━━━━━━━━━━━━━━━━━
+💰 Tài sản: <b>{sym_name}</b>
+📈 Lệnh: <b>🟢 LONG</b>
+👉 <b>Entry:</b> <code>${entry_p:,.{dec}f}</code> | 🛡️ <b>SL Gốc:</b> <code>${orig_sl:,.{dec}f}</code>
+💵 <b>Giá Chốt Lời Runner:</b> <b>${curr_p:,.{dec}f}</b>
+🔥 <b>TỔNG LỢI NHUẬN TRỌN VẸN: +{abs(t['profit']):,.{dec}f} {unit}!</b>
+━━━━━━━━━━━━━━━━━━
+⚡ <b>LÝ DO ĐÓNG VỊ THẾ:</b>
+• {cisd_reason}.
+• Toàn bộ sóng tăng đã được vắt kiệt tối đa, bảo vệ trọn vẹn thành quả!
+🟢 Hệ thống đã giải phóng slot, sẵn sàng đón kèo VIP tiếp theo!"""
+                    send_telegram(msg, reply_markup=get_main_keyboard())
+                    continue
+                else:
+                    remaining.append(t)
+                    continue
 
             # C. Chạm SL
             if curr_p <= sl:
