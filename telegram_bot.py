@@ -486,6 +486,7 @@ def send_telegram(text, reply_markup=None, target_chat_id=None):
 def get_main_keyboard():
     return {
         "keyboard": [
+            [{"text": "💵 Xem Giá Live (Vàng/BTC/ETH)"}],
             [{"text": "👑 Phân Tích BTC"}, {"text": "🥇 Phân Tích VÀNG (XAU)"}],
             [{"text": "🎯 Scalping Volume Profile M5"}, {"text": "⚡ Tuyệt Chiêu H4 Lưỡng Lự"}],
             [{"text": "💣 Săn Coin Rác (Vol > $100M)"}],
@@ -2256,6 +2257,121 @@ def handle_meme_coins(chat_id=None):
         send_telegram(f"⚠️ Lỗi quét Coin Rác: {e}", reply_markup=get_main_keyboard(), target_chat_id=chat_id)
 
 # ==========================================
+# 3.3 TRA CỨU GIÁ LIVE THỊ TRƯỜNG (VÀNG - BITCOIN - ETHEREUM)
+# ==========================================
+def get_live_market_prices():
+    """Lấy giá tức thời thời gian thực của Vàng (OANDA MT5 & Bybit), Bitcoin (BTCUSDT) và Ethereum (ETHUSDT)"""
+    results = {}
+    now_dt = datetime.datetime.now(TZ_VN)
+    time_str = now_dt.strftime('%H:%M:%S %d/%m/%Y')
+    
+    # 1. Bybit Linear Tickers (XAUUSDT, BTCUSDT, ETHUSDT)
+    try:
+        url = 'https://api.bybit.com/v5/market/tickers?category=linear'
+        req = urllib.request.Request(url, headers=HEADERS)
+        with urllib.request.urlopen(req, timeout=5) as r:
+            tickers = json.loads(r.read().decode())['result']['list']
+            t_map = {t['symbol']: t for t in tickers if t['symbol'] in ['BTCUSDT', 'ETHUSDT', 'XAUUSDT']}
+            for sym in ['BTCUSDT', 'ETHUSDT', 'XAUUSDT']:
+                if sym in t_map:
+                    t = t_map[sym]
+                    results[sym] = {
+                        'price': float(t['lastPrice']),
+                        'change': float(t.get('price24hPcnt', 0)) * 100.0,
+                        'high': float(t.get('highPrice24h', 0)),
+                        'low': float(t.get('lowPrice24h', 0)),
+                        'vol_m': float(t.get('turnover24h', 0)) / 1_000_000
+                    }
+    except Exception as e:
+        print(f"Lỗi lấy giá Bybit: {e}")
+
+    # 2. OANDA Gold MT5 từ TradingView
+    oanda_price = None
+    try:
+        tv_url = 'https://scanner.tradingview.com/cfd/scan'
+        tv_payload = json.dumps({
+            "symbols": {"tickers": ["OANDA:XAUUSD"]},
+            "columns": ["close", "bid", "ask", "change"]
+        }).encode()
+        tv_req = urllib.request.Request(tv_url, data=tv_payload, headers={'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(tv_req, timeout=5) as resp:
+            data = json.loads(resp.read().decode())
+            if data.get('data'):
+                row = data['data'][0]['d']
+                oanda_price = {
+                    'price': float(row[0]),
+                    'bid': float(row[1]) if row[1] else float(row[0]),
+                    'ask': float(row[2]) if row[2] else float(row[0]),
+                    'change': float(row[3]) if row[3] else 0.0
+                }
+    except Exception as e:
+        print(f"Lỗi lấy giá OANDA TradingView: {e}")
+
+    return {'time': time_str, 'bybit': results, 'oanda': oanda_price}
+
+def handle_live_price(chat_id=None):
+    """Hiển thị bảng giá tức thời Vàng, BTC, ETH theo thời gian thực"""
+    try:
+        data = get_live_market_prices()
+        time_str = data['time']
+        b = data['bybit']
+        oanda = data['oanda']
+
+        # Gold
+        gold_oanda_p = oanda['price'] if oanda else b.get('XAUUSDT', {}).get('price', 0)
+        gold_bid = oanda['bid'] if oanda else gold_oanda_p
+        gold_ask = oanda['ask'] if oanda else gold_oanda_p
+        gold_bybit = b.get('XAUUSDT', {})
+        gold_bb_p = gold_bybit.get('price', 0)
+        gold_chg = gold_bybit.get('change', 0)
+        gold_low = gold_bybit.get('low', 0)
+        gold_high = gold_bybit.get('high', 0)
+
+        # BTC
+        btc = b.get('BTCUSDT', {})
+        btc_p = btc.get('price', 0)
+        btc_chg = btc.get('change', 0)
+        btc_low = btc.get('low', 0)
+        btc_high = btc.get('high', 0)
+        btc_vol = btc.get('vol_m', 0)
+
+        # ETH
+        eth = b.get('ETHUSDT', {})
+        eth_p = eth.get('price', 0)
+        eth_chg = eth.get('change', 0)
+        eth_low = eth.get('low', 0)
+        eth_high = eth.get('high', 0)
+        eth_vol = eth.get('vol_m', 0)
+
+        g_emoji = "🟢" if gold_chg >= 0 else "🔴"
+        b_emoji = "🟢" if btc_chg >= 0 else "🔴"
+        e_emoji = "🟢" if eth_chg >= 0 else "🔴"
+
+        msg = f"""💵 <b>[BẢNG GIÁ LIVE THỜI GIAN THỰC]</b> 💵
+━━━━━━━━━━━━━━━━━━
+🥇 <b>VÀNG (XAUUSD):</b>
+• <b>OANDA (Chuẩn MT5):</b> <b>${gold_oanda_p:,.2f}</b> (Bid: <code>${gold_bid:,.2f}</code> | Ask: <code>${gold_ask:,.2f}</code>)
+• <b>Bybit Linear:</b> <b>${gold_bb_p:,.2f}</b> ({g_emoji} <b>{gold_chg:+.2f}%</b>)
+• Biên độ 24h: <code>${gold_low:,.2f}</code> ➔ <code>${gold_high:,.2f}</code>
+
+👑 <b>BITCOIN (BTCUSDT):</b>
+• <b>Thị giá:</b> <b>${btc_p:,.1f} USD</b> ({b_emoji} <b>{btc_chg:+.2f}%</b>)
+• Biên độ 24h: <code>${btc_low:,.1f}</code> ➔ <code>${btc_high:,.1f}</code>
+• Volume 24h: <b>${btc_vol:,.0f}M USDT</b>
+
+💎 <b>ETHEREUM (ETHUSDT):</b>
+• <b>Thị giá:</b> <b>${eth_p:,.2f} USD</b> ({e_emoji} <b>{eth_chg:+.2f}%</b>)
+• Biên độ 24h: <code>${eth_low:,.2f}</code> ➔ <code>${eth_high:,.2f}</code>
+• Volume 24h: <b>${eth_vol:,.0f}M USDT</b>
+━━━━━━━━━━━━━━━━━━
+⏱️ <i>Cập nhật lúc: {time_str}</i>
+💡 <i>Bấm nút <b>💵 Xem Giá Live (Vàng/BTC/ETH)</b> bất kỳ lúc nào để làm mới giá ngay!</i>"""
+
+        send_telegram(msg, reply_markup=get_main_keyboard(), target_chat_id=chat_id)
+    except Exception as e:
+        send_telegram(f"⚠️ Lỗi lấy giá live: {e}", reply_markup=get_main_keyboard(), target_chat_id=chat_id)
+
+# ==========================================
 # 4. ĐÁNH GIÁ & LỌC CỔ PHIẾU VIỆT NAM (VN-INDEX, P/E < 10, G > 10%)
 # ==========================================
 VN_WATCHLIST = [
@@ -2617,6 +2733,7 @@ Tài khoản của bạn hiện tại chưa được cấp quyền sử dụng h
                     if text in ["/start", "menu", "Menu", "⚙️ Menu Hỗ Trợ"]:
                         menu_help = """🤖 <b>BẢNG ĐIỀU KHIỂN & MENU TÍNH NĂNG BOT:</b>
 ━━━━━━━━━━━━━━━━━━
+💵 <b>Xem Giá Live:</b> Cập nhật tức thời giá Vàng (OANDA MT5 & Bybit), Bitcoin, Ethereum
 👑 <b>Phân Tích BTC:</b> Bias W1/D1 + SMC KeyVolume H1 & M5
 🥇 <b>Phân Tích VÀNG (XAU):</b> Chuẩn OANDA MT5 + SMC H1 OB
 🎯 <b>Scalping Volume Profile M5:</b> Đánh xoay trục L-Shape/P-Shape hôm trước (yVAL/yVAH) & dPOC
@@ -2627,8 +2744,10 @@ Tài khoản của bạn hiện tại chưa được cấp quyền sử dụng h
 🇻🇳 <b>Đánh Giá Cổ Phiếu VN:</b> Định giá PE < 10, G > 10%, dòng tiền & lãi suất
 🔍 <b>Kiểm Tra Lệnh & Báo Cáo Ngày:</b> Live Radar trực tiếp + Quản lý lệnh đang chạy
 
-💡 <i>Bấm các nút bên dưới hoặc gõ trực tiếp lệnh (/gold, /btc, /scalp, /meme, /h4, /check, /vnstock)!</i>"""
+💡 <i>Bấm các nút bên dưới hoặc gõ trực tiếp lệnh (/price, /gold, /btc, /scalp, /meme, /h4, /check, /vnstock)!</i>"""
                         send_telegram(menu_help, reply_markup=get_main_keyboard(), target_chat_id=chat_id)
+                    elif text in ["/price", "/gia", "/xemgia", "/live", "💵 Xem Giá Live (Vàng/BTC/ETH)", "gia", "giá", "price", "xem gia", "xem giá"]:
+                        handle_live_price(chat_id=chat_id)
                     elif text in ["/check", "check", "🔍 Kiểm Tra Lệnh & Báo Cáo Ngày"]:
                         handle_check_vip_trades(chat_id=chat_id)
                     elif text in ["/meme", "/coinrac", "/junk", "/gem", "/alt", "💣 Săn Coin Rác (Vol > $100M)", "coinrac", "coin rác", "Coin rác", "săn coin rác", "san coin rac"]:
