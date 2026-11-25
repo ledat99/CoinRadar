@@ -3932,6 +3932,7 @@ def handle_us_macro_news(chat_id=None):
 
         # Phần B: Lịch tin Đỏ cố định của Mỹ trong tuần
         msg += "📅 <b>TIN ĐỎ QUAN TRỌNG CỦA MỸ TRONG TUẦN:</b>\n"
+        good_usd_cnt, bad_usd_cnt = 0, 0
         if usd_events:
             for ev in usd_events[:6]:
                 title = ev.get('title', 'USD News')
@@ -3962,7 +3963,25 @@ def handle_us_macro_news(chat_id=None):
                 msg += f"• <b>{title}</b> ({status_tag} - <code>{vn_time_str}</code>)\n"
                 act_v = ev.get('actual', '')
                 if act_v:
-                    msg += f"  Thực tế: <b><code>{act_v}</code></b> | Dự báo: <code>{fcst_v}</code> | Kỳ trước: <code>{prev_v}</code>\n"
+                    verdict_str = ""
+                    try:
+                        a_num = float(str(act_v).replace('%', '').replace('K', '').replace('M', '').replace('B', '').strip())
+                        f_raw = fcst_v if fcst_v != 'N/A' else prev_v
+                        f_num = float(str(f_raw).replace('%', '').replace('K', '').replace('M', '').replace('B', '').strip())
+                        is_inv = ('unemployment' in t_low or 'jobless' in t_low)
+                        if a_num != f_num:
+                            is_good_usd = (a_num < f_num) if is_inv else (a_num > f_num)
+                            if is_good_usd:
+                                good_usd_cnt += 1
+                                verdict_str = " ➔ 📈 <b>TỐT USD (Áp lực SHORT)</b>"
+                            else:
+                                bad_usd_cnt += 1
+                                verdict_str = " ➔ 📉 <b>XẤU USD (Hỗ trợ BUY)</b>"
+                        else:
+                            verdict_str = " ➔ ⚖️ <b>Đúng dự báo</b>"
+                    except Exception:
+                        pass
+                    msg += f"  Thực tế: <b><code>{act_v}</code></b> | Dự báo: <code>{fcst_v}</code> | Kỳ trước: <code>{prev_v}</code>{verdict_str}\n"
                 else:
                     msg += f"  Kỳ trước: <code>{prev_v}</code> | Dự báo: <code>{fcst_v}</code>\n"
                 msg += f"  ↳ <i>Tác động:</i> {rule}\n"
@@ -3980,7 +3999,14 @@ def handle_us_macro_news(chat_id=None):
 
         # Phần D: Kết luận View Dài Hạn trước tin
         msg += "\n━━━━━━━━━━━━━━━━━━\n"
-        msg += "🧭 <b>KẾT LUẬN VIEW DÀI HẠN TRƯỚC TIN (W1/D1):</b>\n"
+        msg += "🧭 <b>KẾT LUẬN CANH BUY / SHORT THEO TIN MỸ:</b>\n"
+        if bad_usd_cnt > good_usd_cnt:
+            news_call = "🟢 <b>CANH BUY (LONG) Vàng &amp; BTC</b> (Tin ra XẤU cho USD áp đảo)"
+        elif good_usd_cnt > bad_usd_cnt:
+            news_call = "🔴 <b>CANH SHORT (BÁN) Vàng &amp; BTC</b> (Tin ra TỐT cho USD áp đảo)"
+        else:
+            news_call = "⚖️ <b>TRUNG TÍNH</b> (Tin đúng dự báo / cân bằng ➔ Đánh thuận xu hướng W1/D1 bên dưới)"
+        msg += f"• 🎯 <b>Chiến lược theo tin vừa ra:</b> {news_call}\n"
         msg += f"• 🥇 <b>VÀNG (XAUUSD):</b> W1 {g_w1} | D1 {g_d1}\n  👉 Ưu tiên dài hạn: <b>{g_dir}</b>\n"
         msg += f"• 👑 <b>BITCOIN (BTC):</b> W1 {b_w1} | D1 {b_d1}\n  👉 Ưu tiên dài hạn: <b>{b_dir}</b>\n\n"
         msg += "💡 <i>Nguyên tắc đánh tin: Tuyệt đối không đoán mò trước giờ ra tin 15 phút. Chờ nến M15/H1 đóng sau tin xác nhận đồng pha với View dài hạn mới vào lệnh!</i>"
