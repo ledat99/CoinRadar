@@ -3802,25 +3802,32 @@ def compute_macro_backtest_stats():
         if not bars or len(bars) < 60 or not news_outcome_by_date:
             return []
         bars_asc = sorted(bars, key=lambda x: x[0])
+        date_to_idx = {}
+        for idx, b in enumerate(bars_asc):
+            d_str = datetime.datetime.fromtimestamp(b[0] / 1000, tz=datetime.timezone.utc).strftime('%Y-%m-%d')
+            date_to_idx[d_str] = idx
+
+        # Sắp xếp các ngày ra tin theo thứ tự thời gian và đo từ sau ngày ra tin (T+1) đến ngày ra tin tiếp theo
+        sorted_news_dates = sorted(d for d in news_outcome_by_date.keys() if d in date_to_idx)
         good_usd = []  # Tin TỐT cho USD (Actual > Forecast)
         bad_usd = []   # Tin XẤU cho USD (Actual < Forecast)
 
-        for i in range(len(bars_asc) - 31):
-            dt_str = datetime.datetime.fromtimestamp(bars_asc[i][0] / 1000, tz=datetime.timezone.utc).strftime('%Y-%m-%d')
-            outcome = news_outcome_by_date.get(dt_str)
-            if not outcome:
+        for k in range(len(sorted_news_dates) - 1):
+            d_curr = sorted_news_dates[k]
+            d_next = sorted_news_dates[k + 1]
+            idx_start = date_to_idx[d_curr] + 1  # Sau ngày ra tin (T+1)
+            idx_end = date_to_idx[d_next]        # Đến ngày ra tin tiếp theo
+            if idx_start >= idx_end or idx_end >= len(bars_asc):
                 continue
-            c0 = float(bars_asc[i][4])
-            if c0 <= 0:
+            c_start = float(bars_asc[idx_start][4])
+            c_end = float(bars_asc[idx_end][4])
+            if c_start <= 0:
                 continue
-            r7 = (float(bars_asc[i + 7][4]) - c0) / c0 * 100.0
-            r14 = (float(bars_asc[i + 14][4]) - c0) / c0 * 100.0
-            r30 = (float(bars_asc[i + 30][4]) - c0) / c0 * 100.0
-            tup = (r7, r14, r30)
-            if outcome == 'GOOD_USD':
-                good_usd.append(tup)
+            ret = (c_end - c_start) / c_start * 100.0
+            if news_outcome_by_date[d_curr] == 'GOOD_USD':
+                good_usd.append(ret)
             else:
-                bad_usd.append(tup)
+                bad_usd.append(ret)
 
         out = []
         for lbl, arr in [
@@ -3830,17 +3837,12 @@ def compute_macro_backtest_stats():
             if not arr:
                 continue
             n = len(arr)
-            w7 = sum(1 for x in arr if x[0] > 0) / n * 100.0
-            a7 = sum(x[0] for x in arr) / n
-            w14 = sum(1 for x in arr if x[1] > 0) / n * 100.0
-            a14 = sum(x[1] for x in arr) / n
-            w30 = sum(1 for x in arr if x[2] > 0) / n * 100.0
-            a30 = sum(x[2] for x in arr) / n
-            avg_wr = (w14 + w30) / 2.0
-            bias = "🟢 <b>LONG Swing</b>" if avg_wr >= 56 else ("🔴 <b>SHORT Swing</b>" if avg_wr <= 44 else "⚖️ <b>Trung tính</b>")
+            win_long = sum(1 for x in arr if x > 0) / n * 100.0
+            avg_ret = sum(arr) / n
+            bias = "🟢 <b>LONG Swing</b>" if (win_long >= 55 and avg_ret > 0) else ("🔴 <b>SHORT Swing</b>" if (win_long <= 45 and avg_ret < 0) else "⚖️ <b>Trung tính</b>")
             out.append(
                 f"  - {lbl} ({n} kỳ):\n"
-                f"    • 7D: Tăng <b>{w7:.0f}%</b> (<code>{a7:+.1f}%</code>) | 14D: <b>{w14:.0f}%</b> (<code>{a14:+.1f}%</code>) | 30D: <b>{w30:.0f}%</b> (<code>{a30:+.1f}%</code>) ➔ {bias}"
+                f"    • Từ sau tin ➔ tin kế tiếp: Tăng <b>{win_long:.0f}%</b> | Giảm <b>{100-win_long:.0f}%</b> | TB: <code>{avg_ret:+.2f}%</code> ➔ {bias}"
             )
         return out
 
