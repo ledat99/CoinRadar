@@ -3758,54 +3758,86 @@ def start_health_server():
 MACRO_BT_CACHE = {'ts': 0, 'text': ''}
 
 def compute_macro_backtest_stats():
-    """Backtest phản ứng giá ngày hôm sau (T+1) của Vàng & BTC sau các kỳ tin cố định Mỹ trên 500 ngày gần nhất"""
+    """Backtest phản ứng giá Swing dài hạn (T+7, T+14, T+30) của Vàng & BTC sau tất cả các tin kinh tế quan trọng của Mỹ trên 1000 ngày (~3 năm)"""
     global MACRO_BT_CACHE
     if time.time() - MACRO_BT_CACHE['ts'] < 3600 and MACRO_BT_CACHE['text']:
         return MACRO_BT_CACHE['text']
 
     def _calc(bars):
-        if not bars or len(bars) < 30:
+        if not bars or len(bars) < 60:
             return []
         bars_asc = sorted(bars, key=lambda x: x[0])
-        nfp, cpi, pce = [], [], []
-        for i in range(len(bars_asc) - 2):
+        # Nhóm các sự kiện kinh tế Mỹ cố định: FOMC/Lãi suất, NFP, CPI, Core PCE, GDP/PMI
+        groups = {
+            "Lãi suất Fed / FOMC": [],
+            "Non-Farm (NFP - Việc làm)": [],
+            "CPI (Lạm phát)": [],
+            "Core PCE (Lạm phát Fed)": [],
+            "GDP / PMI (Tăng trưởng)": []
+        }
+        fomc_months = {1, 3, 5, 6, 7, 9, 11, 12}
+
+        for i in range(len(bars_asc) - 31):
             dt = datetime.datetime.fromtimestamp(bars_asc[i][0] / 1000, tz=datetime.timezone.utc)
             c0 = float(bars_asc[i][4])
-            c1 = float(bars_asc[i + 1][4])
             if c0 <= 0:
                 continue
-            ret = (c1 - c0) / c0 * 100.0
-            if dt.weekday() == 4 and 1 <= dt.day <= 7:
-                nfp.append(ret)
+            r7 = (float(bars_asc[i + 7][4]) - c0) / c0 * 100.0
+            r14 = (float(bars_asc[i + 14][4]) - c0) / c0 * 100.0
+            r30 = (float(bars_asc[i + 30][4]) - c0) / c0 * 100.0
+            tup = (r7, r14, r30)
+
+            # FOMC / Lãi suất Fed: Thứ 4 tuần thứ 3-4 các tháng họp FOMC
+            if dt.weekday() == 2 and dt.month in fomc_months and 14 <= dt.day <= 22:
+                groups["Lãi suất Fed / FOMC"].append(tup)
+            # NFP: Thứ 6 đầu tháng
+            elif dt.weekday() == 4 and 1 <= dt.day <= 7:
+                groups["Non-Farm (NFP - Việc làm)"].append(tup)
+            # CPI: Giữa tháng (ngày 11-14)
             elif dt.weekday() in (1, 2, 3) and 11 <= dt.day <= 14:
-                cpi.append(ret)
+                groups["CPI (Lạm phát)"].append(tup)
+            # Core PCE: Cuối tháng (ngày 25-31)
             elif dt.weekday() == 4 and dt.day >= 25:
-                pce.append(ret)
+                groups["Core PCE (Lạm phát Fed)"].append(tup)
+            # GDP / ISM PMI: Ngày đầu tháng (ngày 1-3) hoặc cuối tháng (25-28 Thứ 5)
+            elif (dt.weekday() in (0, 1, 2) and 1 <= dt.day <= 3) or (dt.weekday() == 3 and 25 <= dt.day <= 28):
+                groups["GDP / PMI (Tăng trưởng)"].append(tup)
+
         out = []
-        for lbl, arr in [("NFP (Đầu tháng)", nfp), ("CPI (Giữa tháng)", cpi), ("Core PCE (Cuối tháng)", pce)]:
-            if arr:
-                wins = sum(1 for x in arr if x > 0)
-                wr = wins / len(arr) * 100.0
-                avg = sum(arr) / len(arr)
-                bias = "🟢 Canh LONG" if wr >= 55 else ("🔴 Canh SHORT" if wr <= 45 else "⚖️ Trung tính")
-                out.append(f"  - {lbl}: {len(arr)} kỳ | Tăng <b>{wr:.0f}%</b> (TB <code>{avg:+.2f}%</code>) ➔ {bias}")
+        for lbl, arr in groups.items():
+            if not arr:
+                continue
+            n = len(arr)
+            w7 = sum(1 for x in arr if x[0] > 0) / n * 100.0
+            a7 = sum(x[0] for x in arr) / n
+            w14 = sum(1 for x in arr if x[1] > 0) / n * 100.0
+            a14 = sum(x[1] for x in arr) / n
+            w30 = sum(1 for x in arr if x[2] > 0) / n * 100.0
+            a30 = sum(x[2] for x in arr) / n
+            # Kết luận Swing dựa trên T+14 & T+30
+            avg_wr = (w14 + w30) / 2.0
+            bias = "🟢 <b>LONG Swing</b>" if avg_wr >= 56 else ("🔴 <b>SHORT Swing</b>" if avg_wr <= 44 else "⚖️ <b>Trung tính</b>")
+            out.append(
+                f"  - <b>{lbl}</b> ({n} kỳ):\n"
+                f"    • 7D: Tăng <b>{w7:.0f}%</b> (<code>{a7:+.1f}%</code>) | 14D: <b>{w14:.0f}%</b> (<code>{a14:+.1f}%</code>) | 30D: <b>{w30:.0f}%</b> (<code>{a30:+.1f}%</code>) ➔ {bias}"
+            )
         return out
 
     lines = []
     try:
-        g_lines = _calc(get_oanda_klines('D', 500))
+        g_lines = _calc(get_oanda_klines('D', 1000))
         if g_lines:
-            lines.append("• 🥇 <b>VÀNG (T+1 sau tin):</b>\n" + "\n".join(g_lines))
+            lines.append("• 🥇 <b>VÀNG (XAUUSD - Swing 7D/14D/30D):</b>\n" + "\n".join(g_lines))
     except Exception:
         pass
     try:
-        b_lines = _calc(get_binance_klines('BTCUSDT', '1d', 500))
+        b_lines = _calc(get_binance_klines('BTCUSDT', '1d', 1000))
         if b_lines:
-            lines.append("• 👑 <b>BITCOIN (T+1 sau tin):</b>\n" + "\n".join(b_lines))
+            lines.append("• 👑 <b>BITCOIN (BTCUSDT - Swing 7D/14D/30D):</b>\n" + "\n".join(b_lines))
     except Exception:
         pass
 
-    res = "\n".join(lines) if lines else "• <i>Đang đồng bộ dữ liệu backtest 500 ngày...</i>"
+    res = "\n".join(lines) if lines else "• <i>Đang đồng bộ dữ liệu backtest 1000 ngày...</i>"
     MACRO_BT_CACHE = {'ts': time.time(), 'text': res}
     return res
 
@@ -3916,7 +3948,7 @@ def handle_us_macro_news(chat_id=None):
         # Phần C: Backtest lịch sử ngày hôm sau (T+1) trên 500 ngày gần nhất
         bt_text = compute_macro_backtest_stats()
         msg += "\n━━━━━━━━━━━━━━━━━━\n"
-        msg += "📊 <b>BACKTEST LỊCH SỬ NGÀY HÔM SAU TIN (T+1 / 500 NGÀY):</b>\n"
+        msg += "📊 <b>BACKTEST SWING DÀI HẠN SAU TIN (7D / 14D / 30D - ~3 NĂM):</b>\n"
         msg += bt_text + "\n"
 
         # Phần D: Kết luận View Dài Hạn trước tin
