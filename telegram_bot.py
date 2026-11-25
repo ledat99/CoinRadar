@@ -1291,7 +1291,8 @@ def get_main_keyboard():
             [{"text": "🇻🇳 Đánh Giá Cổ Phiếu VN"}, {"text": "🔍 Kiểm Tra Lệnh & Báo Cáo Ngày"}],
             [{"text": "⚙️ Menu Hỗ Trợ"}]
         ],
-        "resize_keyboard": True
+        "resize_keyboard": True,
+        "is_persistent": True
     }
 
 
