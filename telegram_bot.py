@@ -3758,45 +3758,58 @@ def start_health_server():
 MACRO_BT_CACHE = {'ts': 0, 'text': ''}
 
 def compute_macro_backtest_stats():
-    """Backtest phản ứng giá Swing dài hạn (7D/14D/30D) chia theo 2 kịch bản: Tin TỐT cho USD (DXY tăng) vs Tin XẤU cho USD (DXY giảm)"""
+    """Backtest Swing (7D/14D/30D) dựa trên số liệu THỰC TẾ (Actual vs Forecast) của tất cả tin Đỏ Mỹ từ TradingView Economic Calendar"""
     global MACRO_BT_CACHE
     if time.time() - MACRO_BT_CACHE['ts'] < 3600 and MACRO_BT_CACHE['text']:
         return MACRO_BT_CACHE['text']
 
-    # Map ngày (YYYY-MM-DD) -> DXY % thay đổi trong ngày ra tin
-    dxy_day_ret = {}
+    # 1. Lấy lịch sử tin Đỏ Mỹ (importance == 1) ~2-3 năm từ TradingView Economic Calendar
+    news_outcome_by_date = {}  # 'YYYY-MM-DD' -> 'GOOD_USD' | 'BAD_USD'
     try:
-        dxy_bars = get_oanda_klines('D', 1000, tv_symbol='TVC:DXY')
-        for b in dxy_bars:
-            dt_str = datetime.datetime.fromtimestamp(b[0] / 1000, tz=datetime.timezone.utc).strftime('%Y-%m-%d')
-            o, c = float(b[1]), float(b[4])
-            if o > 0:
-                dxy_day_ret[dt_str] = (c - o) / o * 100.0
-    except Exception:
-        pass
+        now_utc = datetime.datetime.now(datetime.timezone.utc)
+        from_dt = (now_utc - datetime.timedelta(days=900)).strftime('%Y-%m-%dT00:00:00.000Z')
+        to_dt = now_utc.strftime('%Y-%m-%dT23:59:59.000Z')
+        cal_url = f"https://economic-calendar.tradingview.com/events?from={from_dt}&to={to_dt}&countries=US"
+        req = urllib.request.Request(cal_url, headers={'User-Agent': 'Mozilla/5.0', 'Origin': 'https://www.tradingview.com'})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            cal_data = json.loads(r.read().decode())
+        for ev in cal_data.get('result', []):
+            if ev.get('importance') != 1:
+                continue
+            act = ev.get('actual')
+            fcst = ev.get('forecast')
+            if fcst is None:
+                fcst = ev.get('previous')
+            if act is None or fcst is None:
+                continue
+            try:
+                act_f = float(act)
+                fcst_f = float(fcst)
+            except Exception:
+                continue
+            if act_f == fcst_f:
+                continue
+            title_l = str(ev.get('title', '')).lower()
+            is_inverse = ('unemployment' in title_l or 'jobless' in title_l)
+            good_usd = (act_f < fcst_f) if is_inverse else (act_f > fcst_f)
+            dt_str = str(ev.get('date', ''))[:10]
+            if dt_str:
+                news_outcome_by_date[dt_str] = 'GOOD_USD' if good_usd else 'BAD_USD'
+    except Exception as e:
+        print(f"Lỗi lấy TradingView Economic Calendar: {e}")
 
     def _calc_conditional(bars):
-        if not bars or len(bars) < 60:
+        if not bars or len(bars) < 60 or not news_outcome_by_date:
             return []
         bars_asc = sorted(bars, key=lambda x: x[0])
-        fomc_months = {1, 3, 5, 6, 7, 9, 11, 12}
-        # Chia 2 rổ: Tin TỐT cho USD (DXY tăng > 0) vs Tin XẤU cho USD (DXY giảm < 0)
-        good_usd = []  # Xấu cho Vàng & Tài sản rủi ro
-        bad_usd = []   # Tốt cho Vàng & Tài sản rủi ro
+        good_usd = []  # Tin TỐT cho USD (Actual > Forecast)
+        bad_usd = []   # Tin XẤU cho USD (Actual < Forecast)
 
         for i in range(len(bars_asc) - 31):
-            dt = datetime.datetime.fromtimestamp(bars_asc[i][0] / 1000, tz=datetime.timezone.utc)
-            dt_str = dt.strftime('%Y-%m-%d')
-            is_news_day = (
-                (dt.weekday() == 2 and dt.month in fomc_months and 14 <= dt.day <= 22) or  # FOMC/Rate
-                (dt.weekday() == 4 and 1 <= dt.day <= 7) or                                # NFP
-                (dt.weekday() in (1, 2, 3) and 11 <= dt.day <= 14) or                      # CPI
-                (dt.weekday() == 4 and dt.day >= 25) or                                    # Core PCE
-                (dt.weekday() in (0, 1, 2) and 1 <= dt.day <= 3)                           # ISM PMI/GDP
-            )
-            if not is_news_day or dt_str not in dxy_day_ret:
+            dt_str = datetime.datetime.fromtimestamp(bars_asc[i][0] / 1000, tz=datetime.timezone.utc).strftime('%Y-%m-%d')
+            outcome = news_outcome_by_date.get(dt_str)
+            if not outcome:
                 continue
-
             c0 = float(bars_asc[i][4])
             if c0 <= 0:
                 continue
@@ -3804,16 +3817,15 @@ def compute_macro_backtest_stats():
             r14 = (float(bars_asc[i + 14][4]) - c0) / c0 * 100.0
             r30 = (float(bars_asc[i + 30][4]) - c0) / c0 * 100.0
             tup = (r7, r14, r30)
-
-            if dxy_day_ret[dt_str] > 0:
+            if outcome == 'GOOD_USD':
                 good_usd.append(tup)
             else:
                 bad_usd.append(tup)
 
         out = []
         for lbl, arr in [
-            ("📈 Tin <b>TỐT cho USD</b> (DXY tăng ➔ Áp lực Vàng/BTC)", good_usd),
-            ("📉 Tin <b>XẤU cho USD</b> (DXY giảm ➔ Hỗ trợ Vàng/BTC)", bad_usd)
+            ("📈 Tin <b>TỐT cho USD</b> (Actual &gt; Dự báo)", good_usd),
+            ("📉 Tin <b>XẤU cho USD</b> (Actual &lt; Dự báo)", bad_usd)
         ]:
             if not arr:
                 continue
@@ -3836,17 +3848,17 @@ def compute_macro_backtest_stats():
     try:
         g_lines = _calc_conditional(get_oanda_klines('D', 1000))
         if g_lines:
-            lines.append("• 🥇 <b>VÀNG (XAUUSD - Theo kết quả tin):</b>\n" + "\n".join(g_lines))
+            lines.append("• 🥇 <b>VÀNG (XAUUSD - Theo Actual vs Dự báo):</b>\n" + "\n".join(g_lines))
     except Exception:
         pass
     try:
         b_lines = _calc_conditional(get_binance_klines('BTCUSDT', '1d', 1000))
         if b_lines:
-            lines.append("• 👑 <b>BITCOIN (Tài sản rủi ro - Theo kết quả tin):</b>\n" + "\n".join(b_lines))
+            lines.append("• 👑 <b>BITCOIN (Tài sản rủi ro - Theo Actual vs Dự báo):</b>\n" + "\n".join(b_lines))
     except Exception:
         pass
 
-    res = "\n".join(lines) if lines else "• <i>Đang đồng bộ dữ liệu backtest 1000 ngày...</i>"
+    res = "\n".join(lines) if lines else "• <i>Đang đồng bộ dữ liệu lịch sử kinh tế Mỹ...</i>"
     MACRO_BT_CACHE = {'ts': time.time(), 'text': res}
     return res
 
