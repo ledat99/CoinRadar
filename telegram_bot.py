@@ -3883,7 +3883,7 @@ Tài khoản của bạn hiện tại chưa được cấp quyền sử dụng h
 💣 <b>Săn Coin Rác (Vol > $100M):</b> Bắt momentum mua vào, SL 5% - 9% (Nói KHÔNG với bắt dao rơi / Buy the dip)
 📈 <b>Tìm Coin TĂNG (LONG):</b> Lọc coin tích lũy gom hàng Binance
 📉 <b>Tìm Coin GIẢM (SHORT):</b> Lọc coin phân phối xả hàng Binance
-🇻🇳 <b>Đánh Giá Cổ Phiếu VN:</b> Định giá PE < 10, G > 10%, dòng tiền & lãi suất
+🇻🇳 <b>Đánh Giá Cổ Phiếu VN:</b> Định giá PE &lt; 10, G &gt; 10%, dòng tiền &amp; lãi suất
 🔍 <b>Kiểm Tra Lệnh & Báo Cáo Ngày:</b> Live Radar trực tiếp + Quản lý lệnh đang chạy
 
 
