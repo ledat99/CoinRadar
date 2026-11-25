@@ -1289,7 +1289,7 @@ def get_main_keyboard():
             [{"text": "💣 Săn Coin Rác (Vol > $100M)"}],
             [{"text": "📈 Tìm Coin TĂNG (LONG)"}, {"text": "📉 Tìm Coin GIẢM (SHORT)"}],
             [{"text": "🇻🇳 Đánh Giá Cổ Phiếu VN"}, {"text": "🔍 Kiểm Tra Lệnh & Báo Cáo Ngày"}],
-            [{"text": "⚙️ Menu Hỗ Trợ"}]
+            [{"text": "🇺🇸 Phân Tích Tin Mỹ (View Dài Hạn)"}, {"text": "⚙️ Menu Hỗ Trợ"}]
         ],
         "resize_keyboard": True,
         "is_persistent": True
@@ -3755,6 +3755,121 @@ def start_health_server():
     except Exception:
         pass
 
+def handle_us_macro_news(chat_id=None):
+    """Phân tích các tin quan trọng cố định của Mỹ (High-Impact USD) & đánh giá View Long/Short dài hạn"""
+    try:
+        now_vn = datetime.datetime.now(TZ_VN)
+
+        # 1. Lấy lịch kinh tế Mỹ (USD High-Impact) từ ForexFactory JSON
+        usd_events = []
+        try:
+            req = urllib.request.Request('https://nfs.faireconomy.media/ff_calendar_thisweek.json', headers=HEADERS)
+            with urllib.request.urlopen(req, timeout=6) as r:
+                cal = json.loads(r.read().decode())
+                for ev in cal:
+                    if ev.get('country') == 'USD' and ev.get('impact') == 'High':
+                        usd_events.append(ev)
+        except Exception as e:
+            print(f"Lỗi lấy lịch tin Mỹ: {e}")
+
+        # 2. Lấy chỉ số DXY (US Dollar Index) từ TradingView
+        dxy_p, dxy_chg, dxy_ema50_w = None, 0.0, None
+        try:
+            tv_url = 'https://scanner.tradingview.com/cfd/scan'
+            tv_payload = json.dumps({
+                "symbols": {"tickers": ["TVC:DXY"]},
+                "columns": ["close", "change", "EMA50|1W"]
+            }).encode()
+            tv_req = urllib.request.Request(tv_url, data=tv_payload, headers={'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(tv_req, timeout=5) as resp:
+                dxy_data = json.loads(resp.read().decode())
+                if dxy_data.get('data'):
+                    row = dxy_data['data'][0]['d']
+                    dxy_p = float(row[0]) if row[0] else None
+                    dxy_chg = float(row[1]) if row[1] else 0.0
+                    dxy_ema50_w = float(row[2]) if row[2] else None
+        except Exception as e:
+            print(f"Lỗi lấy DXY: {e}")
+
+        # 3. Lấy Bias dài hạn (W1/D1) của Vàng & BTC
+        g_w1, g_d1, g_dir = "Đang đồng bộ", "Đang đồng bộ", "CHỜ XÁC NHẬN"
+        b_w1, b_d1, b_dir = "Đang đồng bộ", "Đang đồng bộ", "CHỜ XÁC NHẬN"
+        try:
+            pg = calculate_gold_h4_plan()
+            g_w1 = pg.get('w1_bias', g_w1)
+            g_d1 = pg.get('d1_bias', g_d1)
+            g_dir = pg.get('priority_dir', g_dir)
+        except Exception:
+            pass
+        try:
+            pb = calculate_btc_h4_plan()
+            b_w1 = pb.get('w1_bias', b_w1)
+            b_d1 = pb.get('d1_bias', b_d1)
+            b_dir = pb.get('priority_dir', b_dir)
+        except Exception:
+            pass
+
+        msg = f"🇺🇸 <b>[PHÂN TÍCH TIN QUAN TRỌNG CỦA MỸ &amp; VIEW DÀI HẠN]</b>\n━━━━━━━━━━━━━━━━━━\n"
+        msg += f"⏱️ <i>Cập nhật: {now_vn.strftime('%H:%M %d/%m/%Y')} (Giờ VN)</i>\n\n"
+
+        # Phần A: Sức mạnh đồng USD (DXY)
+        if dxy_p:
+            dxy_trend = "🟢 TĂNG (USD Mạnh ➔ Áp lực GIẢM lên Vàng/BTC)" if (dxy_ema50_w and dxy_p > dxy_ema50_w) else "🔴 GIẢM (USD Yếu ➔ Hỗ trợ TĂNG cho Vàng/BTC)"
+            msg += f"💵 <b>CHỈ SỐ ĐÔ LA MỸ (DXY):</b> <code>{dxy_p:.2f}</code> ({dxy_chg:+.2f}%)\n"
+            if dxy_ema50_w:
+                msg += f"• Xu hướng Tuần (so với EMA50 W1 <code>{dxy_ema50_w:.2f}</code>): {dxy_trend}\n\n"
+        else:
+            msg += "💵 <b>CHỈ SỐ DÔ LA MỸ (DXY):</b> <i>Đang đồng bộ dữ liệu...</i>\n\n"
+
+        # Phần B: Lịch tin Đỏ cố định của Mỹ trong tuần
+        msg += "📅 <b>TIN ĐỎ QUAN TRỌNG CỦA MỸ TRONG TUẦN:</b>\n"
+        if usd_events:
+            for ev in usd_events[:6]:
+                title = ev.get('title', 'USD News')
+                prev_v = ev.get('previous', 'N/A') or 'N/A'
+                fcst_v = ev.get('forecast', 'N/A') or 'N/A'
+                raw_dt = ev.get('date', '')
+                vn_time_str = raw_dt
+                is_past = False
+                try:
+                    dt_obj = datetime.datetime.fromisoformat(raw_dt)
+                    dt_vn = dt_obj.astimezone(TZ_VN)
+                    vn_time_str = dt_vn.strftime('%H:%M %d/%m')
+                    is_past = (dt_vn < now_vn)
+                except Exception:
+                    pass
+
+                status_tag = "✅ Đã ra" if is_past else "⏳ Sắp ra"
+                t_low = title.lower()
+                if any(k in t_low for k in ['cpi', 'pce', 'ppi', 'inflation']):
+                    rule = "Lạm phát cao &gt; Dự báo ➔ Fed giữ lãi cao ➔ <b>SHORT</b> Vàng/BTC; Thấp hơn ➔ <b>LONG</b>"
+                elif any(k in t_low for k in ['fomc', 'rate', 'fed', 'powell']):
+                    rule = "Giọng điệu Diều hâu (Hawkish) ➔ <b>SHORT</b> Vàng/BTC; Bồ câu (Dovish) ➔ <b>LONG</b>"
+                elif any(k in t_low for k in ['payroll', 'nfp', 'employment', 'unemployment', 'job']):
+                    rule = "Việc làm mạnh / Thất nghiệp thấp ➔ USD tăng ➔ <b>SHORT</b> Vàng/BTC; Yếu hơn ➔ <b>LONG</b>"
+                else:
+                    rule = "Số liệu tốt &gt; Dự báo ➔ USD mạnh ➔ Áp lực <b>SHORT</b>; Xấu hơn ➔ <b>LONG</b>"
+
+                msg += f"• <b>{title}</b> ({status_tag} - <code>{vn_time_str}</code>)\n"
+                msg += f"  Kỳ trước: <code>{prev_v}</code> | Dự báo: <code>{fcst_v}</code>\n"
+                msg += f"  ↳ <i>Tác động:</i> {rule}\n"
+        else:
+            msg += "• <i>Chưa tải được lịch tuần này, áp dụng bộ tin lõi cố định của Mỹ:</i>\n"
+            msg += "  - <b>Non-Farm (NFP - Thứ 6 đầu tháng):</b> Việc làm &gt; Dự báo ➔ USD tăng (Short Vàng/BTC).\n"
+            msg += "  - <b>CPI / Core PCE (Giữa &amp; Cuối tháng):</b> Lạm phát tăng ➔ Fed cứng rắn (Short Vàng/BTC).\n"
+            msg += "  - <b>FOMC / Lãi suất Fed:</b> Cắt giảm lãi suất / Dovish ➔ Bơm thanh khoản (Long Vàng/BTC).\n"
+
+        # Phần C: Kết luận View Dài Hạn trước tin
+        msg += "\n━━━━━━━━━━━━━━━━━━\n"
+        msg += "🧭 <b>KẾT LUẬN VIEW DÀI HẠN TRƯỚC TIN (W1/D1):</b>\n"
+        msg += f"• 🥇 <b>VÀNG (XAUUSD):</b> W1 {g_w1} | D1 {g_d1}\n  👉 Ưu tiên dài hạn: <b>{g_dir}</b>\n"
+        msg += f"• 👑 <b>BITCOIN (BTC):</b> W1 {b_w1} | D1 {b_d1}\n  👉 Ưu tiên dài hạn: <b>{b_dir}</b>\n\n"
+        msg += "💡 <i>Nguyên tắc đánh tin: Tuyệt đối không đoán mò trước giờ ra tin 15 phút. Chờ nến M15/H1 đóng sau tin xác nhận đồng pha với View dài hạn mới vào lệnh!</i>"
+
+        send_telegram(msg, reply_markup=get_main_keyboard(), target_chat_id=chat_id)
+    except Exception as e:
+        send_telegram(f"⚠️ Lỗi phân tích tin Mỹ: {e}", reply_markup=get_main_keyboard(), target_chat_id=chat_id)
+
 def run_bot():
     global PUBLIC_MODE
     print("🤖 Bot Telegram đang lắng nghe...")
@@ -3884,10 +3999,11 @@ Tài khoản của bạn hiện tại chưa được cấp quyền sử dụng h
 📈 <b>Tìm Coin TĂNG (LONG):</b> Lọc coin tích lũy gom hàng Binance
 📉 <b>Tìm Coin GIẢM (SHORT):</b> Lọc coin phân phối xả hàng Binance
 🇻🇳 <b>Đánh Giá Cổ Phiếu VN:</b> Định giá PE &lt; 10, G &gt; 10%, dòng tiền &amp; lãi suất
-🔍 <b>Kiểm Tra Lệnh & Báo Cáo Ngày:</b> Live Radar trực tiếp + Quản lý lệnh đang chạy
+🔍 <b>Kiểm Tra Lệnh &amp; Báo Cáo Ngày:</b> Live Radar trực tiếp + Quản lý lệnh đang chạy
+🇺🇸 <b>Phân Tích Tin Mỹ (View Dài Hạn):</b> Lịch tin đỏ USD (CPI/PCE/NFP/FOMC) &amp; View Long/Short dài hạn
 
 
-💡 <i>Bấm các nút bên dưới hoặc gõ trực tiếp lệnh (/price, /tongket, /gold, /btc, /scalp, /meme, /h4, /check, /vnstock)!</i>"""
+💡 <i>Bấm các nút bên dưới hoặc gõ trực tiếp lệnh (/price, /tongket, /gold, /btc, /scalp, /news, /check, /vnstock)!</i>"""
                         send_telegram(menu_help, reply_markup=get_main_keyboard(), target_chat_id=chat_id)
                     elif text in ["/price", "/gia", "/xemgia", "/live", "💵 Xem Giá Live (Vàng/BTC/ETH)", "gia", "giá", "price", "xem gia", "xem giá"]:
                         handle_live_price(chat_id=chat_id)
@@ -3910,6 +4026,8 @@ Tài khoản của bạn hiện tại chưa được cấp quyền sử dụng h
                         handle_btc(chat_id=chat_id)
                     elif text in ["/gold", "🥇 Phân Tích VÀNG (XAU)", "gold", "vang", "Vàng"]:
                         handle_gold(chat_id=chat_id)
+                    elif text in ["/news", "/tinmy", "/macro", "/usnews", "🇺🇸 Phân Tích Tin Mỹ (View Dài Hạn)"]:
+                        handle_us_macro_news(chat_id=chat_id)
                     elif text in ["/long", "📈 Tìm Coin TĂNG (LONG)", "long"]:
                         handle_scan(mode='long', chat_id=chat_id)
                     elif text in ["/short", "📉 Tìm Coin GIẢM (SHORT)", "short"]:
