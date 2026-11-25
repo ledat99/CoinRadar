@@ -3755,6 +3755,60 @@ def start_health_server():
     except Exception:
         pass
 
+MACRO_BT_CACHE = {'ts': 0, 'text': ''}
+
+def compute_macro_backtest_stats():
+    """Backtest phản ứng giá ngày hôm sau (T+1) của Vàng & BTC sau các kỳ tin cố định Mỹ trên 500 ngày gần nhất"""
+    global MACRO_BT_CACHE
+    if time.time() - MACRO_BT_CACHE['ts'] < 3600 and MACRO_BT_CACHE['text']:
+        return MACRO_BT_CACHE['text']
+
+    def _calc(bars):
+        if not bars or len(bars) < 30:
+            return []
+        bars_asc = sorted(bars, key=lambda x: x[0])
+        nfp, cpi, pce = [], [], []
+        for i in range(len(bars_asc) - 2):
+            dt = datetime.datetime.fromtimestamp(bars_asc[i][0] / 1000, tz=datetime.timezone.utc)
+            c0 = float(bars_asc[i][4])
+            c1 = float(bars_asc[i + 1][4])
+            if c0 <= 0:
+                continue
+            ret = (c1 - c0) / c0 * 100.0
+            if dt.weekday() == 4 and 1 <= dt.day <= 7:
+                nfp.append(ret)
+            elif dt.weekday() in (1, 2, 3) and 11 <= dt.day <= 14:
+                cpi.append(ret)
+            elif dt.weekday() == 4 and dt.day >= 25:
+                pce.append(ret)
+        out = []
+        for lbl, arr in [("NFP (Đầu tháng)", nfp), ("CPI (Giữa tháng)", cpi), ("Core PCE (Cuối tháng)", pce)]:
+            if arr:
+                wins = sum(1 for x in arr if x > 0)
+                wr = wins / len(arr) * 100.0
+                avg = sum(arr) / len(arr)
+                bias = "🟢 Canh LONG" if wr >= 55 else ("🔴 Canh SHORT" if wr <= 45 else "⚖️ Trung tính")
+                out.append(f"  - {lbl}: {len(arr)} kỳ | Tăng <b>{wr:.0f}%</b> (TB <code>{avg:+.2f}%</code>) ➔ {bias}")
+        return out
+
+    lines = []
+    try:
+        g_lines = _calc(get_oanda_klines('D', 500))
+        if g_lines:
+            lines.append("• 🥇 <b>VÀNG (T+1 sau tin):</b>\n" + "\n".join(g_lines))
+    except Exception:
+        pass
+    try:
+        b_lines = _calc(get_binance_klines('BTCUSDT', '1d', 500))
+        if b_lines:
+            lines.append("• 👑 <b>BITCOIN (T+1 sau tin):</b>\n" + "\n".join(b_lines))
+    except Exception:
+        pass
+
+    res = "\n".join(lines) if lines else "• <i>Đang đồng bộ dữ liệu backtest 500 ngày...</i>"
+    MACRO_BT_CACHE = {'ts': time.time(), 'text': res}
+    return res
+
 def handle_us_macro_news(chat_id=None):
     """Phân tích các tin quan trọng cố định của Mỹ (High-Impact USD) & đánh giá View Long/Short dài hạn"""
     try:
@@ -3859,7 +3913,13 @@ def handle_us_macro_news(chat_id=None):
             msg += "  - <b>CPI / Core PCE (Giữa &amp; Cuối tháng):</b> Lạm phát tăng ➔ Fed cứng rắn (Short Vàng/BTC).\n"
             msg += "  - <b>FOMC / Lãi suất Fed:</b> Cắt giảm lãi suất / Dovish ➔ Bơm thanh khoản (Long Vàng/BTC).\n"
 
-        # Phần C: Kết luận View Dài Hạn trước tin
+        # Phần C: Backtest lịch sử ngày hôm sau (T+1) trên 500 ngày gần nhất
+        bt_text = compute_macro_backtest_stats()
+        msg += "\n━━━━━━━━━━━━━━━━━━\n"
+        msg += "📊 <b>BACKTEST LỊCH SỬ NGÀY HÔM SAU TIN (T+1 / 500 NGÀY):</b>\n"
+        msg += bt_text + "\n"
+
+        # Phần D: Kết luận View Dài Hạn trước tin
         msg += "\n━━━━━━━━━━━━━━━━━━\n"
         msg += "🧭 <b>KẾT LUẬN VIEW DÀI HẠN TRƯỚC TIN (W1/D1):</b>\n"
         msg += f"• 🥇 <b>VÀNG (XAUUSD):</b> W1 {g_w1} | D1 {g_d1}\n  👉 Ưu tiên dài hạn: <b>{g_dir}</b>\n"
