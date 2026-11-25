@@ -756,90 +756,112 @@ def handle_check_vip_trades(chat_id=None):
                 'action_plan_text': "Đang theo dõi cản M5/H1."
             }
 
-        msg = "🔍 <b>[BÁO CÁO THỜI GIAN THỰC & THEO DÕI TÍN HIỆU BOT]</b>\n━━━━━━━━━━━━━━━━━━\n"
+        now_dt = datetime.datetime.now(TZ_VN)
+        now_ts = time.time()
+        start_today_ts = now_dt.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+        today_date_str = now_dt.strftime('%d/%m')
 
+        msg = "🔍 <b>[BÁO CÁO TRẠNG THÁI LỆNH: ĐANG VÀO - ĐANG CHẠY - ĐÃ CHỐT]</b>\n"
+        msg += "━━━━━━━━━━━━━━━━━━\n"
+        msg += f"⏱️ <i>Cập nhật: {now_dt.strftime('%H:%M:%S %d/%m/%Y')}</i>\n"
+        msg += f"🥇 <b>Vàng (XAUUSD):</b> <code>${p_gold:,.2f}</code> | 👑 <b>BTC:</b> <code>${p_btc:,.1f}</code>\n\n"
 
-        # 1. PHẦN LỆNH ĐANG CHẠY (NẾU CÓ)
-        if trades:
-            msg += f"🔥 <b>LỆNH VIP ĐANG CHẠY ({len(trades)} lệnh):</b>\n\n"
-            for i, t in enumerate(trades, 1):
-                is_gold = (t['asset'] == 'GOLD')
+        # -------------------------------------------------------------
+        # 1. LỆNH ĐANG VÀO (CHỜ KHỚP / PENDING LIMIT HOẶC SETUP ĐANG RÌNH)
+        # -------------------------------------------------------------
+        pending_trades = [t for t in trades if not t.get('is_filled', True) or t.get('status') == 'PENDING_LIMIT']
+        msg += "⏳ <b>1. LỆNH ĐANG VÀO (LỆNH CHỜ / PENDING LIMIT):</b>\n"
+        if pending_trades:
+            for i, t in enumerate(pending_trades, 1):
+                is_gold = (t.get('asset') == 'GOLD')
                 curr_p = p_gold if is_gold else p_btc
                 dec = 2 if is_gold else 1
-                unit = "Giá" if is_gold else "$"
+                unit = "Giá" if is_gold else "USDT"
+                sys_tag = "🧙‍♀️ [SWING H1 - MA NỮ]" if t.get('system') == 'H1_MANU' else "⚡ [SCALP M5 - VP]"
                 sym = "🥇 VÀNG (XAUUSD)" if is_gold else "👑 BITCOIN"
-                sgn = "🔴 SHORT" if t['signal'] == 'SHORT' else "🟢 LONG"
-                
-                # Tính PnL tạm tính
-                if t['signal'] == 'SHORT':
-                    diff = t['entry_price'] - curr_p
+                sgn = "🔴 SELL LIMIT" if t.get('signal') == 'SHORT' else "🟢 BUY LIMIT"
+                entry_p = t.get('entry_price', 0)
+                dist = abs(entry_p - curr_p)
+
+                msg += f"<b>{i}. {sym} {sys_tag} - {sgn}</b>\n"
+                msg += f"   • 👉 <b>Entry chờ khớp:</b> <code>${entry_p:,.{dec}f}</code> (Cách giá hiện tại: <b>{dist:,.{dec}f} {unit}</b>)\n"
+                msg += f"   • 🛡️ <b>SL:</b> <code>${t.get('sl', 0):,.{dec}f}</code> | 🎯 <b>TP1:</b> <code>${t.get('tp1', 0):,.{dec}f}</code> | 🎯 <b>TP2:</b> <code>${t.get('tp2', 0):,.{dec}f}</code>\n"
+                msg += f"   • ⏱️ Đặt lúc: <code>{t.get('entry_time', '')}</code> | Trạng thái: <i>Đang rình đón giá hồi...</i>\n\n"
+        else:
+            msg += "• <i>Hiện không có lệnh Limit treo chờ trên sàn.</i>\n"
+            msg += "• 🎯 <b>Điểm rình setup hiện tại:</b>\n"
+            msg += f"   - 🥇 <b>Vàng:</b> M5: <i>{p_gold_vp.get('wick_info', 'Chờ tín hiệu')}</i> | H1: Cản [<code>{plan_gold.get('b_ob_bot', 0):,.1f} - {plan_gold.get('b_ob_top', 0):,.1f}</code>]\n"
+            msg += f"   - 👑 <b>BTC:</b> M5: <i>{p_btc_vp.get('wick_info', 'Chờ tín hiệu')}</i> | H1: Cản [<code>{plan_btc.get('b_ob_bot', 0):,.1f} - {plan_btc.get('b_ob_top', 0):,.1f}</code>]\n\n"
+
+        # -------------------------------------------------------------
+        # 2. LỆNH ĐANG CHẠY (ACTIVE RUNNING & FLOATING PNL)
+        # -------------------------------------------------------------
+        running_trades = [t for t in trades if t.get('is_filled', True) and t.get('status') in ['RUNNING', 'TP1_HIT_RISK_FREE', None]]
+        msg += "━━━━━━━━━━━━━━━━━━\n"
+        msg += "🔥 <b>2. LỆNH ĐANG CHẠY (ACTIVE & FLOATING PnL):</b>\n"
+        if running_trades:
+            for i, t in enumerate(running_trades, 1):
+                is_gold = (t.get('asset') == 'GOLD')
+                curr_p = p_gold if is_gold else p_btc
+                dec = 2 if is_gold else 1
+                unit = "Giá" if is_gold else "USDT"
+                sys_tag = "🧙‍♀️ [SWING H1 - MA NỮ]" if t.get('system') == 'H1_MANU' else "⚡ [SCALP M5 - VP]"
+                sym = "🥇 VÀNG (XAUUSD)" if is_gold else "👑 BITCOIN"
+                sgn = "🔴 SHORT" if t.get('signal') == 'SHORT' else "🟢 LONG"
+                entry_p = t.get('entry_price', 0)
+
+                # Floating PnL
+                if t.get('signal') == 'SHORT':
+                    diff = entry_p - curr_p
                 else:
-                    diff = curr_p - t['entry_price']
+                    diff = curr_p - entry_p
                 pnl_str = f"+{diff:,.{dec}f} {unit}" if diff >= 0 else f"-{abs(diff):,.{dec}f} {unit}"
                 pnl_emoji = "🟢" if diff >= 0 else "🔴"
-                
-                status_txt = "🛡️ Đã Dời SL Hoà Vốn (Free-Risk)" if t.get('tp1_hit') else "⏳ Đang Chạy (Chờ TP1)"
 
-                msg += f"<b>{i}. {sym} - {sgn}</b>\n"
-                msg += f"• Thời gian vào: <code>{t.get('entry_time', '')}</code>\n"
-                msg += f"• Giá vào (Entry): <code>${t['entry_price']:,.{dec}f}</code> | Hiện tại: <b>${curr_p:,.{dec}f}</b>\n"
-                msg += f"• Lãi/Lỗ tạm tính: {pnl_emoji} <b>{pnl_str}</b>\n"
-                msg += f"• Trạng thái: <b>{status_txt}</b>\n"
-                msg += f"• Stop Loss: <code>${t['sl']:,.{dec}f}</code>\n"
-                msg += f"• Mốc TP1: <code>${t['tp1']:,.{dec}f}</code> {'(✅ Đã Chạm)' if t.get('tp1_hit') else ''}\n"
-                msg += f"• Mốc TP2: <code>${t['tp2']:,.{dec}f}</code>\n\n"
+                if t.get('tp1_hit'):
+                    status_txt = "🛡️ ĐÃ DỜI SL HOÀ VỐN (Ăn 50% TP1 - Gồng TP2)"
+                else:
+                    status_txt = "⏳ ĐANG GỒNG LÃI (Chờ chạm TP1)"
+
+                msg += f"<b>{i}. {sym} {sys_tag} - {sgn}</b>\n"
+                msg += f"   • 👉 <b>Entry:</b> <code>${entry_p:,.{dec}f}</code> ➔ Hiện tại: <b>${curr_p:,.{dec}f}</b>\n"
+                msg += f"   • 💰 <b>Lãi/Lỗ tạm tính:</b> {pnl_emoji} <b>{pnl_str}</b>\n"
+                msg += f"   • 🛡️ <b>Trạng thái:</b> <b>{status_txt}</b>\n"
+                msg += f"   • 🛑 <b>SL:</b> <code>${t.get('sl', 0):,.{dec}f}</code> | 🎯 <b>TP1:</b> <code>${t.get('tp1', 0):,.{dec}f}</code> {'(✅ Đã Chạm)' if t.get('tp1_hit') else ''} | 🎯 <b>TP2:</b> <code>${t.get('tp2', 0):,.{dec}f}</code>\n"
+                msg += f"   • ⏱️ Khớp lúc: <code>{t.get('filled_time') or t.get('entry_time', '')}</code>\n\n"
         else:
-            msg += "🟢 <b>Lệnh Đang Chạy:</b> <i>Chưa có lệnh mở (Đang rình điểm đẹp).</i>\n\n"
+            msg += "• 🟢 <i>Hiện không có lệnh nào đang chạy trên thị trường. Vốn được bảo toàn an toàn tuyệt đối 100%!</i>\n\n"
 
-        # 2. RADAR GIÁM SÁT THỜI GIAN THỰC (LIVE RADAR MONITOR)
-        msg += "📡 <b>RADAR GIÁM SÁT THỊ TRƯỜNG & VÙNG CẢN:</b>\n"
-        
-        # Vàng Radar
-        dist_do_g = p_gold - p_gold_vp['daily_open']
-        dist_poc_g = p_gold - p_gold_vp['poc']
-        msg += f"""\n🥇 <b>VÀNG (XAUUSD MT5):</b> <b>${p_gold:,.2f}</b>
-• 🧭 <b>Bias Ngày:</b> {p_gold_vp['daily_bias']}
-• 🏛️ <b>Hôm Trước:</b> {p_gold_vp['y_shape']} [yVAL <code>${p_gold_vp['y_val']:,.1f}</code> | yPOC <code>${p_gold_vp['y_poc']:,.1f}</code> | yVAH <code>${p_gold_vp['y_vah']:,.1f}</code>]
-• 🌅 <b>Daily Open:</b> <code>${p_gold_vp['daily_open']:,.2f}</code> (Cách {abs(dist_do_g):.1f} giá)
-• 📍 <b>dPOC Hôm Nay:</b> <code>${p_gold_vp['poc']:,.2f}</code> (Cách {abs(dist_poc_g):.1f} giá)
-• 🧱 <b>Khối Kháng Cự H1:</b> <code>[${plan_gold['b_ob_bot']:,.1f} - ${plan_gold['b_ob_top']:,.1f}]</code>
-• 🧱 <b>Khối Hỗ Trợ H1:</b> <code>[${plan_gold['bull_ob_bot']:,.1f} - ${plan_gold['bull_ob_top']:,.1f}]</code>
-• 🛡️ <b>Bảo Vệ Cản M5:</b> {p_gold_vp['defense_badge']}
-• ⚡ <b>Hành động M5:</b> <i>{p_gold_vp['wick_info']}</i>
-👉 <b>Kế Hoạch:</b> {p_gold_vp['action_plan_text']}\n"""
+        # -------------------------------------------------------------
+        # 3. LỆNH ĐÃ CÓ KẾT QUẢ TRONG NGÀY (HÔM NAY)
+        # -------------------------------------------------------------
+        # Lọc các kèo chốt trong ngày hôm nay (00:00 - nay)
+        today_trades = [
+            t for t in history
+            if (t.get('close_timestamp') and t.get('close_timestamp') >= start_today_ts)
+            or (t.get('close_time') and today_date_str in str(t.get('close_time', '')))
+        ]
 
-        # BTC Radar
-        dist_do_b = p_btc - p_btc_vp['daily_open']
-        dist_poc_b = p_btc - p_btc_vp['poc']
-        msg += f"""\n👑 <b>BITCOIN (BTCUSDT):</b> <b>${p_btc:,.1f}</b>
-• 🧭 <b>Bias Ngày:</b> {p_btc_vp['daily_bias']}
-• 🏛️ <b>Hôm Trước:</b> {p_btc_vp['y_shape']} [yVAL <code>${p_btc_vp['y_val']:,.1f}</code> | yPOC <code>${p_btc_vp['y_poc']:,.1f}</code> | yVAH <code>${p_btc_vp['y_vah']:,.1f}</code>]
-• 🌅 <b>Daily Open:</b> <code>${p_btc_vp['daily_open']:,.1f}</code> (Cách {abs(dist_do_b):.1f} USD)
-• 📍 <b>dPOC Hôm Nay:</b> <code>${p_btc_vp['poc']:,.1f}</code> (Cách {abs(dist_poc_b):.1f} USD)
-• 🧱 <b>Khối Kháng Cự H1:</b> <code>[${plan_btc['b_ob_bot']:,.1f} - ${plan_btc['b_ob_top']:,.1f}]</code>
-• 🧱 <b>Khối Hỗ Trợ H1:</b> <code>[${plan_btc['bull_ob_bot']:,.1f} - ${plan_btc['bull_ob_top']:,.1f}]</code>
-• 🛡️ <b>Bảo Vệ Cản M5:</b> {p_btc_vp['defense_badge']}
-• ⚡ <b>Hành động M5:</b> <i>{p_btc_vp['wick_info']}</i>
-👉 <b>Kế Hoạch:</b> {p_btc_vp['action_plan_text']}\n"""
+        msg += "━━━━━━━━━━━━━━━━━━\n"
+        msg += f"📜 <b>3. LỆNH ĐÃ CÓ KẾT QUẢ TRONG NGÀY ({now_dt.strftime('%d/%m/%Y')}):</b>\n"
 
-        # 3. LỊCH SỬ KÈO & TỶ LỆ THẮNG
-        msg += "━━━━━━━━━━━━━━━━━━\n📜 <b>LỊCH SỬ GIAO DỊCH ĐÃ CHỐT:</b>\n"
-        if not history:
-            msg += "• Chưa có lệnh nào được chốt trong chu kỳ hôm nay.\n"
-            msg += "<i>💡 Bot tự động rà quét mỗi 5 phút tại các mốc nến M5 chốt. Khi nến M5 chạm dPOC/OB H1 và rút râu nổ Volume, Bot sẽ tự động bắn kèo và ghi nhận ngay vào đây!</i>"
+        if today_trades:
+            today_stats = compute_trade_stats(today_trades)
+            msg += f"• 📊 <b>Tổng kết hôm nay:</b> <b>{today_stats['total']} kèo</b> | Thắng: <b>{today_stats['wins']}</b> | Hoà: <b>{today_stats['be']}</b> | Thua: <b>{today_stats['losses']}</b>\n"
+            msg += f"• 🔥 <b>Tỷ lệ Winrate hôm nay:</b> <b>{today_stats['winrate']}%</b>\n"
+            msg += f"• 💰 <b>PnL Hôm Nay:</b> 🥇 Vàng: <b>{'+' if today_stats['pnl_gold'] >= 0 else ''}{today_stats['pnl_gold']:,.2f} Giá</b> | 👑 BTC: <b>{'+' if today_stats['pnl_btc'] >= 0 else ''}{today_stats['pnl_btc']:,.1f} USDT</b>\n"
+            msg += "• <b>Chi tiết các lệnh chốt hôm nay:</b>\n"
+            for idx, t in enumerate(today_trades, 1):
+                msg += "\n" + format_single_trade_block(t, index=idx)
         else:
-            total_closed = len(history)
-            wins = [h for h in history if 'TP' in h.get('status', '') or h.get('status') == 'CLOSED_BREAKEVEN' or h.get('profit', 0) > 0]
-            win_rate = (len(wins) / total_closed) * 100.0
-            msg += f"• Tổng số kèo: <b>{total_closed}</b> | Thắng: <b>{len(wins)}</b> | Thua: <b>{total_closed - len(wins)}</b>\n"
-            msg += f"• Tỷ lệ Winrate: <b>{win_rate:.1f}%</b> 🔥\n"
-            msg += "• Các lệnh gần nhất:\n"
-            for h in history[-5:]:
-                sym = "VÀNG" if h.get('asset') == 'GOLD' else "BTC"
-                p_val = h.get('profit', 0)
-                sgn_p = f"+{p_val}" if p_val >= 0 else f"{p_val}"
-                st = "✅ TP Full" if h.get('status') == 'CLOSED_TP2' else ("🛡️ Hoà Vốn" if h.get('status') == 'CLOSED_BREAKEVEN' else "🛑 Cắt Lỗ")
-                msg += f"  - {sym} {h.get('signal')}: {st} ({sgn_p}) [{h.get('close_time', '')}]\n"
+            msg += f"• <i>Hôm nay ({now_dt.strftime('%d/%m/%Y')}) chưa có lệnh nào đóng kết quả.</i>\n"
+            if history:
+                msg += f"\n• <b>3 lệnh chốt gần nhất các phiên trước:</b>\n"
+                for idx, t in enumerate(list(reversed(history))[:3], 1):
+                    msg += "\n" + format_single_trade_block(t, index=idx)
+
+        msg += "\n━━━━━━━━━━━━━━━━━━\n"
+        msg += "💡 <i>Bot M5 Scalp rà quét mỗi 5 phút, Bot H1 Swing rà quét mỗi khi nến H1 đóng. Hệ thống tự động bắn tín hiệu và ghi nhận thời gian thực!</i>"
 
         send_telegram(msg, reply_markup=get_main_keyboard(), target_chat_id=chat_id)
     except Exception as e:
