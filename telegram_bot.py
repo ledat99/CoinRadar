@@ -144,7 +144,37 @@ LAST_RADAR_ALERT = {
 VIP_TRADES_FILE = os.path.join(os.path.dirname(__file__), 'vip_active_trades.json')
 VIP_HISTORY_FILE = os.path.join(os.path.dirname(__file__), 'vip_trade_history.json')
 
+UPSTASH_URL = os.environ.get('UPSTASH_REDIS_REST_URL', 'https://sure-fox-217928.upstash.io')
+UPSTASH_TOKEN = os.environ.get('UPSTASH_REDIS_REST_TOKEN', 'gQAAAAAAA1NIAAIgcDE3MTFiMWZhNDBlNTM0NThjOTYwNTk0YzRmZmYzNjYyNA')
+
+def redis_get_json(key, default_val):
+    if not UPSTASH_URL or not UPSTASH_TOKEN:
+        return None
+    try:
+        r = requests.get(f"{UPSTASH_URL}/get/{key}", headers={"Authorization": f"Bearer {UPSTASH_TOKEN}"}, timeout=5)
+        if r.status_code == 200:
+            res = r.json().get("result")
+            if res is not None:
+                return json.loads(res)
+    except Exception as e:
+        print(f"Lỗi redis_get_json({key}): {e}")
+    return None
+
+def redis_set_json(key, val):
+    if not UPSTASH_URL or not UPSTASH_TOKEN:
+        return False
+    try:
+        payload = json.dumps(val, ensure_ascii=False)
+        r = requests.post(f"{UPSTASH_URL}/set/{key}", headers={"Authorization": f"Bearer {UPSTASH_TOKEN}"}, data=payload.encode('utf-8'), timeout=5)
+        return r.status_code == 200
+    except Exception as e:
+        print(f"Lỗi redis_set_json({key}): {e}")
+    return False
+
 def load_vip_trades():
+    r_data = redis_get_json('coinradar:vip_active_trades', [])
+    if r_data is not None:
+        return r_data
     try:
         if os.path.exists(VIP_TRADES_FILE):
             with open(VIP_TRADES_FILE, 'r', encoding='utf-8') as f:
@@ -154,6 +184,7 @@ def load_vip_trades():
     return []
 
 def save_vip_trades(trades):
+    redis_set_json('coinradar:vip_active_trades', trades)
     try:
         with open(VIP_TRADES_FILE, 'w', encoding='utf-8') as f:
             json.dump(trades, f, ensure_ascii=False, indent=2)
@@ -161,6 +192,9 @@ def save_vip_trades(trades):
         print(f"Lỗi save_vip_trades: {e}")
 
 def load_vip_history():
+    r_data = redis_get_json('coinradar:vip_trade_history', [])
+    if r_data is not None:
+        return r_data
     try:
         if os.path.exists(VIP_HISTORY_FILE):
             with open(VIP_HISTORY_FILE, 'r', encoding='utf-8') as f:
@@ -170,6 +204,7 @@ def load_vip_history():
     return []
 
 def save_vip_history(history):
+    redis_set_json('coinradar:vip_trade_history', history)
     try:
         with open(VIP_HISTORY_FILE, 'w', encoding='utf-8') as f:
             json.dump(history, f, ensure_ascii=False, indent=2)
@@ -870,6 +905,9 @@ def handle_check_vip_trades(chat_id=None):
 REPORT_STATE_FILE = os.path.join(os.path.dirname(__file__), 'report_state.json')
 
 def get_report_state():
+    r_data = redis_get_json('coinradar:report_state', None)
+    if r_data is not None:
+        return r_data
     try:
         if os.path.exists(REPORT_STATE_FILE):
             with open(REPORT_STATE_FILE, 'r', encoding='utf-8') as f:
@@ -879,6 +917,7 @@ def get_report_state():
     return {'last_daily': '', 'last_weekly': ''}
 
 def save_report_state(state):
+    redis_set_json('coinradar:report_state', state)
     try:
         with open(REPORT_STATE_FILE, 'w', encoding='utf-8') as f:
             json.dump(state, f, ensure_ascii=False, indent=2)
@@ -1196,6 +1235,10 @@ PUBLIC_MODE = True # Tự động cấp quyền Public cho tất cả mọi ngư
 def load_authorized_users():
     """Load danh sách người dùng được duyệt sử dụng bot"""
     users = {ADMIN_ID: {'name': 'Chủ Sở Hữu (Admin)', 'role': 'admin', 'date': 'Gốc'}}
+    r_data = redis_get_json('coinradar:authorized_users', None)
+    if r_data is not None and isinstance(r_data, dict):
+        users.update(r_data)
+        return users
     if os.path.exists(USERS_FILE):
         try:
             with open(USERS_FILE, 'r', encoding='utf-8') as f:
@@ -1206,6 +1249,7 @@ def load_authorized_users():
     return users
 
 def save_authorized_users(users):
+    redis_set_json('coinradar:authorized_users', users)
     try:
         with open(USERS_FILE, 'w', encoding='utf-8') as f:
             json.dump(users, f, ensure_ascii=False, indent=2)
