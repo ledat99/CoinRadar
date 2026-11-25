@@ -1191,6 +1191,7 @@ def handle_trade_summary(chat_id=None):
 
 USERS_FILE = os.path.join(os.path.dirname(__file__), 'authorized_users.json')
 ADMIN_ID = str(CONFIG['TELEGRAM_CHAT_ID'])
+PUBLIC_MODE = True # Tự động cấp quyền Public cho tất cả mọi người (Có thể bật/tắt bằng lệnh /public on hoặc /public off)
 
 def load_authorized_users():
     """Load danh sách người dùng được duyệt sử dụng bot"""
@@ -3818,13 +3819,32 @@ def run_bot():
                             for uid, info in users.items():
                                 u_role = "👑 ADMIN" if info.get('role') == 'admin' else "👤 Member"
                                 u_list += f"• <b>{info.get('name', 'User')}</b> ({u_role})\n  ID: <code>{uid}</code> | Kích hoạt: {info.get('date', '')}\n"
-                            u_list += f"\n<i>👉 Để huỷ quyền, gõ: /revoke &lt;ID&gt;</i>"
+                            u_list += f"\n<i>👉 Để huỷ quyền, gõ: /revoke &lt;ID&gt;</i>\n<i>👉 Chế độ hiện tại: {'🌐 PUBLIC (Mở tự do)' if PUBLIC_MODE else '🔒 PRIVATE (Chỉ thành viên duyệt)'}</i>"
                             send_telegram(u_list, target_chat_id=ADMIN_ID)
                             continue
+                        elif text.startswith("/public"):
+                            parts = text.split()
+                            if len(parts) >= 2 and parts[1].lower() in ['off', 'tat', 'close', 'private', '0']:
+                                PUBLIC_MODE = False
+                                send_telegram("🔒 <b>ĐÃ TẮT PUBLIC ➔ CHUYỂN SANG CHẾ ĐỘ RIÊNG TƯ (PRIVATE)!</b>\nTừ bây giờ, người lạ bấm bot sẽ phải chờ Admin duyệt bằng /approve mới được sử dụng.", target_chat_id=ADMIN_ID)
+                            else:
+                                PUBLIC_MODE = True
+                                send_telegram("🌐 <b>ĐÃ BẬT CHẾ ĐỘ CỘNG ĐỒNG (PUBLIC)!</b>\nBất kỳ ai mở bot cũng sẽ tự động được cấp quyền và sử dụng mọi tính năng 100%.", target_chat_id=ADMIN_ID)
+                            continue
 
-                    # 2. Kiểm duyệt người dùng lạ: Nếu chưa được duyệt thì chặn và báo Admin
+                    # 2. Kiểm duyệt người dùng: Nếu chưa được duyệt
                     if not is_user_approved(chat_id):
-                        guest_msg = f"""👋 <b>Xin chào {first_name}!</b>
+                        if PUBLIC_MODE:
+                            add_approved_user(chat_id, name=f"{first_name} ({user_tag})")
+                            admin_notify = f"""📢 <b>[THÀNH VIÊN MỚI THAM GIA BOT (PUBLIC)]</b>
+━━━━━━━━━━━━━━━━━━
+👤 <b>Người dùng:</b> {first_name} ({user_tag})
+🆔 <b>Telegram ID:</b> <code>{chat_id}</code>
+⏱️ <b>Thời gian:</b> {datetime.datetime.now(TZ_VN).strftime('%H:%M:%S %d/%m/%Y')}
+⚡ <i>Hệ thống đã tự động cấp quyền truy cập đầy đủ!</i>"""
+                            send_telegram(admin_notify, target_chat_id=ADMIN_ID)
+                        else:
+                            guest_msg = f"""👋 <b>Xin chào {first_name}!</b>
 ━━━━━━━━━━━━━━━━━━
 🔒 <b>HỆ THỐNG TRUY CẬP CÓ KIỂM SOÁT</b>
 Tài khoản của bạn hiện tại chưa được cấp quyền sử dụng hệ thống tín hiệu và phân tích VIP.
@@ -3833,9 +3853,9 @@ Tài khoản của bạn hiện tại chưa được cấp quyền sử dụng h
 ⏱️ Yêu cầu của bạn đã được tự động gửi tới Admin phê duyệt.
 
 <i>👉 Vui lòng liên hệ Admin để được cấp quyền kích hoạt!</i>"""
-                        send_telegram(guest_msg, target_chat_id=chat_id)
+                            send_telegram(guest_msg, target_chat_id=chat_id)
 
-                        admin_alert = f"""🔔 <b>[YÊU CẦU TRUY CẬP BOT MỚI]</b> 🔔
+                            admin_alert = f"""🔔 <b>[YÊU CẦU TRUY CẬP BOT MỚI]</b> 🔔
 ━━━━━━━━━━━━━━━━━━
 👤 <b>Người dùng:</b> {first_name} ({user_tag})
 🆔 <b>Telegram ID:</b> <code>{chat_id}</code>
@@ -3843,8 +3863,8 @@ Tài khoản của bạn hiện tại chưa được cấp quyền sử dụng h
 
 👉 <b>ĐỂ PHÊ DUYỆT NGAY, BẤM VÀO LỆNH SAU:</b>
 <code>/approve {chat_id}</code>"""
-                        send_telegram(admin_alert, target_chat_id=ADMIN_ID)
-                        continue
+                            send_telegram(admin_alert, target_chat_id=ADMIN_ID)
+                            continue
 
                     # 3. Phân luồng tính năng cho thành viên ĐÃ ĐƯỢC DUYỆT
                     if text in ["/start", "menu", "Menu", "⚙️ Menu Hỗ Trợ"]:
