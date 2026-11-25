@@ -3960,7 +3960,11 @@ def handle_us_macro_news(chat_id=None):
                     rule = "Số liệu tốt &gt; Dự báo ➔ USD mạnh ➔ Áp lực <b>SHORT</b>; Xấu hơn ➔ <b>LONG</b>"
 
                 msg += f"• <b>{title}</b> ({status_tag} - <code>{vn_time_str}</code>)\n"
-                msg += f"  Kỳ trước: <code>{prev_v}</code> | Dự báo: <code>{fcst_v}</code>\n"
+                act_v = ev.get('actual', '')
+                if act_v:
+                    msg += f"  Thực tế: <b><code>{act_v}</code></b> | Dự báo: <code>{fcst_v}</code> | Kỳ trước: <code>{prev_v}</code>\n"
+                else:
+                    msg += f"  Kỳ trước: <code>{prev_v}</code> | Dự báo: <code>{fcst_v}</code>\n"
                 msg += f"  ↳ <i>Tác động:</i> {rule}\n"
         else:
             msg += "• <i>Chưa tải được lịch tuần này, áp dụng bộ tin lõi cố định của Mỹ:</i>\n"
