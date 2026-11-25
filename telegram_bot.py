@@ -3755,6 +3755,7 @@ def start_health_server():
         pass
 
 def run_bot():
+    global PUBLIC_MODE
     print("🤖 Bot Telegram đang lắng nghe...")
     url = f"https://api.telegram.org/bot{CONFIG['TELEGRAM_BOT_TOKEN']}/getUpdates"
     
@@ -3813,12 +3814,14 @@ def run_bot():
                             else:
                                 send_telegram("⚠️ Cú pháp huỷ quyền: <code>/revoke &lt;ID_Telegram&gt;</code>", target_chat_id=ADMIN_ID)
                             continue
-                        elif text in ["/users", "/members", "users", "Danh Sách Thành Viên"]:
+                        elif text.split('@')[0].lower() in ["/users", "/members", "users", "danh sách thành viên"]:
+                            import html
                             users = load_authorized_users()
                             u_list = "👥 <b>DANH SÁCH THÀNH VIÊN ĐƯỢC DUYỆT:</b>\n━━━━━━━━━━━━━━━━━━\n"
                             for uid, info in users.items():
                                 u_role = "👑 ADMIN" if info.get('role') == 'admin' else "👤 Member"
-                                u_list += f"• <b>{info.get('name', 'User')}</b> ({u_role})\n  ID: <code>{uid}</code> | Kích hoạt: {info.get('date', '')}\n"
+                                safe_name = html.escape(str(info.get('name', 'User')))
+                                u_list += f"• <b>{safe_name}</b> ({u_role})\n  ID: <code>{uid}</code> | Kích hoạt: {info.get('date', '')}\n"
                             u_list += f"\n<i>👉 Để huỷ quyền, gõ: /revoke &lt;ID&gt;</i>\n<i>👉 Chế độ hiện tại: {'🌐 PUBLIC (Mở tự do)' if PUBLIC_MODE else '🔒 PRIVATE (Chỉ thành viên duyệt)'}</i>"
                             send_telegram(u_list, target_chat_id=ADMIN_ID)
                             continue
