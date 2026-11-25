@@ -1,0 +1,423 @@
+nếu mà các bạn nhìn kỹ bên này nữ ha các bạn sẽ thấy cây volume trước đây nó xuống nè kích
+
+vol để nó gom hàng một lần ở đây rồi rồ xong nó vòng xuống nó gom tiếp nè các bạn thấy
+
+ha Hello các bạn Hôm nay mình sẽ review lại những cái lệnh mà mình đã tray trong tuần qua ha cái
+
+video này mình cực kỳ tâm huyết cho nên là các bạn cố gắng xem hết chắc chắn mình sẽ không làm
+
+Các bạn thất vọng đâu Sẽ không có ai mà chia sẻ miễn phí cho các bạn những kiến thức này đâu
+
+ha rồi thì Những cái lệnh ở đây á mình đã có nhận định cho các bạn hết rồi ha Cho nên
+
+hôm nay mình chỉ review lại thôi và hướng dẫn các bạn cái cách vẽ ki hướng dẫn các bạn cái cách
+
+mà vào lệnh phân tích Từ đâ lì m15 sao M5 sao để mà mình có một cái lệnh hoàn chỉnh và
+
+các bạn luôn nhớ mình phải luôn đặt stop l Tại vì các bạn sử dụng cái đồng bẫy rất là lớn
+
+tại vì nếu mà bạn không đặt stop l là bạn sẽ cháy tài khoản đòn bẫy rất là cao khi mà
+
+giá di chuyển một tí thôi thì bạn thua rất là nhiều thì bạn bạn phải có stop L để bạn dừng
+
+cái lỗ nó lại thì khi đó với một cái số tiền nhỏ nhưng mà bạn vẫn có thể Trade được những
+
+cái khối lượng rất là lớn kèm theo có stop loss thì gia tăng cái tài khoản nhanh hơn cho nên là
+
+bạn phải luôn luôn đặt stoploss nha tại vì không có ai mà biết thị trường này nó xảy ra như thế
+
+nào á có thể là bây giờ cái hệ thống của mình đúng nhưng mà mình không Chắc là 6 tháng tới
+
+hay là 1 năm 2 năm tới nó vẫn còn đúng nữa Mình thấy hiệu quả r Ok thì mình sẽ chia
+
+sẻ Các bạn vậy thôi mình thấy mình phải chia sẻ thôi các bạn Tại vì nếu mà mình không chia sẻ
+
+thì các bạn cũng tray thôi mà khi mà các bạn tray không có người dẫn lối á thì các bạn sẽ
+
+tray rất là mất thời gian thậm chí là mất tiền mất của nữa không có được kết quả gì hết cho
+
+nên là mình phải chia sẻ Mình chia sẻ để giúp các bạn mình không Chắc là các bạn sẽ thành công
+
+nhưng mà mình sẽ cam kết luôn là các bạn sẽ hạn chế thua lỗ và giúp các bạn đi nhanh hơn
+
+trên cái con đường này không có ai mà cam kết cho các bạn thành công được đâu các bạn nếu mà
+
+cam kết thì mình nghĩ là 100 ph là lừa đảo luôn á Tại vì cái thành công hay không á là
+
+các bạn có một cái điểm xuất phát như thế nào nữa các bạn xuất phát điểm quá thấp mà các bạn
+
+muốn đòi thành công nhanh như người ta thì sao mà được như như vậy Nó bất công đúng không Bạn xuất
+
+phát điểm thấp thì bạn phải cố gắng rất là nhiều hơn so với những cái người còn lại thì bạn mới
+
+mong mà có thành công như người ta và cái video của mình á Mình làm á Mình cũng chưa chắc gì
+
+ai cũng hiểu được nha Tại vì đây là kiến thức nâng cao và đã nâng cao rồi thì mình cần các
+
+bạn có một tí gì đó gọi là cơ bản xíu Ví dụ mình nói kiến thức đại học mà các bạn
+
+chưa học hết lớp 1 nữa thì sao mà hiểu được đúng không cho nên mới cần học 12 năm rồi mới
+
+đi học đại học đ học thật sĩ Tiến sĩ cho nên là nếu cái chỗ nào mà bạn xem không hiểu
+
+á thì bạn hãy tìm kiếm cái từ khóa trên Google hoặc là trên YouTube của mình là nó sẽ ra rồi
+
+quay lại cái vấn vấn đề là mình sẽ review lệnh hôm nay ha những cái lệnh này mình đã có nhận
+
+định review cho các bạn hết rồi thì ví dụ ở đây đi Khi mà nó rớt về đây thì rất là
+
+khó để bắt có thể bắt được Nhưng mà đối với các bạn mới thì nó đang làm cái chỗi đánh giảm
+
+thì rất là khó để bắt khi mà nó về các bạn nó phản ứng với cái kháng cự hỗ trợ nè
+
+Ở đây là kháng cự ha Ờ kháng cự nè bây giờ nó phá vỡ lên thì nó thành hỗ trợ và
+
+dưới cái kháng cự trợ này á Nó có một cái vùng vùng này nó là fail to Return đúng không on
+
+đ Block cũng được à Cái này nó không quan trọng lắm Tại vì bạn không có bắt theo như vậy Nó
+
+chỉ là một cái vùng hỗ trợ kháng cự cứng thôi như vậy là OK rồi cái nào mình nó quan trọng
+
+thì bạn chú ý còn cái nào không thì thôi Ví dụ ở đây nó có a Block này thì các bạn
+
+kẻ kháng cự hỗ trợ ở đây cũng đúng nè các bạn kẻ sát cái A Block này nó vẫn Ok thôi
+
+Và khi mà nó đi lên cái chỗi nến xanh á một cây nến xanh hai cây nến xanh đi lên á
+
+thì các bạn sẽ thấy thấy được cái mô hình gì không Đây là cái mô hình in3 đúng không Đây là
+
+cái mô hình in3 thì khi mà nó đóng cái nến xanh này nè Nó hoàn thành cái mô hình in saa
+
+rồi á thì các bạn sẽ vào khung nhỏ mà các bạn sẽ canh bay theo cái chuỗi nến tăng đúng không
+
+bay theo cái chuỗi nến tăng ở cái mô hình ế inaba lúc nãy á Nó có một cái cây volume rất
+
+là lớn luôn r volume rất là lẫn nó kích ở cái cây in3 Lúc nãy và sau đó nó tạo ra
+
+một cái cấu trúc Tăng đi lên thì các bạn hình Dung Ha cái cây volume này các bạn hỏi là lấy
+
+giá đóng cửa hay mở cửa thì nó ok hết bây giờ cái râ hay là cái cái điểm gì nó cũng
+
+ok dỗ này hết Tại vì lúc này cái size số của các bạn nó không còn cao rồi bây giờ các
+
+bạn có thể lấy cái vùng luôn cũng được ở đây Cái quan trọng á là nó đang phản ứng ở chỗ
+
+này nè Nó đang phản ứng cái inite 3 từ ở trên đi xuống nó tạo ra một cái mô hình hai
+
+đỉnh à cái mô hình hai đỉnh này đái này á thì mình nói với các bạn rất là nhiều ha nhiều
+
+khi bay lên cũng cẩn thận cẩn thận nha các bạn nếu mà các bạn bay lên á bạn phải đệ mô
+
+hình hai đái tiếp để nó đẩy lên được giống như là cái phe địch nó có hai đỉnh nó đè xuống
+
+thì mình cũng phải có hai đái để mình đẩy nó lên lại Quân nó phải đều với nhau các bạn giống
+
+như vậy ha mình nó vui vậy thôi ha rồi Khi mà nó vòng lại nó tạo ra cái mô hình hai
+
+đái á ngay cái key ph này của mình hướng dẫn các bạn kẻ đó cái cái phát đầu tiên là không
+
+thể nào mà tray được nha các bạn Tại vì ví dụ phe địch nó có hai cái đỉnh này nó nó
+
+đè xuống rồi mình phải cần cái gì mình phải cần hai cái đái để mình đẩy nó lên lại cho nên
+
+mình phải canh tín hiệu hai hai đái mới được rồi thêm cái nữa là gì Cái xu hướng trước đó là
+
+cái xu hướng tăng ủng hộ mình á Hồi nãy đọc nến t lì là cái sao các bạn đọc nến đâ
+
+lì là giá Đang test cái ina đúng không in sa mình có ký hiệu nè Cái l đỏ giá nó phản
+
+ứng với in3 và nó muốn bật cái mô hình hai đái lên thì ở đây nó có bật mô hình hai
+
+đáy hay không Mình cũng chưa chắc nhưng mà mình vẫn đợi Mình đang kỳ vọng nó tạo ra một cái đái
+
+ở đây để nó bật lên tạo ra hai đái thì bây giờ khi mà M5 nó phản ứng vào á thì
+
+bạn sẽ thấy nè bạn có thể mở m nm lên để bạn bắt ở khu vực [âm nhạc] này khi mà
+
+mở M5 á thì bạn sẽ thấy cái chỗ này nó như thế nào à Thì bạn sẽ có thể dùng cái
+
+volume profile nè Cái volume profile này mình có hướng dẫn các bạn rồi ha trong cái quá trình mà giá đi
+
+xuống á thì bạn sẽ kéo cái volume profile để bạn đo bạn đo hết con sóng này luôn khi nào mà
+
+thấy nó tăng trở lại á thì mới ngưng cứ đợi nó nó giảm hoài đi rồi sao thì các bạn sẽ
+
+thấy nè Khi mà nó tiếp cận xuống cái chỗ mà mình đang canh B nha mô hình hai Đái nè Thì
+
+nó có cái gì ở đây có phải là nó tạo ra một cái hai volume not thô thì hai volume Note
+
+là gì Hai volume Note ở đây mình lấy ví dụ cho các bạn ha khi mà bạn đo nguyên con sóng
+
+này nè thì nó sẽ có hai vùng một là high volume not là những cái vùng nó nhô lên cao lên
+
+nè hai là cái vùng lâ volume Note là nó lởm vô đó nó không có volume hầu như không có gia
+
+dịch những cái vùng hai volume Note là nó nó nhô ra nè tức là có rất là nhiều giao dịch ở
+
+đây thì theo cái lý thuyết về Giá mà mình đã có hướng dẫn các bạn đó thì chẳng hạn như ở
+
+đây Nó là một cái vùng ha volume not thì chẳng hạn ha Nó có cái hành động giá là cái vùng
+
+ha volume Note này các bạn thấy nó lò lên đúng không thì khi mà nó lò lên giống cái này chưa
+
+đó thì bạn sẽ có cái vùng như vậy thì cái hành động giả mà mình trước đó mình đã có hướng
+
+dẫn các bạn đó cái lý thuyết về giá tức là giá nó từ ở ở ngoài nè ở ngoài đúng không
+
+Nó là cái lâu volume Note ở trong nó sẽ là high volume noe thì cho nên từ ở ngoài mà đi
+
+vào thì bạn có thể C canh mua ở cái cạnh nè để mua lên giá từ ở ngoài đi vào cái
+
+vùng này thì bạn sẽ canh mua lên thì ở đây Các bạn nhìn có giống không có phải là giá cái
+
+nến đỏ này ở ngoài đúng không nó đã nằm ở ngoài cái high volume Note rồi đấy Cái này là lâ
+
+volume not nè các bạn đây cái chỗ này lâ volume not đúng không có nghĩa tức là giá nó từ ở
+
+ngoài nè từ ở ngoài đúng không Đang ở ngoài rồi nó chui vào nè đấy thì có phải á là cái
+
+chỗ này nó sẽ là cái o đ Block luôn r cái O đ Block này nó hợp luôn với cái vùng
+
+về cái lý thuyết Giá mà mình đã có hướng dẫn các bạn đó nếu mà các bạn nhìn kỹ bên này
+
+nữ ha các bạn sẽ thấy cây volume trước đây nó xuống nè kích vol để nó gom hàng một lần ở
+
+đây rồi rồi xong nó vòng xuống nó gom tiếp nè các bạn thấy ha Thì nó phải có những cái hành
+
+động giả như kích V bên này ha các bạn thì các bạn mới có xác định được bên này bạn mới
+
+cược được Đây là cái mô hình hai hai đái được ha tất cả từ đâ lì m15 M5 nó phải không
+
+thiếu điều kiện gì nha các bạn mà tay tào lao á Các bạn nhìn mỗi cái này không á Mỗi cái
+
+nhỏ xíu này không á các bạn cắm đầu các bạn tray là Toan ngay nha Cho nên là các bạn nhớ
+
+kỹ giúp mình thì nó phải có cái sự hợp lưu tất cả cái khung thời gian như vậy đó V ở
+
+đây kích V trước đó nó kích ở đây r khi mà về ở đây nó các bạn canh theo cái cách
+
+theo cái lý thuyết giá số 1 mà mình đã có từng hướng dẫn các bạn rồi cho nên là ở đây
+
+khả năng rất là cao nó sẽ sẽ là aut Block thì khi đó Cái aut Block này rất là xịn thì
+
+bạn sẽ mua theo cái out Block này đó mua theo cái out Block này và đặt stoploss dưới cái A Block
+
+luôn stoploss rất là ngắn luôn không thể nào mà ngắn hơn được luôn á nha các bạn TP thì các bạn
+
+phải TP theo m15 thì stoploss rất là ngắn luôn nha các bạn cho nên ở đây nếu mà các bạn Sai
+
+thì sao tại vì bây giờ các bạn đã kỳ vọng như thế nào các bạn đã kỳ vọng được là giá
+
+từ ở ngoài nó đi vào cái vùng 2 volume Note này và nó sẽ phản ứng ở cái cạnh này rồi
+
+nó bật lên đúng không Cho nên nếu mà cái trường hợp mà giá nó chui xuống lại á giá nó sẽ
+
+không đi lên mà nó chui xuống lại như vậy nè Thì bạn sẽ bỏ cái lệnh này luôn cho nên là
+
+giống như ở đây nếu mà giá Sao ở đây giá nó không bằng Từ đây lên từ cái out Block này
+
+không bằng đi lên mà nó Chu xuống dưới đây nè Thì bạn sẽ bỏ lệnh luôn không có tiếc gì ha
+
+Tại vì nó sai đúng không Tại vì nó ở đây là hai volume Note nè Nó đã chạy ra rồi nó
+
+không còn giữ được ở trong ny nữa thì bạn phải bỏ luôn nha đấy Đây là cái cách mà mình bắt
+
+lệnh m15 thì sao thì khi mà các bạn đã bắt lệnh ở M5 thì các bạn phải TP ở những cái
+
+chỗ quan trọng của m15 Ví dụ như ở đây có vol nè và đây nó cũng là cái A Block thì
+
+bạn có thể TP ở khu vực này là TP đầu tiên này của bạn nếu mà bạn nào mà TP xa
+
+hơn thì sao có thể là trên cái cây v này bạn nào mà TP xa hơn nữa thì sao TP ở
+
+khu vực này nè ở đây nó là kháng cự của ở đây lì luôn á Nhưng mà mình nghĩ là ít
+
+có bạn nào mà mà TP được tới đây á 26r lắm ha cho nên đa số là sẽ ở đây thôi
+
+ở đây thôi hoặc là ở đây thôi nha ở đây nó sẽ là đúng với thực tế Nhất nè nhưng mà
+
+bạn có quyền kỳ vọng xa hơn là ở đây cho nên là ở đây là ok đó tùy theo các bạn
+
+gồng thôi mà mình nghĩ thì các bạn gồng 50g là các bạn chốn hết rồi cho nên là ở đây ha
+
+cái cách này là cái cách mà mình vào lệnh luôn ha Nó phải đầy đủ cái điều kiện ha Ở đây
+
+V kích vào nè rồi kích vào nữa ha đ cho nên là ở đây V kích vào nữa ha cho nên
+
+là các bạn phải đầy đủ cái yếu tố và ở đây nếu mà bạn nhìn kỹ h á TP chẳng hạn
+
+ở đây á bạn nhìn kỹ hơn thì sao Có phải là các bạn vừa bắt như thế nào nếu mà bạn
+
+nhìn kỹ ở đây lì hơn á thì có phải là các bạn vừa bắt ở ở ngay cái râu của cái
+
+nến đâ lì không Cái nến t lì này nó test cái ins ins 3 này ha các bạn in3 hồi nãy
+
+mình đã có Kẹ rẻ cho các bạn rồi đó Nếu mà bạn nào Rất là hay thì bạn có thể bắt
+
+ở cái đái này cũng được nhưng mà tùy thôi các bạn đó tùy cái kiến thức của các bạn đó đâu
+
+đó các bạn không có biết bắt thì không đồng nghĩa với mình không biết ha Mình chỉ hướng dẫn các bạn
+
+những cái nào nó đi theo Trend Follow Trend để các bạn có cái sự an toàn nhất để các bạn có
+
+có lãi chứ Bây giờ mình hướng dẫn các bạn bắt ở những cái kèo này á thì các bạn thua nhiều
+
+hơn thắng mà các bạn lại không biết quản lý vốn nữa thì sao mà được đúng không những cái gì dễ
+
+thì các bạn làm trước đi Bạn đừng cố chấp mà nhảy vô đây Cố gắng bắt Đỉnh bắt đái làm gì
+
+hết proten chỗi Đến tăng nè chỗi nến tăng thì đi theo chỗi nến tăng rồi thì còn ở cái chỗ này
+
+cũng như vậy nè và ở đây bạn đã cượt được cái mô hình hai đái rồi bạn cược thành công rồi
+
+thì không có lý do gì á Khi mà nó vòng lại các bạn không cược thêm mua nữa đúng không ở
+
+đây bạn bắt đảo chiều mà bạn còn bắt được ở đây là fen thì nó dễ hơn nhiều á các bạn
+
+fen thì bạn đặ đánh hổ báo hơn cho mình cũng được luôn á thì khi mà nó vòng lại cái key
+
+này của mình tiếp ha Thì ở đây các bạn cũng y chang như vậy thôi các bạn cũng chẳng hạn vào
+
+M5 ha M5 thử đ nó có cái gì không các bạn cũng tương tự là các bạn sẽ đo cái volume
+
+profile từ con đầu sóng nè tới cuối sóng cái này thì mình cũng đo từ đầu sóng tới cuối sóng ha
+
+thì các bạn sẽ lấy nè Đây là cái vùng 2 volum not n high volum not thì khi mà nó vòng
+
+lại cái key này của mình ha thì nó từ ở ngoài đúng không giống như cái lý thuyết hồi nãy mình
+
+hướng dẫn các bạn đó Đây là cái vùng high volume not thì khi mà giá nó từ ở ngoài nó đi
+
+vào từ ở ngoài đi vào nè Thì nó nó sẽ phản ứng ở cạnh các bạn mua lên thì ở đây
+
+cũng tương tự như vậy ha bạn nhìn nè có phải là giá y xuống rồi từ ở ngoài đi vào cái
+
+vùng 2 not đúng không ở đây ở ngoài nó rất là mỏng nè ở ngoài rất là mỏng rồi xong sau
+
+đó nó đi lên nó đi lên nó chui vô cái cặp của hai volum đó nó chui vô đây rồi thì
+
+khi mà nó chui vô rồi thì ở đây bạn thấy cái gì không bạn sẽ thấy được cái gì bạn sẽ
+
+thấy được là ở cái chỗi nến tăng không chuỗi nến liên tục tăng luôn ha các bạn có sai không không
+
+có sai chuỗi nến liên tục tăng thì khi mà cái chuỗi nến tăng như vậy thì sao các bạn khi mà
+
+nó phá vỡ lên như vậy chui nến thì các bạn cứ mua luôn Khi mà nó Tại vì nó đã chui
+
+vào rồi thì các bạn cứ mua luôn rồi stop l thì sao stoploss lúc này các bạn phải tư duy nha
+
+Tư duy là sao Bây giờ các bạn đã cượt ra từ ở ở ở ngoài này đi vào thì có phải
+
+là nếu mà nó đi không đúng thì sao nó đi không đúng có nghĩa là từ ở ngoài đi vào rồi
+
+xong nó từ ở trong nó đi Ra đúng không là nó sẽ to ngay đúng không Cho nên nếu mà sao
+
+ở đây nếu mà bạn mua xong mà bạn thấy từ ở trong nè từ ở trong mà nó đi ra có
+
+phải là như vậy nè cây nến xanh này xong nó đi ra thì các bạn sẽ bỏ lệnh đúng không Cho
+
+nên á bạn chỉ cần á là stop l ở dưới ky này thôi là ok nha không cần mà phải quá
+
+xa như vậy Tại vì bạn đã hiểu được cái cái cách của nó đi rồi Nếu mà bây giờ giá nó
+
+đi xuống như vậy luôn á thì có nghĩa là bạn đã sai đúng không sai thì chấp nhận lỗ rồi xong
+
+rồi rồi rồi ngồi đợi tiếp nha không có bán nha tại vì sao tại vì sao không bán tại vì ở
+
+đây nó là hỗ trợ nha các bạn như vậy một cái kèo như vậy rất là chỉnh chu nha các bạn
+
+kèo chỉnh chu luôn á là đi theo cái chỗ nấng tăng nhưng mà các bạn thấy không Là phải ờ tray
+
+theo những cái kiến thức mà mình đã hướng dẫn các bạn đó lý thuyết về Giá phone cấu trúc thị trường
+
+mô hình nến đâ lì đây lì như thế nào m15 Như thế nào Cấu trúc nó như thế nào và cái
+
+lý thuyết hành động giá nó như thế nào thì các bạn sẽ kết hợp tất cả những cái thứ đó lại
+
+với nhau Ờ cái hệ thống tay của mình nó không phải là ma cắt lên rồi mua ma cắt xuống rồi
+
+bán các bạn không thể nào mà tư duy như vậy được các bạn phải có một cái sự kết hợp tất
+
+cả cái kiến thức lại với nhau Nó ăn khớp với nhau thì nó mới ok Còn các bạn cứ cắm đầu
+
+xác định on Block không à rồi có mỗi cái volume không các bạn Sai cũng sao được Có mỗi cái cấu
+
+trúc không các bạn Sai cũng không được cái hệ thống của mình cái cách tray của mình nó là cái sự
+
+kết hợp tất cả mọi thứ lại với nhau tạo thành một cái hệ thống hiện nay thì cái hệ thống này
+
+nó đang hoạt động hiệu quả cho nên là mình thấy Hay mình chia sẻ các bạn còn nếu mà một ngày
+
+đẹp trời nào đó nó không còn hiệu quả nữa tray tức là tray thua lỗ á thì có thể là mình
+
+sẽ fit lỗi nó lại mình sửa lỗi nó lại sửa không được thì mình nghĩ tray luôn Chẳng hạn như vậy
+
+Tại vì đâu có ai biết được là hệ thống nó nó ok không nhưng mà bây giờ hiệu quả thì mình
+
+cứ xài đây ha khi nào nó hư chỗ nào thì mình sửa chỗ đó và mình đã khắc phục tất cả
+
+những cái nhược điểm hết rồi cho nên bạn thêm bất kỳ cái gì vào cũng không được ha bạn mà thêm
+
+ma vào hay là bạn thêm cái gì vào mình chắc chắn là try không được đâu nó đã hoàn chỉnh rồi
+
+bạn thêm tầm bậy tầm bạ vào là chắc chắn là bạn tray không được cho nên bạn đừng có cố chấp
+
+mà thêm những cái hệ thống khác như là lậ block của người ta sao mình không biết nhưng mà cái cách
+
+của mình Xác định như vậy Ờ cái lý thuyết về giá mình cũng không biết là như người ta hướng dẫn
+
+các bạn như thế nào Cho nên nếu mà bạn mà muốn tray theo cái hệ thống mình tốt á thì bạn
+
+phải bỏ bạn phải reset tất cả những cái kiến thức mà Bạn học ở ngoài cái đi mình không biết nha
+
+tại vì mình muốn các bạn làm một cái trang giá trắng rồi xong á Các bạn học mình thì nó mới
+
+hiệu quả còn các bạn áp dụng tùm lum tà la hết là mình không có biết cái gì đâu ha Tại
+
+vì nếu mà bạn áp dụng cái cái cái này cái kia vô nó bị nó bị mâu thuẫn với các bạn
+
+nó bị mâu thuẫn là sẽ không được cái hệ thống này nó hoàn chỉnh rồi bạn ghép cái này cái kia
+
+vô nó bị mâu thuẫn Bây giờ giống như một cái iPhone đi người ta đã thiết kế hoàn chỉnh hết trơn
+
+rồi người ta đã đóng khung nguyên khối luôn rồi bây giờ các bạn thêm một cái camera vô các bạn thêm
+
+được không các bạn thêm một cái RAM vô để nó mạnh hơn các bạn thêm được không các bạn thêm một
+
+cái bộ nhớ vô để nó nhiều bộ nhớ hơn cái iPhone đó các bạn thêm được không không đúng không Nó
+
+là một cái thể nguyên khối luôn rồi các bạn thêm bất kỳ cái gì vô cũng được người ta sản xuất
+
+sau thì các bạn xài như vậy thì cái hệ thống mình cũng như vậy thôi cái mình thấy nó đã hoàn
+
+hảo rồi thì nếu mà bạn thêm vô là nó dễ tầm bậy lắm thì cái video này mình muốn chia sẻ
+
+đến các bạn là như vậy nha Những cái kiến thức này Mình đảm bảo ở ngoài kia không có ai chia
+
+sẻ free cho các bạn đâu ha Cho nên nếu mà bạn thấy hay bạn hãy ủng hộ mình bằng cách là
+
+like và các bạn share để cho nhiều người biết nha các bạn cái kiến thức này mình chia sẻ các bạn
+
+free mà các bạn không share cho mình á thì rất là nhiều người khác họ sẽ lấy cái này để họ
+
+dạy lại lấy tiền người khác các bạn thấy Ngộ Không cái cuộc đề nó là vậy nha các bạn cho nên
+
+là mình chia sẻ free cho các bạn thì các bạn xem Nếu hay thì các bạn hãy chia sẻ rộng rãi
+
+để người ta đừng có mất tiền mà kiến thức mình chia sẻ free mà bị người ta lấy để kiếm tiền
+
+cái cuộc sống này nó rất là chán nha các bạn ở cái video hôm nay mình review lại cho các bạn
+
+những cái lệnh mà mình đã có nhận định cho các bạn từ trước rồi các bạn hãy cố gắng học ha
+
+những cái ký thức này mình đã nói cho các bạn hết rồi à các bạn phải vận dụng thôi mọi thứ
+
+lại với nhau kết hợp lại với nhau thì khi đó kiến thức của mình nó sẽ trở Hà của các bạn
+
+Thì cái này nó phải cần thời gian nha các bạn không thể nào mà một hai ngày hay là 1 hai
+
+tháng gì nó nó trở thành của các bạn liền được đâu ha phải cần thời gian học tập rèn luyện rất
+
+là nhiều thì nó mới trở thành của các bạn được rồi thì chúc các bạn thành công nha Cảm ơn các
+
+bạn đã xem [âm nhạc] video [âm nhạc]

@@ -1,0 +1,167 @@
+Hành động giá không thể đảo chiều mà không có một swing point. Vì vậy, mỗi khi bạn phát hiện ra một swing point trên biểu đồ, bạn đang đứng trước một khả năng đảo chiều đáng kể.
+
+Trong chuỗi video này, mỗi tập mình sẽ tập trung vào một khái niệm quan trọng. Trình bày cả lý thuyết lẫn thực hành.
+
+Chuỗi video sẽ tuân theo một thứ tự logic và có cấu trúc rõ ràng. Để bạn có thể học toàn bộ chủ đề này mà không bị phân tâm bởi sự bội thực thông tin trên mạng xã hội.
+
+Không dài dòng nữa. Chúng ta hãy bắt đầu với khái niệm rất quan trọng trong phân tích price action.
+
+Đó là điểm xoay, swing point. Swing point là một mô hình ba cây nến.
+
+Chỉ ba cây nến thôi. Swing high, cây nến ở giữa có đỉnh cao nhất.
+
+Cây nến bên trái có đỉnh thấp hơn nó. Cây nến bên phải cũng có đỉnh thấp hơn nó.
+
+Ý nghĩa là phe mua đã đẩy giá lên một mức cao. Nhưng nến tiếp theo không vượt được mức đó nữa.
+
+Lực đẩy lên đang yếu dần. Đây là dấu hiệu đầu tiên của khả năng đảo chiều đi xuống.
+
+Swing low, ngược lại hoàn toàn. Cây nến ở giữa có đáy thấp nhất.
+
+Cây nến bên trái và cây nến bên phải đều có đáy cao hơn. Ý nghĩa là phe bán đã kéo giá xuống.
+
+Nhưng nến tiếp theo không phá được cái đáy đó. >> [âm nhạc] >> Lực bán đang cạn. Khả năng đảo chiều lên bắt đầu xuất hiện.
+
+Giá trị lớn nhất của swing point là nó khách quan. Anh em không cần cảm giác.
+
+Có ba cây nến thỏa điều kiện thì đó là swing point. Không thỏa thì không phải.
+
+Hai người khác nhau nhìn cùng một chart sẽ đánh dấu ra cùng một kết quả. Và đây là logic cốt lõi mà mình muốn anh em nhớ.
+
+Mọi cú đảo chiều đều phải bắt đầu bằng một swing point. Giá muốn quay đầu từ tăng sang giảm thì bắt buộc phải tạo ra một cái đỉnh, tức là một cái swing high.
+
+Không có ngoại lệ. Anh em nhìn ví dụ này.
+
+Giá đang tăng, xuất hiện một swing high, đỉnh bên trái thấp hơn, đỉnh bên phải thấp hơn. Ngay sau đó, giá đi xuống một mạch.
+
+Một mô hình máy móc ba cây nến đã đánh dấu đúng điểm quay đầu. Nghe tới đây thì nhiều anh em sẽ nghĩ, vậy cứ thấy swing point là vào lệnh.
+
+Nó không đơn giản như vậy ha. Nếu chỉ nhìn swing point là đủ thì ai học xong đoạn vừa rồi thì cũng thành trader có lãi à.
+
+Thị trường nó không cho tiền dễ như vậy ha. Mình nói lại cho chính xác.
+
+Đảo chiều thì luôn bắt đầu từ swing point, nhưng có swing point thì chưa chắc là đảo chiều. Vẫn là đoạn giảm vừa rồi.
+
+Anh em thấy giữa đường đi xuống, chart liên tục tạo ra swing low, nến giữa có đáy thấp nhất, hai bên đều cao hơn. Đúng chuẩn mô hình.
+
+Nhưng giá có đảo chiều lên không?
+
+Không. Giá tiếp tục giảm.
+
+Anh em nào bắt đáy ở swing low này thì đều là thanh khoản cho đợt giảm tiếp theo. Swing point là điều kiện cần.
+
+Nó chưa bao giờ là điều kiện đủ cả. Swing point sinh ra rất là nhiều tín hiệu nhiễu.
+
+Vấn đề bây giờ là làm sao lọc bỏ những tín hiệu giả, giữ lại những tín hiệu thật. Vấn đề swing point giả này đã được giới trader nhận ra từ rất là lâu.
+
+Và có một nguyên tắc lọc tồn tại hàng chục năm để xử lý nó. Mấu chốt nằm ở một loại nến cụ thể, đó là inside bar.
+
+Cây nến nằm trong. Inside bar là cây nến có đỉnh thấp hơn đỉnh nến trước và đáy cao hơn đáy của nến trước.
+
+Nói cách khác, toàn bộ cây nến nó nằm gọn bên trong biên độ của cây nến trước. Giờ anh em để ý, nếu cây nến bên phải nó là inside bar thì nó tự động có đỉnh thấp hơn và đáy cao hơn cây nến ở giữa.
+
+Chỉ cần cây nến bên trái thỏa điều kiện, mô hình swing point tự hình thành. Trong khi thực chất thị trường là chưa hề làm gì đặc biệt luôn.
+
+Mình lấy ví dụ này, cái đáy bên trái nó cao hơn, đáy bên phải nó cũng cao hơn. Swing low hợp lệ về mặt hình thức, nhưng nến bên phải là inside bar và ngay sau đó giá nó đi xuống tiếp.
+
+Tại sao?
+
+Vì inside bar là một nhịp dừng, còn thứ mình đang tìm là một cú quay đầu. Thị trường nghỉ một nhịp, cân bằng lại rồi đi tiếp theo cái xu hướng cũ.
+
+Đây là tiếp diễn xu hướng. Không phải là đảo chiều xu hướng.
+
+Nhìn theo góc độ thanh khoản, inside bar là lúc hai phe tạm thời không bên nào chủ động. Không có lực mới đổ vào, không có bên nào bị quét.
+
+Một cây nến như vậy không đủ sức đổi một cái xu hướng đang chạy. Nên khi swing point được tạo bởi inside bar, anh em phải nghi ngờ nó trước.
+
+Đây là quy tắc lọc swing point của mình, hướng dẫn anh em từ xưa tới giờ. Mình đi từng bước với swing high ha.
+
+Còn swing low thì anh em cứ làm ngược lại. Giá đang tăng.
+
+Anh em chờ swing high để tìm khả năng đảo chiều đi xuống. Swing high xuất hiện, kiểm tra ngay là cây nến bên phải có phải inside bar không?
+
+Không phải thì nó sẽ là swing high hợp lệ. Còn nếu nó là inside bar thì chưa tin.
+
+Mình chuyển sang bước ba. Đánh dấu range của cây nến ở giữa.
+
+Cây nến đại diện cho swing high. Cái range của cây nến này nó là khoảng từ điểm low tới điểm high của cây nến đó, tính cả râu nến luôn ha.
+
+Giờ giá phá range. Giá phá cái biên ở dưới thì swing high được xác nhận, lực bán đã thực sự xuất hiện.
+
+Còn nếu mà giá phá cái biên trên thì swing high đó là giả, mình loại bỏ nó đi. Xu hướng tăng vẫn đang tiếp diễn.
+
+Có hai cách xác nhận phá range hay không, anh em chọn theo cái phong cách của mình thôi ha. Nếu mà phá bằng râu nến thôi á thì chỉ cần râu nến nó chạm qua cái biên là tính, vào sớm hơn, nhưng mà dễ bị nhiễu hơn.
+
+Phải có giá đóng cửa nằm ngoài cái biên, chậm hơn, nhưng đổi lại là chắc chắn hơn. Người mới thì mình khuyên là dùng break out bằng điểm đóng nến nè.
+
+Mình cũng ưu tiên là điểm đóng mở cửa nến thôi. Anh em chậm một nhịp, nhưng mà mình tránh được rất là nhiều cú quét.
+
+Nếu mà anh em đã quen đọc lực nến thì mình có thể dùng cái điểm râu để mình break out cũng được. Mình có thể vào sớm hơn.
+
+Nhưng mà quan trọng nhất là mình chọn cái cấp nào cho nó nhất quán nha, một cấp thôi. Một câu để anh em luôn nhớ là swing point tạo bởi inside bar là một swing point đang chờ được duyệt.
+
+Giá nó phá đúng hướng thì mới được duyệt, còn phá sai hướng thì loại. Giờ mình đi qua chart từng cây nến để anh em thấy được cái quy tắc này thay đổi cái cách đọc giá ra sao.
+
+Giá tạo swing low, kiểm tra nến bên phải có phải inside bar không?
+
+Chỗ này thì không phải nha, thì swing low này được xác nhận. Mấy cây nến tiếp theo tăng như kỳ vọng và khi giá đi lên nó tạo ra một cái swing high.
+
+Cái nến bên phải của swing high này có phải inside bar không?
+
+Chỗ này thì nó là inside bar, thì swing high này chưa được xác nhận. [âm nhạc] Quy tắc của chúng ta là khi nào nó phá vỡ xuống cái low mà nó tạo ra cái high là cái swing high á thì nó mới được xác nhận nha.
+
+Và tiếp tục ở đây nó cũng tạo ra một cái swing high. Swing high này thì cũng có cây nến bên phải nó là inside bar.
+
+Cái swing high này vẫn chưa được xác nhận. Tiếp tục là giá đi lên như kỳ vọng.
+
+Ở đây nó tạo ra swing low. Swing low chỗ này thì kiểm tra cây nến bên phải có phải inside bar không?
+
+Thì cây nến bên phải nó cũng là inside bar ha. Và đến khi có cái cây nến mà nó đóng trên cái high này xác nhận đây là swing low.
+
+Tiếp tục ở đây cũng như vậy, một cái swing high. Kiểm tra nến bên phải có phải inside bar không?
+
+Thì chỗ này nó cũng là inside bar. Khi đó cái swing high này chưa được xác nhận.
+
+Và ở đây mình có một cái kinh nghiệm nhỏ cho các bạn nữa nè. Khi mà liên tục nó tạo ra những cái swing low gần với nhau như vậy, các bạn thấy là để mà khi mà nó xác nhận á thì bạn cần nó phải phá hết cái đống swing low này.
+
+Nếu trường hợp này các bạn dành riêng là ờ cây nến này nó đã đóng xuống xác nhận và nó có swing high rồi thì các bạn sẽ bị sai ở đây. Mình nhìn thêm một cái bối cảnh nữa ha.
+
+Và tiếp tục trong quá trình đi lên thì nó cũng tạo ra một cái swing high. Swing high này cây nến bên phải nó có phải là inside bar không?
+
+Thì cây nến bên phải này không phải ha, thì nó xác nhận đây là swing high. Khi ta có swing high view của chúng ta sẽ là giảm đi xuống.
+
+Và chưa gì hết, nó tạo thêm một cái swing low nữa. Cái swing low này nến bên phải nó có phải là inside bar không?
+
+Thì chỗ này nó là inside bar, thì khi đó chúng ta chưa xác nhận swing low này. Swing low này được xác nhận khi nào mà nó có cái cây nến đóng trên cái high của cái cây nến mà tạo ra cái swing low này nè.
+
+Chưa đóng thì cũng chưa đúng không?
+
+Nó tạo ra một cái swing high chỗ này. Swing high này cây nến bên phải nó là inside bar, cho nên là swing high này vẫn chưa được xác nhận ha.
+
+Thì mình chưa có view short. Đến khi có cây nến này đóng lên thì swing low dưới đây nó được xác nhận.
+
+Khi mà chúng ta có swing low rồi, thì các bạn sẽ thấy là giá nó sẽ liên tục tăng theo cái sự kỳ vọng của chúng ta. Và tiếp tục ở đây, giá nó cũng tạo ra một cái swing high.
+
+Swing high này thì cây nến bên phải nó vẫn là inside bar. Cho nên thành ra là chỗ này mình cũng chưa xác nhận ha.
+
+Cái sự xác nhận của mình là mình cần một cái điểm đóng nến. Cho nên đó là lý do vì sao mình không có trade theo cái râu là vậy.
+
+Thì cái chỗ này cái swing high vẫn chưa xác nhận thì mình vẫn chưa view short ha. Và ở đây tiếp tục nó tạo ra một cái swing low nữa.
+
+Swing low này vẫn chưa được xác nhận ha. Vì chưa có cây nến nào đóng trên cái high của cái nến mà có swing low.
+
+Và khi này chỗ này swing low này nó được xác nhận. Bởi vì nó có cái cây nến đóng trên cái high của cây nến nó tạo ra swing low rồi.
+
+Và và các bạn thấy là khi giá tăng thì các bạn sẽ có liên tục những cái swing low liên tục tăng dần lên. Và cái cách này nó giúp cho các bạn đỡ nhiều rất là nhiều ha.
+
+Trong cái quá trình đi lên và đi xuống như vậy á thì các bạn sẽ thấy rất là nhiều cái dấu hiệu bị nhiễu. Mà nếu mà mình dùng cái phương pháp lọc cơ bản như vậy thôi thì các bạn đã lọc ra được rất rất là nhiều trường hợp và nó đi rất là thuận lợi đúng không?
+
+Dĩ nhiên thị trường nó sẽ còn những cái trường hợp nó sẽ rất là không đẹp nhưng đó là những cái kinh nghiệm khi mà anh em bắt đầu mà ngồi trade thật sự giống như cái chỗ này của mình.
+
+Nếu mà mình cứ khăng khăng là cứ nguyên tắc đó thì win 2 nó sẽ có và chỗ đánh giảm nó sẽ có thì các bạn short xuống thì nó nguy hiểm chỗ này đúng không?
+
+Và ở đây [âm nhạc] mình có một cái kinh nghiệm là giá nó những cái đáy này, những cái đáy mà cần xác nhận này nó liên tục nó nằm sát sát với nhau thì mình cần mình thấy được là [âm nhạc] nó phải phá hết cái đống này cái đã.
+
+Chứ bây giờ nó phá một cái thì còn những cái cái ở dưới này thì cũng chưa có chắc ăn. Đó là kinh nghiệm đó các bạn.
+
+Mình có nguyên tắc, mình phải có kinh nghiệm, trải nghiệm nữa ha thì nó sẽ hoàn hảo hơn.

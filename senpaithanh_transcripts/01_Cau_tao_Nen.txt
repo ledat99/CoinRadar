@@ -1,0 +1,97 @@
+Thì à nếu mà anh em đã coi được cái clip này rồi thì rất là cảm ơn anh em. Đã muốn học cái phương pháp này.
+
+Thì ok thì cái bài đầu tiên á là về à nến. Đây thì cái nến này á thì chú nào á mà có kinh nghiệm rồi á thì bỏ qua cái topic này tại vì cái topic này là cái topic đơn giản giới thiệu qua được cái về cây nến thôi.
+
+Chú nào ờ còn mới toanh á thì đây ok. Thì một cái nến á nó có bốn thành phần nè.
+
+Đây là cái giá này là giá cao nhất là giá đỉnh nè. Là cái râu đỉnh.
+
+Đây là giá thấp nhất thì gọi là đáy đi. Rồi cái cái đây là cái giá này là giá mở cửa nè.
+
+Open. Rồi đây là giá đóng cửa cái cái giá nè đây là giá đóng cửa close.
+
+Ok nha. Nếu mà giá đóng cửa cao hơn giá mở cửa thì đây là một cây nến xanh.
+
+Bây giờ ngược lại open close. Thì đây là một cây nến đỏ. [hắng giọng] Ok nha tóm tắt lại nha.
+
+Một cái nến á nó cho mình bốn thông số. Một á là giá cao nhất là cái đỉnh nè, cái râu nè.
+
+Hai á là giá thấp nhất là cái đáy là cái râu này nè. Ba là giá mở cửa và giá đóng cửa.
+
+Giá đóng cửa mà cao hơn giá mở cửa thì là một cây nến tăng. Còn giá đóng cửa mà thấp hơn giá mở cửa thì là một cây nến đỏ.
+
+Rồi ok tiếp theo á là về time frame. Có nghĩa là ông coi trong trong trong chạc á là nó có khung 1 phút nè, 5 phút nè, 15 phút, 30 phút, 1 giờ, 4 giờ.
+
+Thì có nghĩa là một cái cây nến á trong vòng 15 ví dụ nha một cây nến trong vòng 15 phút á là trong vòng 15 phút á giá là nó đi tà le tà le tà le tà lúm tà lúm tà lúm nè.
+
+Đó nhưng mà khi mà nó đi đủ 15 phút á là nó đóng cửa. Thì nó đóng thì thì nó đóng cửa thì bây giờ á là một cái cây nến đúng không?
+
+Đây là 15 phút là nó mở cửa đúng không?
+
+Thì đây là giá mở cửa của nó. Đây là đây nó đóng cửa đúng không?
+
+Đây là giá đóng cửa của nó. Nè đó là chúng ta có cái thân nến.
+
+Chúng ta vẽ được cái thân nến. Ông thấy không?
+
+Mở cửa ở đây. Đóng cửa ở đây thì đây là một cái cây nến xanh đúng Tiếp theo á là đây là giá cao nhất đúng không?
+
+Giá cao nhất thì chúng ta vẽ đó. Ok đúng không?
+
+Đây là giá cao nhất, giá thấp nhất là giá này đúng không?
+
+Thì chúng ta vẽ một cây nến này. Đó ok.
+
+Đó nguyên một khoảng thời gian này là 15 phút. Trong 15 phút đó giá nó lên xuống nó đi tà le tà lủng tà lủng tà lủng vậy đó mình không biết gì hết nhưng mà khi mà nó đóng cửa thì mình có thể tóm gọn lại được cái hành động của giá trong một cái cây nến là như thế này.
+
+Ok nha thử vẽ tiếp nha. Nó không có thể tự tập nó không vẽ nến.
+
+Đó đúng không?
+
+Tóm tắt cái cây nến lại đó vẽ đại thôi. Vẽ đại vậy nè rồi ok.
+
+Giá mở cửa là giá này đúng không?
+
+Giá đóng cửa là giá này thì chúng ta có được cái thân nè giá giá mở cửa nè, giá đóng cửa nè. Vẽ lên ra được cái thân nến.
+
+Dễ lắm. Rồi đây là giá cao nhất đúng không?
+
+Rồi giá cao nhất thì vẽ cái đầu. Đó ẻ.
+
+Ok. Rồi giá thấp nhất là ở đây đúng không?
+
+Ok đó xong là chúng ta sẽ được một cây nến xanh. Ok rồi tiếp thử vẽ một cây nến giảm đi.
+
+Tạch tạch tạch tạch tạch tạch đó tùm lum tùm la cao lên cao xuống vút lên vút xuống vút xuống vút xuống gì đó. Rồi ok.
+
+Rồi giá mở cửa là đây đúng không?
+
+Giá đóng cửa là ở đây. Đó thì giá giá mở cửa đánh giá đóng cửa đây đây là cái thân nến đúng không?
+
+Đó thì giá đóng cửa thấp hơn giá mở cửa thì đây là cây nến đỏ. Ok.
+
+Đây là giá cao nhất đúng không?
+
+Vẽ một cái đầu. ẻo.
+
+Đó cái đầu nến. Đây là giá ôi đây là giá cao nhất đúng không?
+
+Vẽ một cái đầu. Đây là giá thấp nhất đúng không?
+
+Vẽ một cái đầu. Xong. [hắng giọng] Đơn giản.
+
+Ok nha. Rồi giờ mình tóm gọn lại nha.
+
+Một cây nến nó cho mình năm thành phần. Một á là giá cao nhất đây ứng với đây.
+
+Hai á là giá thấp nhất là cái đáy. Ba là giá mở cửa, bốn là giá đóng cửa.
+
+Và 5 á là cái cái khoảng thời gian của cái cây nến nó hình thành. Đó, đây là trong khoảng thời gian đây một khoảng thời gian cố định.
+
+1 phút. Các bạn có thể coi chạc á là 1 phút cũng có nến, 5 phút cũng có nến.
+
+Đó các bạn coi thử cái thời gian cái đóng nến ở bên phải nè. 15 phút.
+
+1 tiếng. 4 tiếng, 1 ngày, 1 tháng, 1 năm.
+
+Ok. Nha, xong.
