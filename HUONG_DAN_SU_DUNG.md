@@ -1,127 +1,131 @@
-# 🚀 Hướng Dẫn Sử Dụng Bộ Công Cụ Săn Crypto (Momentum Surge)
+# 🤖 HƯỚNG DẪN SỬ DỤNG HỆ THỐNG BOT TRADING & SĂN COIN (FX DREAM & COINRADAR)
 
-Bộ công cụ này được thiết kế theo chiến lược bắt các siêu sóng "Pump" với 3 công cụ kết hợp chéo với nhau:
-1. **Bot Cảnh báo Real-time** (`crypto_scanner.py`) — quét coin, lọc dòng tiền, báo tín hiệu qua Telegram.
-2. **Bộ giả lập Backtest** (`backtest.py`) — kiểm tra tỷ lệ thắng trên lịch sử.
-3. **Bảng dòng tiền 1 coin** (`flow_filter.py`) — xem Inflow/Outflow giống CoinGlass trước khi vào lệnh.
-
-> **Lưu ý Windows quan trọng:** PowerShell **KHÔNG chạy** lệnh trong thư mục hiện tại nếu không có `.\` phía trước, và lệnh `python` mặc định trỏ về Microsoft Store.
->
-> **Bắt buộc gõ đúng cú pháp (có `.\` phía trước + đuôi `.bat`):**
-> ```powershell
-> .\run_scanner.bat                      # quét coin + lọc tích lũy (~1 phút)
-> .\run_flow.bat BTC/USDT                # xem dòng tiền 1 coin
-> .\run_flow.bat IMX/USDT
-> .\run_backtest.bat VANRY/USDT          # backtest 1 coin
-> .\run_check.bat                        # theo dõi SL/TP các lệnh đang mở
-> ```
->
-> **Nếu vẫn lỗi *"Python was not found"*, gõ thẳng đường dẫn Python:**
-> ```powershell
-> C:\Users\vivas\AppData\Local\Python\bin\python.exe crypto_scanner.py
-> ```
->
-> Sau khi cửa sổ chạy xong sẽ có dòng "Press any key to continue . . ." — bấm Enter để đóng.
+Chào mừng bạn đến với hệ thống giao dịch tự động 24/7 **FX Dream Trading Bot** (`@fx_cryto_bot`). Hệ thống tích hợp toàn diện từ **Vàng (OANDA MT5)**, **Bitcoin/Ethereum (Binance)** đến **Săn Altcoins & Cổ phiếu Việt Nam**.
 
 ---
 
-## 1. Bot Săn Tín Hiệu (Crypto Scanner)
-Nhiệm vụ: Quét các đồng coin Lowcap (Volume 24h từ 5M - 1 Tỷ USD) trên Binance Spot và có mặt trên BingX. Bot tự động tìm điểm vào lệnh **Entry, Cắt Lỗ, Chốt Lời** dựa trên 3 đường SMA và báo qua Telegram.
+## 📑 MỤC LỤC
+1. [Hệ Thống 2 Bot Chạy Song Song](#1-hệ-thống-2-bot-chạy-song-song)
+2. [Hướng Dẫn Sử Dụng Menu Telegram](#2-hướng-dẫn-sử-dụng-menu-telegram)
+3. [Cấu Trúc Báo Cáo Lệnh (Đang Vào - Đang Chạy - Đã Chốt)](#3-cấu-trúc-báo-cáo-lệnh)
+4. [Lệnh Quản Lý Lệnh Thực Chiến (/themlenh, /xoalenh)](#4-lệnh-quản-lý-lệnh-thực-chiến)
+5. [Cơ Chế Phân Quyền & Chế Độ Public (/public, /approve)](#5-cơ-chế-phân-quyền--chế-độ-public)
+6. [Bộ Công Cụ Săn Crypto & Dòng Tiền Chạy Local](#6-bộ-công-cụ-săn-crypto--dòng-tiền-chạy-local)
 
-**Lệnh chạy cơ bản:**
+---
+
+## 1. HỆ THỐNG 2 BOT CHẠY SONG SONG
+
+Bot vận hành đồng thời 2 chiến thuật độc lập cho cả **Vàng (XAUUSD)** và **Bitcoin (BTCUSDT)** để đa dạng hóa danh mục:
+
+### ⚡ Phân Hệ 1: SCALPING M5 (VOLUME PROFILE & ORDER BLOCK)
+* **Khung thời gian:** Khung M5 (kết hợp cấu trúc D1/W1).
+* **Nguyên lý:** Xác định vùng tích luỹ khối lượng ngày hôm trước (yVAL, yPOC, yVAH), theo dõi sự dịch chuyển của dPOC hôm nay và săn tín hiệu rút râu cản M5 kèm nổ Volume.
+* **Chiến lược chốt lời:**
+  * **TP1:** R:R 1:1.2 (Chốt 50% khối lượng).
+  * **Bảo vệ vốn:** Tự động dời Stop Loss về **Hoà Vốn (Breakeven)** ngay khi chạm TP1.
+  * **Trailing Lock:** Đạt +1.5R ➔ Tự động khóa chặt +0.8R lợi nhuận.
+  * **TP2 / Runner:** Gồng sóng theo tín hiệu đảo chiều CISD trên khung M15.
+
+### 🧙‍♀️ Phân Hệ 2: SWING H1 (HỆ THỐNG MA NỮ - SENPAI THÀNH)
+* **Khung thời gian:** Khung nến H1.
+* **Nguyên lý:** Ứng dụng trọn bộ giáo trình nến Ma Nữ:
+  * Chiêu 7 cơ bản (c7cb) & Chiêu 7 thân tăng (c7tt).
+  * Kháng cự / Hỗ trợ nến đôi (Cản 2 nến), Râu cô đơn, Cản Linechart.
+  * Phá vỡ nến trước (Break of previous candle) & Mô hình kiểm tra râu nến (Perfect wick).
+* **Đặc điểm:** Tần suất vào lệnh chọn lọc, ăn sóng dài, giảm tối đa tín hiệu nhiễu.
+
+---
+
+## 2. HƯỚNG DẪN SỬ DỤNG MENU TELEGRAM
+
+Bạn có thể bấm trực tiếp các nút bấm trên bàn phím Telegram hoặc gõ lệnh:
+
+| Tên Nút Bấm | Lệnh Gõ | Chức Năng |
+| :--- | :--- | :--- |
+| 💵 **Xem Giá Live (Vàng/BTC/ETH)** | `/price`, `/gia` | Xem thị giá tức thời Vàng OANDA MT5, BTC & ETH Binance (HOD, LOD, Volume 24h). |
+| 🔍 **Kiểm Tra Lệnh & Báo Cáo Ngày** | `/check` | Giám sát toàn diện 3 khu vực: Lệnh đang vào, Lệnh đang chạy và Kết quả trong ngày. |
+| 📊 **Tổng Kết Kèo TP/SL** | `/tongket`, `/pnl` | Xem bảng tổng kết hiệu suất Winrate %, PnL Vàng & BTC theo 24h, 7 ngày và toàn thời gian. |
+| ⚖️ **Báo Cáo Đối Đầu 2 Bot** | `/sosanh` | So sánh chi tiết tỷ lệ thắng, số kèo và PnL giữa Bot M5 Scalp và Bot H1 Swing. |
+| 🧙‍♀️ **Swing H1 Ma Nữ (Senpai Thành)** | `/manu`, `/h1` | Phân tích chi tiết thị trường Vàng & BTC theo cấu trúc nến Ma Nữ H1. |
+| 🎯 **Scalping Volume Profile M5** | `/scalp`, `/vp` | Xem chi tiết trục giá Volume Profile, dPOC, Daily Open và trạng thái bảo vệ cản M5. |
+| ⚡ **Tuyệt Chiêu H4 Lưỡng Lự** | `/h4` | Bắt các pha bứt phá Breakout nến nén H4. |
+| 💣 **Săn Coin Rác (Vol > $100M)** | `/meme`, `/coinrac` | Quét các Altcoin có dòng tiền bùng nổ, quản lý vốn rủi ro 2%. |
+| 📈 **Tìm Coin TĂNG (LONG)** | `/long` | Lọc danh sách coin tích luỹ gom hàng trên Binance Spot/Futures. |
+| 📉 **Tìm Coin GIẢM (SHORT)** | `/short` | Lọc danh sách coin phân phối xả hàng trên Binance. |
+| 🇻🇳 **Đánh Giá Cổ Phiếu VN** | `/vnstock`, `/cp` | Phân tích định giá PE, tăng trưởng và dòng tiền cổ phiếu VN30 & sàn VN. |
+
+---
+
+## 3. CẤU TRÚC BÁO CÁO LỆNH
+
+Khi bấm **`🔍 Kiểm Tra Lệnh & Báo Cáo Ngày`** (hoặc gõ `/check`), báo cáo được chia làm **3 mục rõ ràng**:
+
+1. **⏳ 1. LỆNH ĐANG VÀO (LỆNH CHỜ / PENDING LIMIT):**
+   * Danh sách các lệnh Limit đang treo sàn chờ giá hồi về khớp (hiển thị rõ khoảng cách tới giá hiện tại, mốc SL, TP1, TP2).
+   * Nếu không có lệnh Limit treo, bot sẽ tóm tắt vùng cản đang rình đón của Vàng và BTC.
+2. **🔥 2. LỆNH ĐANG CHẠY (ACTIVE & FLOATING PnL):**
+   * Các lệnh đã khớp và đang chạy trực tiếp trên thị trường.
+   * Hiển thị: Giá vào Entry ➔ Giá hiện tại, Lãi/Lỗ tạm tính thời gian thực (Xanh 🟢 / Đỏ 🔴), Trạng thái dời SL Hoà Vốn (Risk-Free).
+3. **📜 3. LỆNH ĐÃ CÓ KẾT QUẢ TRONG NGÀY (HÔM NAY):**
+   * Tự động tổng kết các lệnh đã đóng trong ngày hôm nay (từ 00:00 sáng đến nay).
+   * Thống kê: Tổng số kèo hôm nay, Thắng, Hoà vốn, Cắt lỗ, Winrate % và Tổng PnL.
+   * Chi tiết từng lệnh: Kèo ăn Full TP2, kèo dời BE ăn 50% TP1, hay kèo dính SL.
+
+---
+
+## 4. LỆNH QUẢN LÝ LỆNH THỰC CHIẾN
+
+Dành cho Admin hoặc người dùng muốn bổ sung / khôi phục lệnh tay trực tiếp trên Telegram:
+
+### ➕ Thêm / Khôi phục lệnh: `/themlenh`
+* **Cú pháp:**
+  ```text
+  /themlenh <VANG|BTC> <BUY|SELL> <ENTRY> <SL> <TP1> [TP2] [H1|M5]
+  ```
+* **Ví dụ mẫu:**
+  * Lệnh Vàng H1: `/themlenh VANG SELL 3580 3586 3572.8 3565 H1`
+  * Lệnh BTC M5: `/themlenh BTC BUY 59000 58500 59600 60500 M5`
+* **Cơ chế:** Bot sẽ lập tức nạp vị thế vào danh sách giám sát thời gian thực, tự động theo dõi giá live, tính PnL và tự động bắn thông báo khi chạm TP1 / dời SL Hoà Vốn / chạm TP2.
+
+### 🗑️ Xoá / Reset lệnh đang mở: `/xoalenh`
+* **Cú pháp:** `/xoalenh`
+* **Chức năng:** Làm sạch danh sách các lệnh đang mở (giải phóng slot theo dõi).
+
+---
+
+## 5. CƠ CHẾ PHÂN QUYỀN & CHẾ ĐỘ PUBLIC
+
+Hệ thống hỗ trợ cơ chế phân quyền bảo mật nhưng cực kỳ linh hoạt:
+
+### 🌐 Chế độ Public (Hiện đang BẬT mặc định):
+* **Bất kỳ ai** mở bot `@fx_cryto_bot` và bấm `/start` đều **tự động được cấp quyền ngay lập tức** mà không cần chờ duyệt.
+* Người tham gia sẽ tự động được thêm vào danh sách nhận thông báo broadcast (khi có tín hiệu mới hoặc báo cáo định kỳ, bot sẽ gửi đồng loạt cho mọi người).
+* Mỗi khi có người mới mở bot, Admin sẽ nhận được tin nhắn thông báo: `📢 [THÀNH VIÊN MỚI THAM GIA BOT (PUBLIC)]`.
+
+### ⚙️ Các lệnh điều khiển quyền (Dành riêng cho Admin):
+* **Chuyển đổi chế độ Public / Private:**
+  * `/public off` ➔ Chuyển sang chế độ **Riêng tư (Private)**: Người lạ vào sẽ bị chặn và phải chờ Admin duyệt bằng `/approve`.
+  * `/public on` ➔ Chuyển sang chế độ **Cộng đồng (Public)**: Mở tự do cho mọi người sử dụng.
+* **Duyệt thành viên thủ công:**
+  * `/approve <ID_Telegram>` ➔ Cấp quyền cho một Telegram ID cụ thể.
+* **Huỷ quyền thành viên:**
+  * `/revoke <ID_Telegram>` ➔ Thu hồi quyền sử dụng của một Telegram ID.
+* **Xem danh sách thành viên:**
+  * `/users` hoặc `/members` ➔ Liệt kê toàn bộ danh sách người đang được cấp quyền.
+
+---
+
+## 6. BỘ CÔNG CỤ SĂN CRYPTO & DÒNG TIỀN CHẠY LOCAL
+
+Ngoài Bot Telegram 24/7 trên Render, bạn vẫn có thể chạy các công cụ phân tích dòng tiền chuyên sâu ngay trên máy tính cá nhân:
+
 ```powershell
-python crypto_scanner.py
-```
-*Lưu ý: Bạn có thể chạy lệnh này bất cứ lúc nào. Khi chạy, bot sẽ lọc ra tối đa 5 đồng coin có tín hiệu đẹp nhất và in ra màn hình Bảng Xếp Hạng Top 5.*
-
-> **Cập nhật mới:** Scanner giờ tìm coin **TÍCH LŨY** (accumulation):
-> - **Stage 1 (lọc tích lũy)**: giữ coin có **giá đi ngang/giảm** (price change 4h < 2%) VÀ **dòng tiền 4h/8h/12h đều dương**. Đây là dấu hiệu cá mập đang gom hàng trước khi pump.
-> - **Stage 2 (SMA + RSI)**: phân tích kỹ thuật trên các coin còn lại, kèm **chặn tín hiệu** nếu coin đang bị xả ở khung 5m.
-
----
-
-## 1.1. Tool Xem Dòng Tiền 1 Coin Riêng Lẻ (`flow_filter.py`)
-
-Nhiệm vụ: In bảng Inflow / Outflow / Net / % qua 7 khung thời gian (5m, 15m, 30m, 1h, 4h, 8h, 12h) — giống bảng trên **CoinGlass** nhưng tự tính từ Binance Futures, miễn phí, không cần API key.
-
-**Lệnh chạy:**
-```powershell
-# Xem bảng cho 1 coin bất kỳ
-python flow_filter.py BTC/USDT
-python flow_filter.py IMX/USDT
-python flow_filter.py HMSTR/USDT
+.\run_scanner.bat                      # Quét coin tích luỹ gom hàng Binance (~1 phút)
+.\run_flow.bat BTC/USDT                # Soi bảng dòng tiền Inflow/Outflow đa khung (như CoinGlass)
+.\run_flow.bat IMX/USDT
+.\run_backtest.bat VANRY/USDT          # Kiểm thử chiến lược trên dữ liệu lịch sử
+.\run_check.bat                        # Kiểm tra trạng thái SL/TP offline
 ```
 
-**Bảng sẽ hiện ra kiểu:**
-```
-Thời gian  |    Dòng vào |          Ra |         Net |       % | Đánh giá
-------------------------------------------------------------------------
-5 phút     |    $607.57K |      $4.58M |    $-3.97M | -143.00% | 🔴
-...
-12 giờ     |   $2587.16M |   $2212.23M | +  $374.93M |  +0.00% | 🟢
-
-🎯 Điểm tổng hợp: 0/100
-   Long-term positive : False  (1/3 khung dài dương)
-   Short-term no dump : False
-   Momentum POSITIVE  : False
-```
-
-**Cách đọc nhanh:**
-- **🟢 Net dương**: bên mua (taker) đang áp đảo → dòng tiền đang VÀO.
-- **🔴 Net âm**: bên bán đang áp đảo → dòng tiền đang RÚT / xả hàng.
-- **% (cột cuối)**: so sánh Net hiện tại với kỳ trước (cùng độ dài). `+166%` nghĩa là dòng tiền ròng đã tăng gấp 2.66 lần so với kỳ trước.
-
-**Cách dùng:** Trước khi vào lệnh 1 coin do scanner báo, chạy `flow_filter.py SYMBOL` để kiểm tra nhanh. Coin đáng chơi là coin có:
-1. 12h / 8h / 4h đều 🟢
-2. 30m + 1h cùng dấu với hướng bạn đánh
-3. 5m không bị 🔴 sâu quá −30%
-
----
-
-## 2. Tool Theo Dõi Cắt Lỗ / Chốt Lời (Check Trades)
-Nhiệm vụ: Sau khi Scanner tìm được coin và báo tín hiệu, các lệnh đó sẽ được lưu lại. Bạn dùng tool này để xem giá hiện tại đã chạm SL hay TP chưa. Nếu chạm, nó sẽ báo Telegram và xóa lệnh.
-
-**Lệnh chạy cơ bản:**
-```powershell
-python check_trades.py
-# hoặc
-run_check
-```
-
----
-
-## 3. Tool Kiểm Thử Lịch Sử (Backtester)
-Nhiệm vụ: Trước khi xuống tiền mua một đồng coin do bot báo, bạn KHÔNG NÊN mua mù quáng. Hãy dùng tool này để kiểm tra xem trong 10 ngày qua, tỷ lệ báo chuẩn của bot đối với đồng coin đó có sinh ra lợi nhuận bền vững hay không.
-
-**Lệnh chạy (Thay thế tên coin muốn test):**
-```powershell
-# Cú pháp
-python backtest.py <TÊN_COIN>/USDT
-
-# Ví dụ 1: Test đồng VANRY
-python backtest.py VANRY/USDT
-
-# Ví dụ 2: Test đồng HMSTR
-python backtest.py HMSTR/USDT
-```
-
----
-
-## 4. Hướng Dẫn Cấu Hình Telegram (Tùy Chọn)
-Nếu bạn không muốn lúc nào cũng phải gõ lệnh mà muốn bot tự động nhắn tin cho bạn qua Telegram khi có sóng lớn:
-1. Mở file `crypto_scanner.py` bằng Notepad hoặc VS Code.
-2. Tìm đến dòng **15** và **16**, thay thế 2 dòng này bằng thông tin bot của bạn:
-   - `TELEGRAM_BOT_TOKEN = "Mã token lấy từ @BotFather"`
-   - `TELEGRAM_CHAT_ID = "Mã chat id lấy từ @userinfobot"`
-3. Bạn có thể sử dụng các công cụ như Task Scheduler của Windows để cho file python tự động chạy ngầm mỗi 15 phút 1 lần.
-
----
-
-## 5. Điều Chỉnh Ngưỡng Lọc Dòng Tiền (`flow_filter.py`)
-Mở file `flow_filter.py`, chỉnh các hằng số ở phần **CONFIG**:
-- `SHORT_TF_MIN_PCT = -30` — coin có 5m `pct` thấp hơn ngưỡng này → chặn tín hiệu SMA+RSI.
-- `DUMP_PCT_THRESHOLD = -50` — coin có 5m `pct` thấp hơn ngưỡng này → trừ 20 điểm score.
-- `SIDEWAYS_PCT_MAX = 2.0` — coin có `|price_change_4h|` < ngưỡng này được coi là "đi ngang". Tăng lên (vd 3-5%) nếu muốn tìm coin mới bắt đầu tăng nhẹ.
-- `DEAD_PCT_12H = -15.0` — coin giảm > 15% trong 12h sẽ bị coi là đã "chết", bỏ qua.
-
-Bảng xếp hạng `crypto_scanner.py` đã có cột `Flow: xx/100` để bạn so sánh nhanh giữa các coin. **Bảng chính cần xem là "TOP 5 COIN TÍCH LŨY"** — đây là coin cá mập đang gom trước khi pump.
+*Lưu ý trên Windows PowerShell: Luôn có `.\` phía trước file `.bat` để thực thi.*
