@@ -214,7 +214,15 @@ def save_vip_history(history):
 
 def record_new_vip_trade(asset, symbol, signal, entry_price, entry_stop, sl, tp1, tp2, sl_dist, is_limit=False, current_price=None, system='M5_SCALP'):
     trades = load_vip_trades()
-    # Cho phép chạy song song 2 bot: 1 lệnh active cho mỗi symbol + system riêng biệt
+    # 1. Cơ chế chống xung đột: Không bao giờ mở lệnh ngược chiều (LONG vs SHORT) trên cùng 1 tài sản!
+    opposite_signal = 'SHORT' if signal == 'LONG' else 'LONG'
+    for existing_t in list(trades):
+        if existing_t.get('symbol') == symbol and existing_t.get('signal') == opposite_signal:
+            # Nếu có lệnh ngược chiều cũ đang chạy, hệ thống sẽ tự động hủy / đóng lệnh cũ để tránh Hedging tự đá nhau
+            trades = [t for t in trades if t.get('id') != existing_t.get('id')]
+            print(f"⚠️ Triệt tiêu lệnh ngược chiều cũ: {existing_t.get('id')} ({opposite_signal}) vì có lệnh mới ({signal})")
+            
+    # 2. Mỗi symbol + system chỉ giữ tối đa 1 lệnh active
     trades = [t for t in trades if not (t.get('symbol') == symbol and t.get('system', 'M5_SCALP') == system)]
     now_dt = datetime.datetime.now(TZ_VN)
 
@@ -813,7 +821,12 @@ def handle_check_vip_trades(chat_id=None):
                 curr_p = p_gold if is_gold else p_btc
                 dec = 2 if is_gold else 1
                 unit = "Giá" if is_gold else "USDT"
-                sys_tag = "🧙‍♀️ [SWING H1 - MA NỮ]" if t.get('system') == 'H1_MANU' else "⚡ [SCALP M5 - VP]"
+                if t.get('system') == 'H1_MANU':
+                    sys_tag = "🧙‍♀️ [SWING H1 - MA NỮ]"
+                elif t.get('system') == 'FIBO_WAVE':
+                    sys_tag = "📐 [FIBO SÓNG HỒI M30]"
+                else:
+                    sys_tag = "⚡ [SCALP M5 - VP]"
                 sym = "🥇 VÀNG (XAUUSD)" if is_gold else "👑 BITCOIN"
                 sgn = "🔴 SELL LIMIT" if t.get('signal') == 'SHORT' else "🟢 BUY LIMIT"
                 entry_p = t.get('entry_price', 0)
@@ -841,7 +854,12 @@ def handle_check_vip_trades(chat_id=None):
                 curr_p = p_gold if is_gold else p_btc
                 dec = 2 if is_gold else 1
                 unit = "Giá" if is_gold else "USDT"
-                sys_tag = "🧙‍♀️ [SWING H1 - MA NỮ]" if t.get('system') == 'H1_MANU' else "⚡ [SCALP M5 - VP]"
+                if t.get('system') == 'H1_MANU':
+                    sys_tag = "🧙‍♀️ [SWING H1 - MA NỮ]"
+                elif t.get('system') == 'FIBO_WAVE':
+                    sys_tag = "📐 [FIBO SÓNG HỒI M30]"
+                else:
+                    sys_tag = "⚡ [SCALP M5 - VP]"
                 sym = "🥇 VÀNG (XAUUSD)" if is_gold else "👑 BITCOIN"
                 sgn = "🔴 SHORT" if t.get('signal') == 'SHORT' else "🟢 LONG"
                 entry_p = t.get('entry_price', 0)
@@ -930,7 +948,12 @@ def format_single_trade_block(t, index=None):
     is_btc = (t.get('asset') == 'BTC')
     dec = 2 if is_gold else 1
     unit = "Giá" if is_gold else "USDT"
-    sys_tag = "🧙‍♀️ [SWING H1 - MA NỮ]" if t.get('system') == 'H1_MANU' else "⚡ [SCALP M5 - VP]"
+    if t.get('system') == 'H1_MANU':
+        sys_tag = "🧙‍♀️ [SWING H1 - MA NỮ]"
+    elif t.get('system') == 'FIBO_WAVE':
+        sys_tag = "📐 [FIBO SÓNG HỒI M30]"
+    else:
+        sys_tag = "⚡ [SCALP M5 - VP]"
     if is_gold:
         sym = f"🥇 VÀNG (XAUUSD) {sys_tag}"
     elif is_btc:
