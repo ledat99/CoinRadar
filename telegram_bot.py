@@ -3910,6 +3910,94 @@ def compute_macro_backtest_stats():
     MACRO_BT_CACHE = {'ts': time.time(), 'text': res}
     return res
 
+def calculate_setup_quality_score(system_type, plan_data):
+    """
+    Tính thang điểm chất lượng / mức độ đẹp của kèo từ 0 -> 100 điểm:
+    - 90 - 100: Kèo Kim Cương (A++ Setup): Đầy đủ đa khung, cản cứng, nổ volume & râu nến dài chuẩn sách giáo khoa.
+    - 80 - 89:  Kèo Vàng (A+ Setup): Đạt chuẩn cao, xác suất thắng rất tốt.
+    - 70 - 79:  Kèo Chuẩn (A Setup): Đạt đầy đủ điều kiện vào lệnh cơ bản.
+    - < 70:     Kèo Thường / Rủi ro.
+    """
+    score = 70 # Điểm sàn cho mọi kèo đã vượt qua bộ lọc khắt khe
+    badges = []
+    
+    if system_type == 'FIBO_WAVE':
+        # 1. H4 Trend alignment
+        if "🟢 TĂNG" in plan_data.get('main_trend_label', '') or "🔴 GIẢM" in plan_data.get('main_trend_label', ''):
+            score += 10
+            badges.append("Thuận Xu Hướng H4 (+10đ)")
+            
+        # 2. Sóng mạnh (Fibo Vàng 0.5 - 0.618)
+        if "MẠNH" in plan_data.get('wave_speed_label', ''):
+            score += 10
+            badges.append("Sóng Đẩy Mạnh H1 (+10đ)")
+        else:
+            score += 5
+            badges.append("Sóng Hồi Fibo Nông (+5đ)")
+            
+        # 3. Nến xác nhận M30 (Pinbar rút chân sâu hoặc Engulfing đẹp)
+        pat = plan_data.get('pattern_name', '')
+        if "Pinbar" in pat:
+            score += 10
+            badges.append("Pinbar Rút Chân Chuẩn M30 (+10đ)")
+        elif "Engulfing" in pat or "Nhấn Chìm" in pat:
+            score += 8
+            badges.append("Nến Nhấn Chìm M30 (+8đ)")
+            
+    elif system_type == 'M5_SCALP':
+        # 1. Stopping Volume VSA nổ cột tím
+        if "CỘT TÍM" in plan_data.get('defense_badge', ''):
+            score += 12
+            badges.append("Nổ Cột Tím VSA Siêu Vol (+12đ)")
+        else:
+            score += 6
+            
+        # 2. Vùng cản Volume Profile uy tín (yVAL, yVAH, yPOC)
+        defense = plan_data.get('confirmed_defense') or {}
+        z = defense.get('zone_name', '')
+        if any(k in z for k in ['yVAL', 'yVAH', 'yPOC']):
+            score += 10
+            badges.append("Chạm Cực Biên Value Area (+10đ)")
+            
+        # 3. Thuận Daily Bias
+        bias = plan_data.get('daily_bias', '')
+        is_buy = plan_data.get('is_buy', False)
+        if (is_buy and "BULL" in bias) or (not is_buy and "BEAR" in bias):
+            score += 8
+            badges.append("Đồng Thuận Daily Bias (+8đ)")
+            
+    elif system_type == 'H1_MANU':
+        # 1. Nến H1 Perfect Wick Retest
+        score += 10
+        badges.append("Perfect Wick Retest H1 (+10đ)")
+        
+        # 2. Cản Linechart cứng
+        res = plan_data.get('recent_res', 0)
+        sup = plan_data.get('recent_sup', 0)
+        if res > 0 and sup > 0:
+            score += 10
+            badges.append("Phá Vỡ Cản Linechart H1 (+10đ)")
+            
+        # 3. Biên độ R:R hấp dẫn
+        risk = plan_data.get('risk', 1)
+        tp2 = plan_data.get('tp2', 0)
+        entry = plan_data.get('entry', 0)
+        if risk > 0 and abs(tp2 - entry) / risk >= 1.7:
+            score += 8
+            badges.append("Tỷ Lệ R:R Cao >= 1.8R (+8đ)")
+
+    score = min(max(score, 65), 98) # Giới hạn tối đa 98/100
+    
+    if score >= 90:
+        tier_label = f"💎 <b>KÈO KIM CƯƠNG (A++ SETUP): {score}/100 ĐIỂM</b>"
+    elif score >= 80:
+        tier_label = f"🥇 <b>KÈO VÀNG (A+ SETUP): {score}/100 ĐIỂM</b>"
+    else:
+        tier_label = f"🥈 <b>KÈO CHUẨN (A SETUP): {score}/100 ĐIỂM</b>"
+        
+    badge_str = " • ".join(badges)
+    return score, tier_label, badge_str
+
 def analyze_fibo_wave_plan(asset='GOLD'):
     """
     Hệ thống Fibo Sóng Hồi chuẩn 3 BƯỚC (Đã Backtest 3 năm có lãi Net +25.6R, PF 1.24):
@@ -4718,10 +4806,13 @@ def auto_diamond_alert_worker():
                     s_emoji = "🟢 LONG (MUA)" if p_gold_vp['is_buy'] else "🔴 SHORT (BÁN)"
                     action_s = "BUY" if p_gold_vp['is_buy'] else "SELL"
                     z_name = p_gold_vp.get('confirmed_defense', {}).get('zone_name', 'Cản Volume')
+                    sc_val, sc_tier, sc_badges = calculate_setup_quality_score('M5_SCALP', p_gold_vp)
                     
                     msg_scalp_g = f"""🚨 <b>[TỰ ĐỘNG BÁO KÈO VIP: NỔ CỘT TÍM VSA M5 BẢO VỆ CẢN]</b> 🚨
 ━━━━━━━━━━━━━━━━━━
 🥇 Tài sản: <b>VÀNG (OANDA:XAUUSD MT5)</b> [⚡ BOT 1: SCALP M5]
+⭐ <b>ĐỘ ĐẸP CỦA KÈO:</b> {sc_tier}
+📊 <i>Điểm cộng: {sc_badges}</i>
 💰 Giá hiện tại: <b>${price_gold:,.2f}</b>
 🛡️ <b>Xác Nhận Volume M5:</b> {p_gold_vp['defense_badge']}
 🏛️ <b>VP Hôm Trước ({p_gold_vp['y_shape']}):</b>
@@ -4772,10 +4863,13 @@ def auto_diamond_alert_worker():
                     s_emoji = "🟢 LONG (MUA)" if p_btc_vp['is_buy'] else "🔴 SHORT (BÁN)"
                     action_s = "BUY" if p_btc_vp['is_buy'] else "SELL"
                     z_name_b = p_btc_vp.get('confirmed_defense', {}).get('zone_name', 'Cản Volume')
+                    sc_val_b, sc_tier_b, sc_badges_b = calculate_setup_quality_score('M5_SCALP', p_btc_vp)
                     
                     msg_scalp_b = f"""🚨 <b>[TỰ ĐỘNG BÁO KÈO VIP: NỔ CỘT TÍM VSA M5 BẢO VỆ CẢN]</b> 🚨
 ━━━━━━━━━━━━━━━━━━
 👑 Tài sản: <b>BITCOIN (BTCUSDT)</b> [⚡ BOT 1: SCALP M5]
+⭐ <b>ĐỘ ĐẸP CỦA KÈO:</b> {sc_tier_b}
+📊 <i>Điểm cộng: {sc_badges_b}</i>
 💰 Giá hiện tại: <b>${price_btc:,.1f}</b>
 🛡️ <b>Xác Nhận Volume M5:</b> {p_btc_vp['defense_badge']}
 🏛️ <b>VP Hôm Trước ({p_btc_vp['y_shape']}):</b>
@@ -4819,10 +4913,13 @@ def auto_diamond_alert_worker():
                     risk_g = p_gold_manu['risk']
                     curr_g = p_gold_manu['curr_p']
                     s_emoji = "🟢 BUY STOP / LONG" if is_buy else "🔴 SELL STOP / SHORT"
+                    sc_g_m, sc_tier_g_m, sc_b_g_m = calculate_setup_quality_score('H1_MANU', p_gold_manu)
 
                     msg_manu_g = f"""🧙‍♀️ <b>[TỰ ĐỘNG BÁO KÈO SWING H1: HỆ THỐNG MA NỮ (SENPAI THÀNH)]</b> 🧙‍♀️
 ━━━━━━━━━━━━━━━━━━
 🥇 Tài sản: <b>VÀNG (OANDA:XAUUSD H1)</b> [🧙‍♀️ BOT 2: SWING H1]
+⭐ <b>ĐỘ ĐẸP CỦA KÈO:</b> {sc_tier_g_m}
+📊 <i>Điểm cộng: {sc_b_g_m}</i>
 💰 Giá hiện tại: <b>${curr_g:,.2f}</b>
 🏛️ <b>Cản Linechart H1:</b> Kháng cự <code>${p_gold_manu['recent_res']:,.2f}</code> | Hỗ trợ <code>${p_gold_manu['recent_sup']:,.2f}</code>
 ✨ <b>Trạng Thái:</b> Nến H1 đóng phá cản + Đang tạo Perfect Wick Retest!
@@ -4863,10 +4960,13 @@ def auto_diamond_alert_worker():
                     risk_b = p_btc_manu['risk']
                     curr_b = p_btc_manu['curr_p']
                     s_emoji_b = "🟢 BUY STOP / LONG" if is_buy_b else "🔴 SELL STOP / SHORT"
+                    sc_b_m, sc_tier_b_m, sc_b_b_m = calculate_setup_quality_score('H1_MANU', p_btc_manu)
 
                     msg_manu_b = f"""🧙‍♀️ <b>[TỰ ĐỘNG BÁO KÈO SWING H1: HỆ THỐNG MA NỮ (SENPAI THÀNH)]</b> 🧙‍♀️
 ━━━━━━━━━━━━━━━━━━
 👑 Tài sản: <b>BITCOIN (BTCUSDT H1)</b> [🧙‍♀️ BOT 2: SWING H1]
+⭐ <b>ĐỘ ĐẸP CỦA KÈO:</b> {sc_tier_b_m}
+📊 <i>Điểm cộng: {sc_b_b_m}</i>
 💰 Giá hiện tại: <b>${curr_b:,.1f}</b>
 🏛️ <b>Cản Linechart H1:</b> Kháng cự <code>${p_btc_manu['recent_res']:,.1f}</code> | Hỗ trợ <code>${p_btc_manu['recent_sup']:,.1f}</code>
 ✨ <b>Trạng Thái:</b> Nến H1 đóng phá cản + Đang tạo Perfect Wick Retest!
@@ -4901,8 +5001,11 @@ def auto_diamond_alert_worker():
                     if f_plan and f_plan.get('is_ready'):
                         f_name = "🥇 VÀNG (XAUUSD)" if f_asset == 'GOLD' else "👑 BITCOIN (BTCUSDT)"
                         f_sgn = "🟢 BUY (LONG)" if f_plan['signal'] == 'LONG' else "🔴 SHORT (BÁN)"
+                        sc_f, sc_tier_f, sc_badges_f = calculate_setup_quality_score('FIBO_WAVE', f_plan)
                         msg_fibo = (
                             f"📐 <b>[TÍN HIỆU FIBO SÓNG HỒI (M30 CONFIRM) - {f_name}]</b>\n━━━━━━━━━━━━━━━━━━\n"
+                            f"⭐ <b>ĐỘ ĐẸP CỦA KÈO:</b> {sc_tier_f}\n"
+                            f"📊 <i>Điểm cộng: {sc_badges_f}</i>\n"
                             f"🚀 <b>Lệnh:</b> {f_sgn}\n"
                             f"• 👉 <b>Entry (Vùng Fibo {f_plan['zone_label']}):</b> <code>${f_plan['curr_p']:,.{f_dec}f}</code>\n"
                             f"• 🛡️ <b>Cắt Lỗ (SL sau râu M30):</b> <code>${f_plan['sl']:,.{f_dec}f}</code>\n"
