@@ -4029,6 +4029,39 @@ def calculate_setup_quality_score(system_type, plan_data):
             score += 9
             reasons.append(f"✅ <b>Biên độ R:R:</b> Tỷ lệ R:R đạt >= 1:1.8R về cản 2 nến tiếp theo (+9đ)")
 
+    elif system_type == 'THUAN_TRAN_M30':
+        # 1. Tiêu chí Xu hướng H4
+        h4_desc = plan_data.get('h4_trend_desc', '')
+        if "TĂNG" in h4_desc or "GIẢM" in h4_desc:
+            score += 10
+            trend_str = "TĂNG (EMA20 > EMA50)" if "TĂNG" in h4_desc else "GIẢM (EMA20 < EMA50)"
+            reasons.append(f"✅ <b>Xu hướng H4:</b> Đi đúng sóng chủ đạo H4 ({trend_str}) (+10đ, tuyệt đối không đánh ngược sóng lớn)")
+            
+        # 2. Tiêu chí Cản Động EMA20 M30
+        zone_desc = plan_data.get('zone_desc', '')
+        score += 10
+        reasons.append(f"✅ <b>Vùng cản uy tín:</b> Test chuẩn xác {zone_desc} (+10đ, cản động trung bình M30)")
+        
+        # 3. Tiêu chí Nến xác nhận M30 (Full Lực / 3N)
+        pat = plan_data.get('pattern_name', '')
+        if "Full Lực" in pat:
+            score += 13
+            reasons.append(f"✅ <b>Nến xác nhận M30:</b> Xuất hiện {pat} (thân đặc >= 60% dải nến) bứt phá dứt khoát từ cản (+13đ)")
+        elif "3N" in pat:
+            score += 10
+            reasons.append(f"✅ <b>Nến xác nhận M30:</b> Xuất hiện {pat} xác nhận lực đẩy tiếp diễn (+10đ)")
+        elif "Pinbar" in pat:
+            score += 11
+            reasons.append(f"✅ <b>Nến xác nhận M30:</b> Xuất hiện {pat} rút râu từ chối cản (+11đ)")
+            
+        # 4. Tiêu chí R:R và Biên độ
+        sl_dist = plan_data.get('sl_dist', 0)
+        asset_code = plan_data.get('asset', 'GOLD')
+        min_sl = 6.0 if asset_code == 'GOLD' else 250.0
+        if sl_dist >= min_sl:
+            score += 5
+            reasons.append(f"✅ <b>Biên độ Stoploss:</b> Khoảng SL {sl_dist:,.1f} đủ rộng vượt ngoài dải quét râu cản (+5đ)")
+
     score = min(max(score, 65), 98) # Giới hạn tối đa 98/100
     
     if score >= 90:
@@ -4201,12 +4234,14 @@ def analyze_thuan_tran_m30_plan(asset='GOLD'):
         if asset == 'GOLD':
             h4_klines = get_oanda_klines('240', 60)
             m30_klines = get_oanda_klines('30', 50)
-            pad = 0.8
+            pad = 2.0
+            min_sl_dist = 6.0
             dec = 2
         else:
             h4_klines = get_binance_klines('BTCUSDT', '4h', 60)
             m30_klines = get_binance_klines('BTCUSDT', '30m', 50)
-            pad = 40.0
+            pad = 50.0
+            min_sl_dist = 300.0
             dec = 1
 
         if not h4_klines or len(h4_klines) < 40 or not m30_klines or len(m30_klines) < 30:
@@ -4239,14 +4274,18 @@ def analyze_thuan_tran_m30_plan(asset='GOLD'):
         lower_wick1 = min(o1, cl1) - l1
         upper_wick1 = h1 - max(o1, cl1)
         
+        # Đỉnh / Đáy gần nhất của 10 cây nến M30 trước đó để làm mốc SL an toàn không bị liếm râu
+        swing_high_10 = float(df['high'].iloc[-12:-1].max())
+        swing_low_10 = float(df['low'].iloc[-12:-1].min())
+
         # Nhận diện Nến Full Lực M30 (thân nến >= 60%) hoặc Pinbar rút râu tại cản EMA20 M30
-        is_bull_full_force = (cl1 > o1) and (body1 >= 0.58 * candle_range1) and (l1 <= ema20_c1 * 1.002)
-        is_bull_pinbar = (lower_wick1 >= 1.3 * body1) and (l1 <= ema20_c1 * 1.002) and (cl1 >= o1)
-        is_bull_3n = (float(c1['close']) > float(c2['close']) > float(c3['close'])) and (float(c3['low']) <= ema20_c1 or float(c2['low']) <= ema20_c1)
+        is_bull_full_force = (cl1 > o1) and (body1 >= 0.58 * candle_range1) and (l1 <= ema20_c1 * 1.002) and (curr_p >= ema20_curr)
+        is_bull_pinbar = (lower_wick1 >= 1.3 * body1) and (l1 <= ema20_c1 * 1.002) and (cl1 >= o1) and (curr_p >= ema20_curr)
+        is_bull_3n = (float(c1['close']) > float(c2['close']) > float(c3['close'])) and (min(float(c3['low']), float(c2['low']), float(c1['low'])) <= ema20_c1 * 1.002) and (curr_p >= ema20_curr)
         
-        is_bear_full_force = (cl1 < o1) and (body1 >= 0.58 * candle_range1) and (h1 >= ema20_c1 * 0.998)
-        is_bear_pinbar = (upper_wick1 >= 1.3 * body1) and (h1 >= ema20_c1 * 0.998) and (cl1 <= o1)
-        is_bear_3n = (float(c1['close']) < float(c2['close']) < float(c3['close'])) and (float(c3['high']) >= ema20_c1 or float(c2['high']) >= ema20_c1)
+        is_bear_full_force = (cl1 < o1) and (body1 >= 0.58 * candle_range1) and (h1 >= ema20_c1 * 0.998) and (curr_p <= ema20_curr)
+        is_bear_pinbar = (upper_wick1 >= 1.3 * body1) and (h1 >= ema20_c1 * 0.998) and (cl1 <= o1) and (curr_p <= ema20_curr)
+        is_bear_3n = (float(c1['close']) < float(c2['close']) < float(c3['close'])) and (max(float(c3['high']), float(c2['high']), float(c1['high'])) >= ema20_c1 * 0.998) and (curr_p <= ema20_curr)
         
         signal = None
         is_ready = False
@@ -4260,14 +4299,18 @@ def analyze_thuan_tran_m30_plan(asset='GOLD'):
                 is_ready = True
                 pattern_name = "Nến M30 Full Lực Bật Cản EMA20" if is_bull_full_force else ("Pinbar Rút Râu Cản EMA20" if is_bull_pinbar else "Mô hình 3N Tăng Tiếp Diễn")
                 entry = curr_p
-                sl = round(min(l1, ema20_curr) - pad, dec)
-                risk = max(abs(entry - sl), pad * 2)
+                raw_sl = min(l1, swing_low_10, ema20_curr) - pad
+                if (entry - raw_sl) < min_sl_dist:
+                    sl = round(entry - min_sl_dist, dec)
+                else:
+                    sl = round(raw_sl, dec)
+                risk = max(abs(entry - sl), min_sl_dist)
                 tp1 = round(entry + 1.0 * risk, dec)
                 tp2 = round(entry + 2.0 * risk, dec)
             else:
                 entry = round(ema20_curr, dec)
-                sl = round(ema20_curr - pad * 2, dec)
-                risk = max(abs(entry - sl), pad * 2)
+                sl = round(ema20_curr - max(min_sl_dist, pad * 2), dec)
+                risk = max(abs(entry - sl), min_sl_dist)
                 tp1 = round(entry + 1.0 * risk, dec)
                 tp2 = round(entry + 2.0 * risk, dec)
         else:
@@ -4278,14 +4321,18 @@ def analyze_thuan_tran_m30_plan(asset='GOLD'):
                 is_ready = True
                 pattern_name = "Nến M30 Full Lực Đạp Cản EMA20" if is_bear_full_force else ("Pinbar Rút Râu Cản EMA20" if is_bear_pinbar else "Mô hình 3N Giảm Tiếp Diễn")
                 entry = curr_p
-                sl = round(max(h1, ema20_curr) + pad, dec)
-                risk = max(abs(sl - entry), pad * 2)
+                raw_sl = max(h1, swing_high_10, ema20_curr) + pad
+                if (raw_sl - entry) < min_sl_dist:
+                    sl = round(entry + min_sl_dist, dec)
+                else:
+                    sl = round(raw_sl, dec)
+                risk = max(abs(sl - entry), min_sl_dist)
                 tp1 = round(entry - 1.0 * risk, dec)
                 tp2 = round(entry - 2.0 * risk, dec)
             else:
                 entry = round(ema20_curr, dec)
-                sl = round(ema20_curr + pad * 2, dec)
-                risk = max(abs(sl - entry), pad * 2)
+                sl = round(ema20_curr + max(min_sl_dist, pad * 2), dec)
+                risk = max(abs(sl - entry), min_sl_dist)
                 tp1 = round(entry - 1.0 * risk, dec)
                 tp2 = round(entry - 2.0 * risk, dec)
 
@@ -5232,17 +5279,16 @@ def auto_diamond_alert_worker():
                     if t_plan and t_plan.get('is_ready'):
                         t_name = "🥇 VÀNG (XAUUSD)" if t_asset == 'GOLD' else "👑 BITCOIN (BTCUSDT)"
                         t_sgn = "🟢 BUY (LONG)" if t_plan['signal'] == 'LONG' else "🔴 SHORT (BÁN)"
+                        sc_t, sc_tier_t, sc_reasons_t = calculate_setup_quality_score('THUAN_TRAN_M30', t_plan)
                         msg_tt = (
                             f"🥋 <b>[TÍN HIỆU THUẬN TRẦN ALA TRADING (M30) - {t_name}]</b>\n━━━━━━━━━━━━━━━━━━\n"
-                            f"⭐ <b>ĐÁNH GIÁ CHẤT LƯỢNG KÈO:</b> 💎 <b>KÈO KIM CƯƠNG (A++ SETUP): 95/100 ĐIỂM</b>\n"
+                            f"⭐ <b>ĐÁNH GIÁ CHẤT LƯỢNG KÈO:</b> {sc_tier_t}\n"
                             f"🔍 <b>Lý do đạt điểm cao (Tiêu chí cụ thể):</b>\n"
-                            f"  • ✅ <b>Xu hướng H4:</b> {t_plan['h4_trend_desc']} (+10đ, đi đúng sóng lớn)\n"
-                            f"  • ✅ <b>Vùng cản uy tín:</b> Test chuẩn xác {t_plan['zone_desc']} (+12đ, cản động trung bình)\n"
-                            f"  • ✅ <b>Nến xác nhận M30:</b> Xuất hiện {t_plan['pattern_name']} (+12đ, bứt phá dứt khoát)\n"
+                            f"{sc_reasons_t}\n"
                             f"━━━━━━━━━━━━━━━━━━\n"
                             f"🚀 <b>Lệnh:</b> {t_sgn}\n"
                             f"• 👉 <b>Entry (Market Now):</b> <code>${t_plan['curr_p']:,.{t_dec}f}</code>\n"
-                            f"• 🛡️ <b>Cắt Lỗ (SL Ngoài Cản EMA20 M30):</b> <code>${t_plan['sl']:,.{t_dec}f}</code>\n"
+                            f"• 🛡️ <b>Cắt Lỗ (SL Ngoài Cản EMA20 M30):</b> <code>${t_plan['sl']:,.{t_dec}f}</code> (~{t_plan['sl_dist']:,.{t_dec}f} Giá)\n"
                             f"• 🎯 <b>TP1 (1.0R - Chốt 50% kéo SL Entry):</b> <code>${t_plan['tp1']:,.{t_dec}f}</code>\n"
                             f"• 🎯 <b>TP2 (2.0R - Đỉnh/Đáy đối diện):</b> <code>${t_plan['tp2']:,.{t_dec}f}</code>\n"
                             f"━━━━━━━━━━━━━━━━━━\n"
