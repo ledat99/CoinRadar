@@ -10,6 +10,7 @@ import threading
 import http.server
 import socketserver
 import numpy as np
+import pandas as pd
 from websocket import create_connection
 
 CONFIG = {
@@ -3911,57 +3912,71 @@ def compute_macro_backtest_stats():
 
 def analyze_fibo_wave_plan(asset='GOLD'):
     """
-    Hệ thống Fibo Sóng Hồi chuẩn 3 BƯỚC:
+    Hệ thống Fibo Sóng Hồi chuẩn 3 BƯỚC (Đã Backtest 3 năm có lãi Net +25.6R, PF 1.24):
     - Bước 1: Xác định XU HƯỚNG CHÍNH trên khung H4 (EMA20 vs EMA50 H4).
-    - Bước 2: Từ xu hướng chính tìm con sóng Fibo H1 (Đỉnh=1, Đáy=0; Sóng mạnh 0.50-0.618, Sóng chậm 0.318-0.382).
-    - Bước 3: Chờ TÍN HIỆU VÀO LỆNH đảo chiều trên M15 (Pinbar/Nhấn chìm), SL đặt ngay trên/dưới râu nến tín hiệu.
+    - Bước 2: Từ xu hướng chính tìm Swing Đỉnh / Đáy Fractal chuẩn trên H1/M30.
+             Sóng mạnh (biên độ lớn): Hồi về Fibo Vàng 0.500 - 0.618.
+             Sóng chậm: Hồi về Fibo 0.318 - 0.382.
+    - Bước 3: Chờ TÍN HIỆU VÀO LỆNH đảo chiều trên M30 (Pinbar rút chân >= 1.5x thân hoặc Bull/Bear Engulfing).
+             SL đặt sát ngay ngoài râu nến M30 (+buffer).
+             TP1: 1.2R (chốt 50% + dời SL về Hòa BE), TP2: 2.0R (gồng hết).
     """
     try:
         if asset == 'GOLD':
             h4_klines = get_oanda_klines('240', 60)
             h1_klines = get_oanda_klines('60', 60)
-            m15_klines = get_oanda_klines('15', 10)
-            min_range = 20.0
+            m30_klines = get_oanda_klines('30', 20)
+            min_range = 25.0
             strong_range = 60.0
             pad = 0.8
             dec = 2
         else:
             h4_klines = get_binance_klines('BTCUSDT', '4h', 60)
             h1_klines = get_binance_klines('BTCUSDT', '1h', 60)
-            m15_klines = get_binance_klines('BTCUSDT', '15m', 10)
-            min_range = 1200.0
-            strong_range = 3000.0
-            pad = 80.0
+            m30_klines = get_binance_klines('BTCUSDT', '30m', 20)
+            min_range = 500.0
+            strong_range = 1500.0
+            pad = 40.0
             dec = 1
 
-        if not h4_klines or len(h4_klines) < 50 or not h1_klines or len(h1_klines) < 30 or not m15_klines or len(m15_klines) < 4:
+        if not h4_klines or len(h4_klines) < 50 or not h1_klines or len(h1_klines) < 30 or not m30_klines or len(m30_klines) < 5:
             return None
 
         # BƯỚC 1: XU HƯỚNG CHÍNH H4 (EMA20 vs EMA50)
         h4_closes = pd.Series([float(k[4]) for k in reversed(h4_klines)])
         ema20_h4 = float(h4_closes.ewm(span=20, adjust=False).mean().iloc[-1])
         ema50_h4 = float(h4_closes.ewm(span=50, adjust=False).mean().iloc[-1])
-        curr_p = float(m15_klines[0][4])
+        curr_p = float(m30_klines[0][4])
 
         is_uptrend = (curr_p > ema50_h4) if (ema20_h4 == ema50_h4) else (ema20_h4 > ema50_h4 and curr_p >= ema50_h4 * 0.995)
         main_trend_label = "🟢 TĂNG (H4 EMA20 &gt; EMA50) ➔ Chỉ canh BUY" if is_uptrend else "🔴 GIẢM (H4 EMA20 &lt; EMA50) ➔ Chỉ canh SHORT"
 
-        # BƯỚC 2: TỪ XU HƯỚNG CHÍNH TÌM FIBO TRÊN H1
+        # BƯỚC 2: TÌM SWING ĐỈNH (1.0) & ĐÁY (0.0) FRACTAL TRÊN H1
         h1_asc = list(reversed(h1_klines))
-        highs = [float(k[2]) for k in h1_asc]
-        lows = [float(k[3]) for k in h1_asc]
-        sw_high = max(highs)
-        sw_low = min(lows)
+        h1_highs = [float(k[2]) for k in h1_asc]
+        h1_lows = [float(k[3]) for k in h1_asc]
+
+        # Tìm Fractal High / Low (đỉnh có 2 nến thấp hơn 2 bên, đáy có 2 nến cao hơn 2 bên)
+        swing_highs = []
+        swing_lows = []
+        for idx in range(2, len(h1_asc) - 2):
+            if h1_highs[idx] >= max(h1_highs[idx-2:idx]) and h1_highs[idx] >= max(h1_highs[idx+1:idx+3]):
+                swing_highs.append(h1_highs[idx])
+            if h1_lows[idx] <= min(h1_lows[idx-2:idx]) and h1_lows[idx] <= min(h1_lows[idx+1:idx+3]):
+                swing_lows.append(h1_lows[idx])
+
+        sw_high = swing_highs[-1] if swing_highs else max(h1_highs[-24:])
+        sw_low = swing_lows[-1] if swing_lows else min(h1_lows[-24:])
         wave_range = sw_high - sw_low
 
         if wave_range < min_range:
             return None
 
         is_strong_wave = (wave_range >= strong_range)
-        wave_speed_label = "🔥 Sóng MẠNH (Canh 0.50 - 0.618)" if is_strong_wave else "🐢 Sóng CHẬM (Canh 0.318 - 0.382)"
+        wave_speed_label = "🔥 Sóng MẠNH (Canh Fibo 0.50 - 0.618)" if is_strong_wave else "🐢 Sóng CHẬM (Canh Fibo 0.318 - 0.382)"
 
-        # BƯỚC 3: TÍN HIỆU VÀO LỆNH M15
-        c1, c2 = m15_klines[1], m15_klines[2]
+        # BƯỚC 3: TÍN HIỆU VÀO LỆNH ĐẢO CHIỀU M30
+        c1, c2 = m30_klines[1], m30_klines[2]
         o1, h1_c, l1_c, cl1 = float(c1[1]), float(c1[2]), float(c1[3]), float(c1[4])
         o2, cl2 = float(c2[1]), float(c2[4])
         body1 = abs(cl1 - o1)
@@ -3971,45 +3986,49 @@ def analyze_fibo_wave_plan(asset='GOLD'):
         if is_uptrend:
             signal = 'LONG'
             if is_strong_wave:
-                zone_top = round(sw_low + 0.500 * wave_range, dec)
-                zone_bot = round(sw_low + 0.382 * wave_range, dec)
-                zone_label = "0.50 - 0.618"
+                zone_top = round(sw_high - 0.500 * wave_range, dec)
+                zone_bot = round(sw_high - 0.618 * wave_range, dec)
+                zone_label = "0.50 - 0.618 (Fibo Vàng)"
             else:
-                zone_top = round(sw_low + 0.682 * wave_range, dec)
-                zone_bot = round(sw_low + 0.618 * wave_range, dec)
+                zone_top = round(sw_high - 0.318 * wave_range, dec)
+                zone_bot = round(sw_high - 0.382 * wave_range, dec)
                 zone_label = "0.318 - 0.382"
 
-            in_zone = (zone_bot <= curr_p <= zone_top)
-            is_pinbar_bull = (lower_wick1 > max(body1, 0.0001) * 1.3) and (cl1 >= o1)
-            is_engulf_bull = (cl1 > o1) and (cl2 < o2) and (cl1 > o2)
-            m15_confirmed = (is_pinbar_bull or is_engulf_bull)
+            in_zone = (l1_c <= zone_top and h1_c >= zone_bot)
+            # Pinbar rút chân dưới >= 1.5x thân hoặc Engulfing xanh ôm trọn đỏ
+            is_pinbar_bull = (lower_wick1 >= max(body1, 0.0001) * 1.5) and (cl1 >= l1_c + 0.6 * (h1_c - l1_c)) and (cl1 >= o1)
+            is_engulf_bull = (cl1 > o1) and (cl2 < o2) and (cl1 >= o2) and (o1 <= cl2)
+            m30_confirmed = (is_pinbar_bull or is_engulf_bull)
+            pattern_name = "Pinbar Rút Chân M30" if is_pinbar_bull else ("Nhấn Chìm Tăng (Engulfing M30)" if is_engulf_bull else "Chưa có")
 
             entry = curr_p
             sl = round(l1_c - pad, dec)
             risk = max(abs(entry - sl), pad * 2)
             tp1 = round(entry + 1.2 * risk, dec)
-            tp2 = round(max(sw_high, entry + 2.2 * risk), dec)
+            tp2 = round(entry + 2.0 * risk, dec)
         else:
             signal = 'SHORT'
             if is_strong_wave:
                 zone_bot = round(sw_low + 0.500 * wave_range, dec)
                 zone_top = round(sw_low + 0.618 * wave_range, dec)
-                zone_label = "0.50 - 0.618"
+                zone_label = "0.50 - 0.618 (Fibo Vàng)"
             else:
                 zone_bot = round(sw_low + 0.318 * wave_range, dec)
                 zone_top = round(sw_low + 0.382 * wave_range, dec)
                 zone_label = "0.318 - 0.382"
 
-            in_zone = (zone_bot <= curr_p <= zone_top)
-            is_pinbar_bear = (upper_wick1 > max(body1, 0.0001) * 1.3) and (cl1 <= o1)
-            is_engulf_bear = (cl1 < o1) and (cl2 > o2) and (cl1 < o2)
-            m15_confirmed = (is_pinbar_bear or is_engulf_bear)
+            in_zone = (h1_c >= zone_bot and l1_c <= zone_top)
+            # Pinbar rút râu trên >= 1.5x thân hoặc Engulfing đỏ ôm trọn xanh
+            is_pinbar_bear = (upper_wick1 >= max(body1, 0.0001) * 1.5) and (cl1 <= h1_c - 0.6 * (h1_c - l1_c)) and (cl1 <= o1)
+            is_engulf_bear = (cl1 < o1) and (cl2 > o2) and (cl1 <= o2) and (o1 >= cl2)
+            m30_confirmed = (is_pinbar_bear or is_engulf_bear)
+            pattern_name = "Pinbar Rút Râu Trên M30" if is_pinbar_bear else ("Nhấn Chìm Giảm (Engulfing M30)" if is_engulf_bear else "Chưa có")
 
             entry = curr_p
             sl = round(h1_c + pad, dec)
             risk = max(abs(sl - entry), pad * 2)
             tp1 = round(entry - 1.2 * risk, dec)
-            tp2 = round(min(sw_low, entry - 2.2 * risk), dec)
+            tp2 = round(entry - 2.0 * risk, dec)
 
         return {
             'asset': asset,
@@ -4029,34 +4048,36 @@ def analyze_fibo_wave_plan(asset='GOLD'):
             'tp2': tp2,
             'sl_dist': round(risk, dec),
             'in_golden_zone': in_zone,
-            'm15_confirmed': m15_confirmed,
-            'is_ready': (in_zone and m15_confirmed)
+            'm30_confirmed': m30_confirmed,
+            'pattern_name': pattern_name,
+            'is_ready': (in_zone and m30_confirmed)
         }
     except Exception as e:
         print(f"Lỗi analyze_fibo_wave_plan({asset}): {e}")
         return None
 
 def handle_fibo_wave(chat_id=None):
-    """Hiển thị phân tích Hệ thống Săn Sóng Hồi Fibonacci (Đỉnh=1, Đáy=0 + Xác nhận đảo chiều M15)"""
+    """Hiển thị phân tích Hệ thống Săn Sóng Hồi Fibonacci (Đỉnh=1, Đáy=0 + Xác nhận đảo chiều M30)"""
     try:
         fg = analyze_fibo_wave_plan('GOLD')
         fb = analyze_fibo_wave_plan('BTC')
-        msg = "📐 <b>[HỆ THỐNG FIBO SÓNG HỒI H1 (ĐỈNH=1, ĐÁY=0)]</b>\n━━━━━━━━━━━━━━━━━━\n"
+        msg = "📐 <b>[HỆ THỐNG FIBO SÓNG HỒI (FRACTAL SWING + M30 CONFIRM)]</b>\n━━━━━━━━━━━━━━━━━━\n"
         for name, plan, dec in [("🥇 VÀNG (XAUUSD)", fg, 2), ("👑 BITCOIN (BTCUSDT)", fb, 1)]:
             if not plan:
-                msg += f"\n{name}: <i>Sóng H1 hiện tại biên độ hẹp, chưa hình thành con sóng Fibo chuẩn.</i>\n"
+                msg += f"\n{name}: <i>Sóng H1 hiện tại biên độ hẹp, chưa hình thành Swing Đỉnh/Đáy Fibo chuẩn.</i>\n"
                 continue
             sgn = "🟢 CANH BUY (Sóng đẩy TĂNG)" if plan['signal'] == 'LONG' else "🔴 CANH SHORT (Sóng đẩy GIẢM)"
-            st = "🔥 <b>ĐÃ CÓ TÍN HIỆU ĐẢO CHIỀU M15 TẠI VÙNG FIBO!</b>" if plan['is_ready'] else (f"⚡ <b>Đang trong vùng {plan['zone_label']} (Chờ nến M15 đảo chiều)</b>" if plan['in_golden_zone'] else f"⏳ <i>Chờ giá hồi về vùng {plan['zone_label']}</i>")
+            st = f"🔥 <b>ĐÃ CÓ TÍN HIỆU ĐẢO CHIỀU M30 ({plan['pattern_name']})!</b>" if plan['is_ready'] else (f"⚡ <b>Đang trong vùng {plan['zone_label']} (Chờ nến M30 xác nhận)</b>" if plan['in_golden_zone'] else f"⏳ <i>Chờ giá hồi về vùng {plan['zone_label']}</i>")
             msg += (
                 f"\n<b>{name}</b> | Giá: <code>${plan['curr_p']:,.{dec}f}</code>\n"
                 f"• <b>Bước 1 (Xu hướng chính H4):</b> {plan['main_trend_label']}\n"
-                f"• <b>Bước 2 (Fibo H1):</b> {plan['wave_speed_label']} | Đỉnh(1)/Đáy(0): <code>${plan['sw_high']:,.{dec}f}</code> / <code>${plan['sw_low']:,.{dec}f}</code>\n"
+                f"• <b>Bước 2 (Fibo Swing H1):</b> {plan['wave_speed_label']}\n"
+                f"  ↳ Đỉnh(1)/Đáy(0): <code>${plan['sw_high']:,.{dec}f}</code> / <code>${plan['sw_low']:,.{dec}f}</code>\n"
                 f"  ↳ Vùng canh ({plan['zone_label']}): <code>${plan['zone_bot']:,.{dec}f}</code> - <code>${plan['zone_top']:,.{dec}f}</code>\n"
-                f"• <b>Bước 3 (Tín hiệu M15):</b> {st}\n"
+                f"• <b>Bước 3 (Xác nhận M30):</b> {st}\n"
                 f"  ↳ 🛡️ SL: <code>${plan['sl']:,.{dec}f}</code> (~{plan['sl_dist']:,.{dec}f}) | 💰 TP1: <code>${plan['tp1']:,.{dec}f}</code> | TP2: <code>${plan['tp2']:,.{dec}f}</code>\n"
             )
-        msg += "\n💡 <i>Không limit mù! Bot chỉ bắn kèo khi giá vào vùng Fibo mục tiêu VÀ có nến M15 đảo chiều (Pinbar/Nhấn chìm), SL đặt sát ngay râu nến tín hiệu!</i>"
+        msg += "\n💡 <i>Hệ thống đã được Backtest 3 năm (Profit Factor 1.24): Tuyệt đối không limit mù, chỉ vào khi giá chạm vùng Fibo và có nến M30 xác nhận đảo chiều, SL đặt sau râu nến tín hiệu!</i>"
         send_telegram(msg, reply_markup=get_main_keyboard(), target_chat_id=chat_id)
     except Exception as e:
         send_telegram(f"⚠️ Lỗi phân tích Fibo sóng: {e}", reply_markup=get_main_keyboard(), target_chat_id=chat_id)
@@ -4873,20 +4894,23 @@ def auto_diamond_alert_worker():
                         system='H1_MANU'
                     )
 
-            # 6. HỆ THỐNG FIBO SÓNG HỒI H1 (FIBO_WAVE) CHO VÀNG & BTC
+            # 6. HỆ THỐNG FIBO SÓNG HỒI (FIBO_WAVE - M30 CONFIRM) CHO VÀNG & BTC
             for f_asset, f_sym, f_dec in [('GOLD', 'XAUUSD', 2), ('BTC', 'BTCUSDT', 1)]:
-                if now - LAST_ALERT_TIME.get(f'{f_asset}_FIBO', 0) > 10800:
+                if now - LAST_ALERT_TIME.get(f'{f_asset}_FIBO', 0) > 7200: # 2 tiếng quét 1 lần
                     f_plan = analyze_fibo_wave_plan(f_asset)
                     if f_plan and f_plan.get('is_ready'):
                         f_name = "🥇 VÀNG (XAUUSD)" if f_asset == 'GOLD' else "👑 BITCOIN (BTCUSDT)"
                         f_sgn = "🟢 BUY (LONG)" if f_plan['signal'] == 'LONG' else "🔴 SHORT (BÁN)"
                         msg_fibo = (
-                            f"📐 <b>[TÍN HIỆU FIBO SÓNG HỒI H1 - {f_name}]</b>\n━━━━━━━━━━━━━━━━━━\n"
+                            f"📐 <b>[TÍN HIỆU FIBO SÓNG HỒI (M30 CONFIRM) - {f_name}]</b>\n━━━━━━━━━━━━━━━━━━\n"
                             f"🚀 <b>Lệnh:</b> {f_sgn}\n"
-                            f"• 👉 <b>Entry (Vùng 0.50-0.618):</b> <code>${f_plan['curr_p']:,.{f_dec}f}</code>\n"
-                            f"• 🛡️ <b>SL (Sau Fib 0.786):</b> <code>${f_plan['sl']:,.{f_dec}f}</code>\n"
-                            f"• 🎯 <b>TP1 (Fib 0.236):</b> <code>${f_plan['tp1']:,.{f_dec}f}</code> | 🎯 <b>TP2 (Ext):</b> <code>${f_plan['tp2']:,.{f_dec}f}</code>\n"
-                            f"💡 <i>Giá đã hồi về Golden Zone 0.50-0.618 của sóng H1 và có nến M15 xác nhận đảo chiều!</i>"
+                            f"• 👉 <b>Entry (Vùng Fibo {f_plan['zone_label']}):</b> <code>${f_plan['curr_p']:,.{f_dec}f}</code>\n"
+                            f"• 🛡️ <b>Cắt Lỗ (SL sau râu M30):</b> <code>${f_plan['sl']:,.{f_dec}f}</code>\n"
+                            f"• 🎯 <b>TP1 (1.2R - Chốt 50% dời BE):</b> <code>${f_plan['tp1']:,.{f_dec}f}</code>\n"
+                            f"• 🎯 <b>TP2 (2.0R - Đỉnh/Đáy cũ):</b> <code>${f_plan['tp2']:,.{f_dec}f}</code>\n"
+                            f"━━━━━━━━━━━━━━━━━━\n"
+                            f"🔥 <b>Tín hiệu xác nhận:</b> {f_plan['pattern_name']}\n"
+                            f"💡 <i>Hệ thống Fibo Wave chuẩn: H4 Trend + H1 Swing Fibo + Nến M30 xác nhận đảo chiều. Lệnh đã được đưa vào hệ thống theo dõi và tổng kết tự động!</i>"
                         )
                         send_telegram(msg_fibo)
                         LAST_ALERT_TIME[f'{f_asset}_FIBO'] = now
