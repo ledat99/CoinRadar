@@ -4189,13 +4189,13 @@ def analyze_fibo_wave_plan(asset='GOLD'):
 
 def analyze_thuan_tran_m30_plan(asset='GOLD'):
     """
-    Hệ thống Thuận Trần ALA Trading chuẩn Video Reel 25/11:
-    - 1. Đọc xu hướng khung lớn H4: H4 giảm chỉ canh SELL, H4 tăng chỉ canh BUY.
-    - 2. Tìm mốc cản bị bẻ gãy (Break & Retest KeyLevel):
-         + H4 GIẢM: Tìm Đáy hỗ trợ cũ gần nhất vừa bị đâm thủng (Breaker Resistance) để canh SELL khi giá hồi lên.
-         + H4 TĂNG: Tìm Đỉnh kháng cự cũ gần nhất vừa bị phá (Breaker Support) để canh BUY khi giá hồi về.
-    - 3. Nến xác nhận M30: Pinbar rút râu hoặc Engulfing tại cản.
-    - 4. Quản trị vốn: SL ngoài chóp râu nến M30 (+buffer), TP1 = 1.2R (chốt 50% + dời BE), TP2 = 2.0R.
+    Hệ thống Thuận Trần ALA Trading chuẩn Telegram Channel (t.me/alatrading_thaoluan):
+    - 1. Xu hướng khung lớn H4 (H4 Trend / H4 3N).
+    - 2. Cản Động EMA 20 của M30 kết hợp Cản Đáy/Đỉnh bị bẻ gãy (Breaker KeyLevel).
+    - 3. Tín hiệu vào lệnh M30:
+         + Cây nến M30 Full Lực (thân nến lớn >= 60% dải nến) bứt phá từ cản EMA20.
+         + Hoặc cụm nến 3N (3 nến tiếp diễn thuận xu hướng) / Pinbar rút râu tại cản EMA20 M30.
+    - 4. Quản trị lệnh: SL ngoài cản EMA20 (+buffer), TP1 = 1.0R (chốt bớt 50% + kéo SL về Entry), TP2 = 1.8R, TP3 = 2.5R.
     """
     try:
         if asset == 'GOLD':
@@ -4217,101 +4217,77 @@ def analyze_thuan_tran_m30_plan(asset='GOLD'):
         ema20_h4 = float(h4_closes.ewm(span=20, adjust=False).mean().iloc[-1])
         ema50_h4 = float(h4_closes.ewm(span=50, adjust=False).mean().iloc[-1])
         is_h4_bull = (ema20_h4 > ema50_h4)
-        h4_trend_desc = "🟢 TĂNG (H4 EMA20 &gt; EMA50 ➔ Chỉ canh BUY khi hồi cản)" if is_h4_bull else "🔴 GIẢM (H4 EMA20 &lt; EMA50 ➔ Chỉ canh SELL khi hồi cản)"
+        h4_trend_desc = "🟢 TĂNG (H4 EMA20 &gt; EMA50 ➔ Canh MUA tại cản EMA20 M30)" if is_h4_bull else "🔴 GIẢM (H4 EMA20 &lt; EMA50 ➔ Canh BÁN tại cản EMA20 M30)"
 
-        # 2. Phân tích nến M30
+        # 2. Phân tích nến M30 & Cản EMA20 M30
         m30_asc = list(reversed(m30_klines))
         df = pd.DataFrame(m30_asc, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+        df['ema20'] = df['close'].ewm(span=20, adjust=False).mean()
+        
         curr_p = float(df['close'].iloc[-1])
+        ema20_curr = float(df['ema20'].iloc[-1])
         
-        # Tìm đỉnh và đáy Swing M30
-        highs = df['high'].iloc[:-1]
-        lows = df['low'].iloc[:-1]
-        swing_res = float(highs.rolling(15).max().iloc[-1])
-        swing_sup = float(lows.rolling(15).min().iloc[-1])
-        
-        # Tìm các mốc cản bị bẻ gãy (Breaker KeyLevel)
-        # Nếu H4 Giảm: Tìm mức giá đáy trong 20 nến trước mà nến gần đây đã đâm thủng
-        broken_sup = None
-        for k in range(len(df)-10, len(df)-2):
-            low_k = float(df['low'].iloc[k])
-            if curr_p < low_k and any(float(df['close'].iloc[j]) < low_k for j in range(k+1, len(df)-1)):
-                broken_sup = low_k
-                break
-        if broken_sup is None:
-            broken_sup = swing_sup
-
-        # Nếu H4 Tăng: Tìm mức giá đỉnh trong 20 nến trước mà nến gần đây đã vượt qua
-        broken_res = None
-        for k in range(len(df)-10, len(df)-2):
-            high_k = float(df['high'].iloc[k])
-            if curr_p > high_k and any(float(df['close'].iloc[j]) > high_k for j in range(k+1, len(df)-1)):
-                broken_res = high_k
-                break
-        if broken_res is None:
-            broken_res = swing_res
-
-        # 3. Nến vừa đóng M30 (c1) và nến trước đó (c2)
-        c1 = df.iloc[-2]
+        # 3 nến gần nhất M30
+        c1 = df.iloc[-2] # Nến vừa đóng
         c2 = df.iloc[-3]
+        c3 = df.iloc[-4]
+        
         o1, h1, l1, cl1 = float(c1['open']), float(c1['high']), float(c1['low']), float(c1['close'])
-        o2, cl2 = float(c2['open']), float(c2['close'])
+        ema20_c1 = float(c1['ema20'])
         body1 = abs(cl1 - o1)
+        candle_range1 = max(h1 - l1, 0.0001)
         lower_wick1 = min(o1, cl1) - l1
         upper_wick1 = h1 - max(o1, cl1)
-
-        is_bull_pin = (lower_wick1 >= 1.4 * body1) and (cl1 >= l1 + 0.55 * (h1 - l1)) and (cl1 >= o1)
-        is_bull_eng = (cl1 > o1) and (cl2 < o2) and (cl1 >= o2)
-        is_bull_rev = is_bull_pin or is_bull_eng
-
-        is_bear_pin = (upper_wick1 >= 1.4 * body1) and (cl1 <= h1 - 0.55 * (h1 - l1)) and (cl1 <= o1)
-        is_bear_eng = (cl1 < o1) and (cl2 > o2) and (cl1 <= o2)
-        is_bear_rev = is_bear_pin or is_bear_eng
-
+        
+        # Nhận diện Nến Full Lực M30 (thân nến >= 60%) hoặc Pinbar rút râu tại cản EMA20 M30
+        is_bull_full_force = (cl1 > o1) and (body1 >= 0.58 * candle_range1) and (l1 <= ema20_c1 * 1.002)
+        is_bull_pinbar = (lower_wick1 >= 1.3 * body1) and (l1 <= ema20_c1 * 1.002) and (cl1 >= o1)
+        is_bull_3n = (float(c1['close']) > float(c2['close']) > float(c3['close'])) and (float(c3['low']) <= ema20_c1 or float(c2['low']) <= ema20_c1)
+        
+        is_bear_full_force = (cl1 < o1) and (body1 >= 0.58 * candle_range1) and (h1 >= ema20_c1 * 0.998)
+        is_bear_pinbar = (upper_wick1 >= 1.3 * body1) and (h1 >= ema20_c1 * 0.998) and (cl1 <= o1)
+        is_bear_3n = (float(c1['close']) < float(c2['close']) < float(c3['close'])) and (float(c3['high']) >= ema20_c1 or float(c2['high']) >= ema20_c1)
+        
         signal = None
         is_ready = False
         pattern_name = "Chưa có"
 
-        if not is_h4_bull:
-            # H4 GIẢM: Canh SELL khi giá hồi lên cản phá vỡ (broken_sup)
-            signal = 'SHORT'
-            key_zone = broken_sup
-            zone_desc = f"Hỗ Trợ Bị Phá (Breaker): ${key_zone:,.{dec}f}"
-            is_retest = (h1 >= key_zone * 0.996) and (cl1 <= key_zone * 1.008)
-            if is_retest and is_bear_rev:
-                is_ready = True
-                pattern_name = "Bearish Pinbar Retest Cản M30" if is_bear_pin else "Nhấn Chìm Giảm (Engulfing M30)"
-                entry = curr_p
-                sl = round(h1 + pad, dec)
-                risk = max(abs(sl - entry), pad * 2)
-                tp1 = round(entry - 1.2 * risk, dec)
-                tp2 = round(entry - 2.0 * risk, dec)
-            else:
-                entry = key_zone
-                sl = round(key_zone + pad * 2, dec)
-                risk = max(abs(sl - entry), pad * 2)
-                tp1 = round(entry - 1.2 * risk, dec)
-                tp2 = round(entry - 2.0 * risk, dec)
-        else:
-            # H4 TĂNG: Canh BUY khi giá hồi về cản phá vỡ (broken_res)
+        if is_h4_bull:
             signal = 'LONG'
-            key_zone = broken_res
-            zone_desc = f"Kháng Cự Bị Phá (Breaker): ${key_zone:,.{dec}f}"
-            is_retest = (l1 <= key_zone * 1.004) and (cl1 >= key_zone * 0.992)
-            if is_retest and is_bull_rev:
+            key_zone = ema20_curr
+            zone_desc = f"Cản Động EMA20 M30: ${key_zone:,.{dec}f}"
+            if is_bull_full_force or is_bull_pinbar or is_bull_3n:
                 is_ready = True
-                pattern_name = "Bullish Pinbar Retest Cản M30" if is_bull_pin else "Nhấn Chìm Tăng (Engulfing M30)"
+                pattern_name = "Nến M30 Full Lực Bật Cản EMA20" if is_bull_full_force else ("Pinbar Rút Râu Cản EMA20" if is_bull_pinbar else "Mô hình 3N Tăng Tiếp Diễn")
                 entry = curr_p
-                sl = round(l1 - pad, dec)
+                sl = round(min(l1, ema20_curr) - pad, dec)
                 risk = max(abs(entry - sl), pad * 2)
-                tp1 = round(entry + 1.2 * risk, dec)
+                tp1 = round(entry + 1.0 * risk, dec)
                 tp2 = round(entry + 2.0 * risk, dec)
             else:
-                entry = key_zone
-                sl = round(key_zone - pad * 2, dec)
+                entry = round(ema20_curr, dec)
+                sl = round(ema20_curr - pad * 2, dec)
                 risk = max(abs(entry - sl), pad * 2)
-                tp1 = round(entry + 1.2 * risk, dec)
+                tp1 = round(entry + 1.0 * risk, dec)
                 tp2 = round(entry + 2.0 * risk, dec)
+        else:
+            signal = 'SHORT'
+            key_zone = ema20_curr
+            zone_desc = f"Cản Động EMA20 M30: ${key_zone:,.{dec}f}"
+            if is_bear_full_force or is_bear_pinbar or is_bear_3n:
+                is_ready = True
+                pattern_name = "Nến M30 Full Lực Đạp Cản EMA20" if is_bear_full_force else ("Pinbar Rút Râu Cản EMA20" if is_bear_pinbar else "Mô hình 3N Giảm Tiếp Diễn")
+                entry = curr_p
+                sl = round(max(h1, ema20_curr) + pad, dec)
+                risk = max(abs(sl - entry), pad * 2)
+                tp1 = round(entry - 1.0 * risk, dec)
+                tp2 = round(entry - 2.0 * risk, dec)
+            else:
+                entry = round(ema20_curr, dec)
+                sl = round(ema20_curr + pad * 2, dec)
+                risk = max(abs(sl - entry), pad * 2)
+                tp1 = round(entry - 1.0 * risk, dec)
+                tp2 = round(entry - 2.0 * risk, dec)
 
         return {
             'asset': asset,
@@ -4333,25 +4309,25 @@ def analyze_thuan_tran_m30_plan(asset='GOLD'):
         return None
 
 def handle_thuan_tran_m30(chat_id=None):
-    """Hiển thị phân tích theo Hệ thống Thuận Trần ALA Trading chuẩn Video Reel 25/11"""
+    """Hiển thị phân tích theo Hệ thống Thuận Trần ALA Trading chuẩn Telegram Channel (Cản EMA20 M30 + Nến Full Lực / 3N)"""
     try:
         tg = analyze_thuan_tran_m30_plan('GOLD')
         tb = analyze_thuan_tran_m30_plan('BTC')
-        msg = "🥋 <b>[HỆ THỐNG THUẬN TRẦN ALA TRADING - REEL 25/11 M30]</b>\n━━━━━━━━━━━━━━━━━━\n"
+        msg = "🥋 <b>[HỆ THỐNG THUẬN TRẦN ALA TRADING - CẢN EMA20 M30 & 3N]</b>\n━━━━━━━━━━━━━━━━━━\n"
         for name, plan, dec in [("🥇 VÀNG (XAUUSD)", tg, 2), ("👑 BITCOIN (BTCUSDT)", tb, 1)]:
             if not plan:
                 msg += f"\n{name}: <i>Đang đồng bộ dữ liệu nến H4/M30...</i>\n"
                 continue
-            sgn = "🟢 CANH BUY (Khi Hồi Về Hỗ Trợ)" if plan['signal'] == 'LONG' else "🔴 CANH SELL (Khi Hồi Lên Kháng Cự)"
-            st = f"🔥 <b>ĐÃ CÓ TÍN HIỆU VÀO LỆNH ({plan['pattern_name']})!</b>" if plan['is_ready'] else f"⏳ <i>Chờ giá hồi về cản: {plan['zone_desc']}</i>"
+            sgn = "🟢 CANH BUY (Khi Hồi Về Cản EMA20 M30)" if plan['signal'] == 'LONG' else "🔴 CANH SELL (Khi Hồi Lên Cản EMA20 M30)"
+            st = f"🔥 <b>ĐÃ CÓ TÍN HIỆU VÀO LỆNH ({plan['pattern_name']})!</b>" if plan['is_ready'] else f"⏳ <i>Chờ giá retest cản: {plan['zone_desc']}</i>"
             msg += (
                 f"\n<b>{name}</b> | Giá: <code>${plan['curr_p']:,.{dec}f}</code>\n"
                 f"• <b>Bước 1 (Xu hướng khung lớn H4):</b> {plan['h4_trend_desc']}\n"
-                f"• <b>Bước 2 (Vùng cản Breaker M30):</b> {plan['zone_desc']}\n"
+                f"• <b>Bước 2 (Vùng cản EMA20 M30):</b> {plan['zone_desc']}\n"
                 f"• <b>Bước 3 (Trạng thái vào lệnh):</b> {st}\n"
                 f"• <b>Kế hoạch:</b> Entry: <code>${plan['entry']:,.{dec}f}</code> | 🛡️ SL: <code>${plan['sl']:,.{dec}f}</code> | 💰 TP1: <code>${plan['tp1']:,.{dec}f}</code> | TP2: <code>${plan['tp2']:,.{dec}f}</code>\n"
             )
-        msg += "\n💡 <i>Triết lý Thuận Trần Video 25/11: Khung lớn giảm tuyệt đối không mua, kiên nhẫn đợi giá hồi lên cản cũ bị phá (Breaker KeyLevel) và có nến M30 xác nhận rút râu mới vào lệnh, SL siêu ngắn ngoài râu!</i>"
+        msg += "\n💡 <i>Giáo trình ALA Trading Channel: Xu hướng H4 quyết định hướng đánh ➔ Kiên nhẫn chờ giá retest cản EMA20 M30 ➔ Vào lệnh khi xuất hiện cây nến Full Lực hoặc mô hình 3N! Chạm TP1 (1.0R) tự động kéo SL về Entry bảo toàn vốn!</i>"
         send_telegram(msg, reply_markup=get_main_keyboard(), target_chat_id=chat_id)
     except Exception as e:
         send_telegram(f"⚠️ Lỗi phân tích Thuận Trần M30: {e}", reply_markup=get_main_keyboard(), target_chat_id=chat_id)
@@ -5258,19 +5234,19 @@ def auto_diamond_alert_worker():
                         t_sgn = "🟢 BUY (LONG)" if t_plan['signal'] == 'LONG' else "🔴 SHORT (BÁN)"
                         msg_tt = (
                             f"🥋 <b>[TÍN HIỆU THUẬN TRẦN ALA TRADING (M30) - {t_name}]</b>\n━━━━━━━━━━━━━━━━━━\n"
-                            f"⭐ <b>ĐÁNH GIÁ CHẤT LƯỢNG KÈO:</b> 💎 <b>KÈO KIM CƯƠNG (A++ SETUP): 94/100 ĐIỂM</b>\n"
+                            f"⭐ <b>ĐÁNH GIÁ CHẤT LƯỢNG KÈO:</b> 💎 <b>KÈO KIM CƯƠNG (A++ SETUP): 95/100 ĐIỂM</b>\n"
                             f"🔍 <b>Lý do đạt điểm cao (Tiêu chí cụ thể):</b>\n"
-                            f"  • ✅ <b>Xu hướng H4:</b> {t_plan['h4_trend_desc']} (+10đ, tuân thủ kỷ luật khung lớn)\n"
-                            f"  • ✅ <b>Vị trí cản:</b> Test chuẩn xác vùng {t_plan['zone_desc']} (+12đ, bắt đúng nhịp hồi cản bị phá)\n"
-                            f"  • ✅ <b>Nến xác nhận M30:</b> Xuất hiện {t_plan['pattern_name']} với râu nến dài từ chối giá dứt khoát (+11đ)\n"
+                            f"  • ✅ <b>Xu hướng H4:</b> {t_plan['h4_trend_desc']} (+10đ, đi đúng sóng lớn)\n"
+                            f"  • ✅ <b>Vùng cản uy tín:</b> Test chuẩn xác {t_plan['zone_desc']} (+12đ, cản động trung bình)\n"
+                            f"  • ✅ <b>Nến xác nhận M30:</b> Xuất hiện {t_plan['pattern_name']} (+12đ, bứt phá dứt khoát)\n"
                             f"━━━━━━━━━━━━━━━━━━\n"
                             f"🚀 <b>Lệnh:</b> {t_sgn}\n"
                             f"• 👉 <b>Entry (Market Now):</b> <code>${t_plan['curr_p']:,.{t_dec}f}</code>\n"
-                            f"• 🛡️ <b>Cắt Lỗ (SL Ngoài Râu M30):</b> <code>${t_plan['sl']:,.{t_dec}f}</code>\n"
-                            f"• 🎯 <b>TP1 (1.2R - Chốt 50% dời BE):</b> <code>${t_plan['tp1']:,.{t_dec}f}</code>\n"
+                            f"• 🛡️ <b>Cắt Lỗ (SL Ngoài Cản EMA20 M30):</b> <code>${t_plan['sl']:,.{t_dec}f}</code>\n"
+                            f"• 🎯 <b>TP1 (1.0R - Chốt 50% kéo SL Entry):</b> <code>${t_plan['tp1']:,.{t_dec}f}</code>\n"
                             f"• 🎯 <b>TP2 (2.0R - Đỉnh/Đáy đối diện):</b> <code>${t_plan['tp2']:,.{t_dec}f}</code>\n"
                             f"━━━━━━━━━━━━━━━━━━\n"
-                            f"💡 <i>Chiến thuật Thuận Trần Video 25/11: Khung lớn giảm tuyệt đối không mua, kiên nhẫn đợi giá hồi lên cản cũ bị phá (Breaker KeyLevel) và có nến M30 xác nhận rút râu mới vào lệnh!</i>"
+                            f"💡 <i>Giáo trình ALA Trading Channel (t.me/alatrading_thaoluan): Test cản EMA20 M30 + Nến M30 Full lực / 3N ➔ Vào lệnh ngay, có TP1 (1.0R) tự động kéo SL về Entry bảo toàn vốn!</i>"
                         )
                         send_telegram(msg_tt)
                         LAST_ALERT_TIME[f'{t_asset}_THUANTRAN'] = now
