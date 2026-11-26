@@ -1328,7 +1328,8 @@ def get_main_keyboard():
         "keyboard": [
             [{"text": "💵 Xem Giá Live (Vàng/BTC/ETH)"}, {"text": "📊 Tổng Kết Kèo TP/SL"}],
             [{"text": "🧙‍♀️ Swing H1 Ma Nữ (Senpai Thành)"}, {"text": "⚖️ Báo Cáo Đối Đầu 2 Bot"}],
-            [{"text": "🎯 Scalping Volume Profile M5"}, {"text": "⚡ Tuyệt Chiêu H4 Lưỡng Lự"}],
+            [{"text": "📐 Fibo Sóng Hồi (H1)"}, {"text": "🎯 Scalping Volume Profile M5"}],
+            [{"text": "⚡ Tuyệt Chiêu H4 Lưỡng Lự"}],
             [{"text": "👑 Phân Tích BTC"}, {"text": "🥇 Phân Tích VÀNG (XAU)"}],
             [{"text": "💣 Săn Coin Rác (Vol > $100M)"}],
             [{"text": "📈 Tìm Coin TĂNG (LONG)"}, {"text": "📉 Tìm Coin GIẢM (SHORT)"}],
@@ -3908,6 +3909,131 @@ def compute_macro_backtest_stats():
     MACRO_BT_CACHE = {'ts': time.time(), 'text': res}
     return res
 
+def analyze_fibo_wave_plan(asset='GOLD'):
+    """
+    Hệ thống Săn Sóng Hồi Fibonacci (Fibo Golden Zone 0.50 - 0.618) trên khung H1:
+    - Tìm Swing High / Swing Low rõ nét trong 60 nến H1 gần nhất.
+    - Xác định xu hướng chính (Uptrend nếu Swing Low xuất hiện trước Swing High, ngược lại Downtrend).
+    - Canh hồi về vùng vàng 0.50 - 0.618 có nến M15 xác nhận rút râu/đóng nến thuận xu hướng.
+    """
+    try:
+        if asset == 'GOLD':
+            h1_klines = get_oanda_klines('60', 60)
+            m15_klines = get_oanda_klines('15', 10)
+            min_range = 20.0
+            dec = 2
+        else:
+            h1_klines = get_binance_klines('BTCUSDT', '1h', 60)
+            m15_klines = get_binance_klines('BTCUSDT', '15m', 10)
+            min_range = 1200.0
+            dec = 1
+
+        if not h1_klines or len(h1_klines) < 30 or not m15_klines or len(m15_klines) < 3:
+            return None
+
+        # Đảo ngược sang thứ tự thời gian tăng dần (cũ -> mới)
+        h1_asc = list(reversed(h1_klines))
+        highs = [float(k[2]) for k in h1_asc]
+        lows = [float(k[3]) for k in h1_asc]
+        curr_p = float(m15_klines[0][4])
+
+        idx_high = highs.index(max(highs))
+        idx_low = lows.index(min(lows))
+        sw_high = highs[idx_high]
+        sw_low = lows[idx_low]
+        wave_range = sw_high - sw_low
+
+        if wave_range < min_range:
+            return None
+
+        # Nếu đáy xuất hiện trước đỉnh -> Sóng đẩy TĂNG -> Canh BUY khi hồi về 0.50 - 0.618
+        is_uptrend = (idx_low < idx_high)
+        if is_uptrend:
+            fib_50 = round(sw_high - 0.500 * wave_range, dec)
+            fib_618 = round(sw_high - 0.618 * wave_range, dec)
+            fib_786 = round(sw_high - 0.786 * wave_range, dec)
+            fib_236 = round(sw_high - 0.236 * wave_range, dec)
+            fib_ext = round(sw_high + 0.272 * wave_range, dec)
+            signal = 'LONG'
+            entry = fib_618
+            sl = round(fib_786 - (0.05 * wave_range), dec)
+            tp1 = fib_236
+            tp2 = fib_ext
+            in_golden_zone = (fib_786 <= curr_p <= fib_50)
+            # Nến M15 vừa đóng xác nhận rút râu dưới / đóng xanh
+            c1 = m15_klines[1]
+            o1, h1_c, l1_c, cl1 = float(c1[1]), float(c1[2]), float(c1[3]), float(c1[4])
+            body = abs(cl1 - o1)
+            lower_wick = min(o1, cl1) - l1_c
+            m15_confirmed = (cl1 > o1) or (lower_wick > body * 1.2)
+        else:
+            fib_50 = round(sw_low + 0.500 * wave_range, dec)
+            fib_618 = round(sw_low + 0.618 * wave_range, dec)
+            fib_786 = round(sw_low + 0.786 * wave_range, dec)
+            fib_236 = round(sw_low + 0.236 * wave_range, dec)
+            fib_ext = round(sw_low - 0.272 * wave_range, dec)
+            signal = 'SHORT'
+            entry = fib_618
+            sl = round(fib_786 + (0.05 * wave_range), dec)
+            tp1 = fib_236
+            tp2 = fib_ext
+            in_golden_zone = (fib_50 <= curr_p <= fib_786)
+            # Nến M15 vừa đóng xác nhận rút râu trên / đóng đỏ
+            c1 = m15_klines[1]
+            o1, h1_c, l1_c, cl1 = float(c1[1]), float(c1[2]), float(c1[3]), float(c1[4])
+            body = abs(cl1 - o1)
+            upper_wick = h1_c - max(o1, cl1)
+            m15_confirmed = (cl1 < o1) or (upper_wick > body * 1.2)
+
+        return {
+            'asset': asset,
+            'curr_p': curr_p,
+            'signal': signal,
+            'sw_high': sw_high,
+            'sw_low': sw_low,
+            'wave_range': round(wave_range, dec),
+            'fib_50': fib_50,
+            'fib_618': fib_618,
+            'fib_786': fib_786,
+            'entry': entry,
+            'sl': sl,
+            'tp1': tp1,
+            'tp2': tp2,
+            'sl_dist': round(abs(entry - sl), dec),
+            'in_golden_zone': in_golden_zone,
+            'm15_confirmed': m15_confirmed,
+            'is_ready': (in_golden_zone and m15_confirmed)
+        }
+    except Exception as e:
+        print(f"Lỗi analyze_fibo_wave_plan({asset}): {e}")
+        return None
+
+def handle_fibo_wave(chat_id=None):
+    """Hiển thị phân tích Hệ thống Săn Sóng Hồi Fibonacci (H1 Golden Zone 0.50 - 0.618)"""
+    try:
+        fg = analyze_fibo_wave_plan('GOLD')
+        fb = analyze_fibo_wave_plan('BTC')
+        msg = "📐 <b>[HỆ THỐNG FIBO SÓNG HỒI H1 (GOLDEN ZONE 0.5 - 0.618)]</b>\n━━━━━━━━━━━━━━━━━━\n"
+        for name, plan, dec in [("🥇 VÀNG (XAUUSD)", fg, 2), ("👑 BITCOIN (BTCUSDT)", fb, 1)]:
+            if not plan:
+                msg += f"\n{name}: <i>Sóng H1 hiện tại biên độ hẹp, chưa hình thành con sóng Fibo chuẩn.</i>\n"
+                continue
+            sgn = "🟢 CANH BUY (Sóng đẩy TĂNG)" if plan['signal'] == 'LONG' else "🔴 CANH SHORT (Sóng đẩy GIẢM)"
+            st = "🔥 <b>ĐANG TRONG VÙNG VÀNG &amp; CÓ XÁC NHẬN M15!</b>" if plan['is_ready'] else ("⚡ <b>Đang nằm trong vùng Fibo 0.5-0.618 (Chờ nến M15 xác nhận)</b>" if plan['in_golden_zone'] else "⏳ <i>Đang chờ giá hồi về vùng 0.50 - 0.618</i>")
+            msg += (
+                f"\n<b>{name}</b> | Giá: <code>${plan['curr_p']:,.{dec}f}</code>\n"
+                f"• Xu hướng sóng H1: {sgn} (Biên độ: <code>{plan['wave_range']:,.{dec}f}</code>)\n"
+                f"• Đỉnh/Đáy sóng: <code>${plan['sw_high']:,.{dec}f}</code> / <code>${plan['sw_low']:,.{dec}f}</code>\n"
+                f"• 🎯 <b>Vùng Vàng (0.50 - 0.618):</b> <code>${plan['fib_50']:,.{dec}f}</code> - <code>${plan['fib_618']:,.{dec}f}</code>\n"
+                f"• 🛡️ <b>SL (Sau Fib 0.786):</b> <code>${plan['sl']:,.{dec}f}</code>\n"
+                f"• 💰 <b>TP1 (Fib 0.236):</b> <code>${plan['tp1']:,.{dec}f}</code> | <b>TP2 (Ext -0.272):</b> <code>${plan['tp2']:,.{dec}f}</code>\n"
+                f"• Trạng thái: {st}\n"
+            )
+        msg += "\n💡 <i>Bot tự động quét 24/7. Khi giá hồi về vùng 0.50 - 0.618 và có nến M15 rút râu xác nhận, hệ thống sẽ tự động bắn kèo và lưu vào danh sách theo dõi!</i>"
+        send_telegram(msg, reply_markup=get_main_keyboard(), target_chat_id=chat_id)
+    except Exception as e:
+        send_telegram(f"⚠️ Lỗi phân tích Fibo sóng: {e}", reply_markup=get_main_keyboard(), target_chat_id=chat_id)
+
 def handle_us_macro_news(chat_id=None):
     """Phân tích các tin quan trọng cố định của Mỹ (High-Impact USD) & đánh giá View Long/Short dài hạn"""
     try:
@@ -4215,6 +4341,8 @@ Tài khoản của bạn hiện tại chưa được cấp quyền sử dụng h
                         handle_btc(chat_id=chat_id)
                     elif text in ["/gold", "🥇 Phân Tích VÀNG (XAU)", "gold", "vang", "Vàng"]:
                         handle_gold(chat_id=chat_id)
+                    elif text in ["/fibo", "/fibowave", "fibo", "📐 Fibo Sóng Hồi (H1)"]:
+                        handle_fibo_wave(chat_id=chat_id)
                     elif text in ["/news", "/tinmy", "/macro", "/usnews", "🇺🇸 Phân Tích Tin Mỹ (View Dài Hạn)"]:
                         handle_us_macro_news(chat_id=chat_id)
                     elif text in ["/long", "📈 Tìm Coin TĂNG (LONG)", "long"]:
@@ -4717,6 +4845,31 @@ def auto_diamond_alert_worker():
                         current_price=curr_b,
                         system='H1_MANU'
                     )
+
+            # 6. HỆ THỐNG FIBO SÓNG HỒI H1 (FIBO_WAVE) CHO VÀNG & BTC
+            for f_asset, f_sym, f_dec in [('GOLD', 'XAUUSD', 2), ('BTC', 'BTCUSDT', 1)]:
+                if now - LAST_ALERT_TIME.get(f'{f_asset}_FIBO', 0) > 10800:
+                    f_plan = analyze_fibo_wave_plan(f_asset)
+                    if f_plan and f_plan.get('is_ready'):
+                        f_name = "🥇 VÀNG (XAUUSD)" if f_asset == 'GOLD' else "👑 BITCOIN (BTCUSDT)"
+                        f_sgn = "🟢 BUY (LONG)" if f_plan['signal'] == 'LONG' else "🔴 SHORT (BÁN)"
+                        msg_fibo = (
+                            f"📐 <b>[TÍN HIỆU FIBO SÓNG HỒI H1 - {f_name}]</b>\n━━━━━━━━━━━━━━━━━━\n"
+                            f"🚀 <b>Lệnh:</b> {f_sgn}\n"
+                            f"• 👉 <b>Entry (Vùng 0.50-0.618):</b> <code>${f_plan['curr_p']:,.{f_dec}f}</code>\n"
+                            f"• 🛡️ <b>SL (Sau Fib 0.786):</b> <code>${f_plan['sl']:,.{f_dec}f}</code>\n"
+                            f"• 🎯 <b>TP1 (Fib 0.236):</b> <code>${f_plan['tp1']:,.{f_dec}f}</code> | 🎯 <b>TP2 (Ext):</b> <code>${f_plan['tp2']:,.{f_dec}f}</code>\n"
+                            f"💡 <i>Giá đã hồi về Golden Zone 0.50-0.618 của sóng H1 và có nến M15 xác nhận đảo chiều!</i>"
+                        )
+                        send_telegram(msg_fibo)
+                        LAST_ALERT_TIME[f'{f_asset}_FIBO'] = now
+                        record_new_vip_trade(
+                            asset=f_asset, symbol=f_sym, signal=f_plan['signal'],
+                            entry_price=f_plan['curr_p'], entry_stop=f_plan['curr_p'],
+                            sl=f_plan['sl'], tp1=f_plan['tp1'], tp2=f_plan['tp2'],
+                            sl_dist=abs(f_plan['curr_p'] - f_plan['sl']),
+                            current_price=f_plan['curr_p'], system='FIBO_WAVE'
+                        )
 
 
         except Exception as e:
