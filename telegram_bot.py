@@ -89,45 +89,67 @@ def get_oanda_klines(resolution='5', count=60, tv_symbol='OANDA:XAUUSD'):
             except Exception:
                 pass
 
+BINANCE_BASE_URLS = [
+    'https://api.binance.com',
+    'https://data-api.binance.vision',
+    'https://api1.binance.com',
+    'https://api3.binance.com'
+]
+
 def get_binance_klines(symbol='BTCUSDT', interval='5m', limit=60):
     """
     Lấy nến chuẩn 100% từ Binance REST API cho BTC hoặc ETH hoặc Altcoins.
+    Tự động fallback qua nhiều mirror domain chống chặn IP / timeout.
     Trả về list nến desc order (mới nhất ở index 0):
     [[timestamp_ms, open, high, low, close, volume], ...]
     """
-    try:
-        mapping = {'5': '5m', '15': '15m', '60': '1h', '240': '4h', 'D': '1d', 'W': '1w'}
-        iv = mapping.get(str(interval), interval)
-        url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval={iv}&limit={limit}"
-        req = urllib.request.Request(url, headers=HEADERS)
-        with urllib.request.urlopen(req, timeout=8) as r:
-            data = json.loads(r.read().decode())
-        bars = []
-        for k in reversed(data):
-            bars.append([
-                int(k[0]),
-                float(k[1]),
-                float(k[2]),
-                float(k[3]),
-                float(k[4]),
-                float(k[5])
-            ])
-        return bars
-    except Exception as e:
-        print(f"Lỗi Binance klines ({symbol} {interval}): {e}")
-        return []
+    mapping = {'5': '5m', '15': '15m', '60': '1h', '240': '4h', 'D': '1d', 'W': '1w'}
+    iv = mapping.get(str(interval), interval)
+    for base in BINANCE_BASE_URLS:
+        try:
+            url = f"{base}/api/v3/klines?symbol={symbol}&interval={iv}&limit={limit}"
+            req = urllib.request.Request(url, headers=HEADERS)
+            with urllib.request.urlopen(req, timeout=5) as r:
+                data = json.loads(r.read().decode())
+            bars = []
+            for k in reversed(data):
+                bars.append([
+                    int(k[0]),
+                    float(k[1]),
+                    float(k[2]),
+                    float(k[3]),
+                    float(k[4]),
+                    float(k[5])
+                ])
+            return bars
+        except Exception:
+            continue
+    print(f"Lỗi toàn bộ mirrors Binance klines ({symbol} {interval})")
+    return []
 
 def get_binance_ticker_price(symbol='BTCUSDT'):
-    """Lấy giá khớp thời gian thực chính xác từ Binance API"""
+    """Lấy giá khớp thời gian thực chính xác từ Binance API với fallback mirror"""
+    for base in BINANCE_BASE_URLS:
+        try:
+            url = f"{base}/api/v3/ticker/price?symbol={symbol}"
+            req = urllib.request.Request(url, headers=HEADERS)
+            with urllib.request.urlopen(req, timeout=4) as r:
+                data = json.loads(r.read().decode())
+                p = float(data['price'])
+                if p > 0:
+                    return p
+        except Exception:
+            continue
+    # Fallback dự phòng 2: Lấy từ Binance 24hr ticker
     try:
-        url = f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}"
+        url = f"https://api.binance.com/api/v3/ticker/24hr?symbol={symbol}"
         req = urllib.request.Request(url, headers=HEADERS)
-        with urllib.request.urlopen(req, timeout=5) as r:
+        with urllib.request.urlopen(req, timeout=4) as r:
             data = json.loads(r.read().decode())
-            return float(data['price'])
-    except Exception as e:
-        print(f"Lỗi Binance ticker price ({symbol}): {e}")
-        return None
+            return float(data['lastPrice'])
+    except Exception:
+        pass
+    return None
 
 
 # Cache lưu trữ các mức cản H4 để cố định điểm vào lệnh trong phiên H4
@@ -803,8 +825,8 @@ def handle_check_vip_trades(chat_id=None):
             print(f"Lỗi p_btc_vp: {evb}")
             p_btc_vp = None
 
-        p_gold = float(plan_gold['current_price']) if (plan_gold and 'current_price' in plan_gold) else 3580.0
-        p_btc = float(plan_btc['current_price']) if (plan_btc and 'current_price' in plan_btc) else 60000.0
+        p_gold = float(plan_gold['current_price']) if (plan_gold and 'current_price' in plan_gold) else (get_oanda_klines('5', 1)[0][4] if get_oanda_klines('5', 1) else 0.0)
+        p_btc = float(plan_btc['current_price']) if (plan_btc and 'current_price' in plan_btc) else (get_binance_ticker_price('BTCUSDT') or 0.0)
 
         if not plan_gold:
             plan_gold = {'current_price': p_gold, 'b_ob_bot': p_gold + 10.0, 'b_ob_top': p_gold + 15.0, 'bull_ob_bot': p_gold - 15.0, 'bull_ob_top': p_gold - 10.0}
@@ -1904,13 +1926,14 @@ def calculate_btc_h4_plan():
         print(f"Lỗi tính plan BTC: {e}")
         if PLAN_CACHE['BTC'].get('data'):
             return PLAN_CACHE['BTC']['data']
-        fallback_p = 60000.0
-        try:
-            fb_b = get_binance_klines('BTCUSDT', '5m', 5)
-            if fb_b and len(fb_b) > 0:
-                fallback_p = float(fb_b[0][4])
-        except Exception:
-            pass
+        fallback_p = get_binance_ticker_price('BTCUSDT') or 0.0
+        if fallback_p <= 0.0:
+            try:
+                fb_b = get_binance_klines('BTCUSDT', '5m', 5)
+                if fb_b and len(fb_b) > 0:
+                    fallback_p = float(fb_b[0][4])
+            except Exception:
+                pass
         return {
             'current_price': fallback_p, 'w1_bias': "🔴 GIẢM (BEARISH)", 'd1_bias': "🔴 GIẢM (BEARISH)",
             'priority_dir': "CANH BÁN (SHORT)", 'major_res': fallback_p + 1000.0, 'major_sup': fallback_p - 1000.0,
@@ -2622,7 +2645,10 @@ def analyze_scalp_vp_plan(asset='GOLD'):
     else:
         klines = get_binance_klines('BTCUSDT', '5m', 600)
 
-    def_p = 3580.0 if asset == 'GOLD' else 60000.0
+    if asset == 'GOLD':
+        def_p = float(klines[0][4]) if klines and len(klines) > 0 else 0.0
+    else:
+        def_p = get_binance_ticker_price('BTCUSDT') or (float(klines[0][4]) if klines and len(klines) > 0 else 0.0)
     safe_default = {
         'asset': asset, 'symbol': symbol, 'curr_p': def_p, 'daily_open': def_p,
         'hod': def_p + 10.0, 'lod': def_p - 10.0, 'daily_bias': "Đang đồng bộ",
