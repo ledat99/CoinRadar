@@ -16,8 +16,9 @@ from websocket import create_connection
 CONFIG = {
     'TELEGRAM_BOT_TOKEN': '9051874352:AAFrnfJ8Mm0QF4wBlz8V3vYjYiqz5_sIVF8',
     'TELEGRAM_CHAT_ID': '6022180065',
-    'ACCOUNT_BALANCE': 2000.0,
-    'RISK_PER_TRADE': 2.0,
+    'ACCOUNT_BALANCE': 1000.0,
+    'RISK_PER_TRADE_USD': 10.0, # Cố định rủi ro mỗi lệnh SL = 10u (1% trên vốn 1000u)
+    'RISK_PER_TRADE': 1.0,
 }
 
 TZ_VN = datetime.timezone(datetime.timedelta(hours=7))
@@ -5313,6 +5314,15 @@ def auto_diamond_alert_worker():
                         t_name = "🥇 VÀNG (XAUUSD)" if t_asset == 'GOLD' else "👑 BITCOIN (BTCUSDT)"
                         t_sgn = "🟢 BUY (LONG)" if t_plan['signal'] == 'LONG' else "🔴 SHORT (BÁN)"
                         sc_t, sc_tier_t, sc_reasons_t = calculate_setup_quality_score('THUAN_TRAN_M30', t_plan)
+                        sl_d = max(t_plan['sl_dist'], 0.01)
+                        if t_asset == 'GOLD':
+                            lot_size = round(10.0 / (sl_d * 100), 2) # 1 lot = 100 oz
+                            pos_guide = f"• Vốn mẫu: <b>$1,000</b> | Rủi ro: <b>$10.0 (1%)</b>\n• Khối lượng MT5: <b>{max(lot_size, 0.01)} lot</b>"
+                        else:
+                            btc_size = round(10.0 / sl_d, 4)
+                            pos_val = round(btc_size * t_plan['curr_p'], 1)
+                            pos_guide = f"• Vốn mẫu: <b>$1,000</b> | Rủi ro: <b>$10.0 (1%)</b>\n• Khối lượng: <b>{btc_size} BTC (~${pos_val:,.1f})</b>"
+
                         msg_tt = (
                             f"🥋 <b>[TÍN HIỆU THUẬN TRẦN ALA TRADING (M30) - {t_name}]</b>\n━━━━━━━━━━━━━━━━━━\n"
                             f"⭐ <b>ĐÁNH GIÁ CHẤT LƯỢNG KÈO:</b> {sc_tier_t}\n"
@@ -5324,6 +5334,9 @@ def auto_diamond_alert_worker():
                             f"• 🛡️ <b>Cắt Lỗ (SL Ngoài Cản EMA20 M30):</b> <code>${t_plan['sl']:,.{t_dec}f}</code> (~{t_plan['sl_dist']:,.{t_dec}f} Giá)\n"
                             f"• 🎯 <b>TP1 (1.0R - Chốt 50% kéo SL Entry):</b> <code>${t_plan['tp1']:,.{t_dec}f}</code>\n"
                             f"• 🎯 <b>TP2 (2.0R - Đỉnh/Đáy đối diện):</b> <code>${t_plan['tp2']:,.{t_dec}f}</code>\n"
+                            f"━━━━━━━━━━━━━━━━━━\n"
+                            f"💼 <b>QUẢN LÝ VỐN TỰ ĐỘNG (SL CỐ ĐỊNH 10 USDT):</b>\n"
+                            f"{pos_guide}\n"
                             f"━━━━━━━━━━━━━━━━━━\n"
                             f"💡 <i>Giáo trình ALA Trading Channel (t.me/alatrading_thaoluan): Test cản EMA20 M30 + Nến M30 Full lực / 3N ➔ Vào lệnh ngay, có TP1 (1.0R) tự động kéo SL về Entry bảo toàn vốn!</i>"
                         )
