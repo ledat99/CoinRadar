@@ -116,6 +116,18 @@ def get_binance_klines(symbol='BTCUSDT', interval='5m', limit=60):
         print(f"Lỗi Binance klines ({symbol} {interval}): {e}")
         return []
 
+def get_binance_ticker_price(symbol='BTCUSDT'):
+    """Lấy giá khớp thời gian thực chính xác từ Binance API"""
+    try:
+        url = f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}"
+        req = urllib.request.Request(url, headers=HEADERS)
+        with urllib.request.urlopen(req, timeout=5) as r:
+            data = json.loads(r.read().decode())
+            return float(data['price'])
+    except Exception as e:
+        print(f"Lỗi Binance ticker price ({symbol}): {e}")
+        return None
+
 
 # Cache lưu trữ các mức cản H4 để cố định điểm vào lệnh trong phiên H4
 PLAN_CACHE = {
@@ -315,10 +327,23 @@ def check_and_update_vip_trades(curr_gold_p, curr_btc_p):
     time_str = now_dt.strftime('%H:%M %d/%m')
     remaining = []
 
+    # Cập nhật giá realtime chính xác từ API trực tiếp
+    rt_btc = get_binance_ticker_price('BTCUSDT')
+    if rt_btc:
+        curr_btc_p = rt_btc
+
+    try:
+        gold_k = get_oanda_klines('5', 1)
+        if gold_k and len(gold_k) > 0:
+            curr_gold_p = float(gold_k[0][4])
+    except Exception:
+        pass
+
     for t in trades:
         is_gold = (t['asset'] == 'GOLD')
         curr_p = curr_gold_p if is_gold else curr_btc_p
-        if not curr_p:
+        # Tuyệt đối không kiểm tra nếu không có giá realtime hợp lệ (tránh fallback 60000 ảo)
+        if not curr_p or (not is_gold and curr_p <= 10000.0) or (is_gold and curr_p <= 1000.0):
             remaining.append(t)
             continue
 
@@ -4763,6 +4788,14 @@ Tài khoản của bạn hiện tại chưa được cấp quyền sử dụng h
                             send_telegram("🗑️ <b>Đã làm sạch toàn bộ danh sách lệnh đang chạy!</b>", reply_markup=get_main_keyboard(), target_chat_id=chat_id)
                         except Exception as ex:
                             send_telegram(f"⚠️ Lỗi: {ex}", reply_markup=get_main_keyboard(), target_chat_id=chat_id)
+                    elif text.startswith("/xoapnl") or text.startswith("/resetpnl") or text.startswith("/xoatatca"):
+                        try:
+                            save_vip_trades([])
+                            save_vip_history([])
+                            save_report_state({'last_daily': '', 'last_weekly': ''})
+                            send_telegram("🗑️ <b>ĐÃ XÓA SẠCH TOÀN BỘ PnL, LỊCH SỬ KÈO VÀ LỆNH ĐANG CHẠY!</b>\n<i>Hệ thống đã reset trắng về 0, sẵn sàng cho chu kỳ mới.</i>", reply_markup=get_main_keyboard(), target_chat_id=chat_id)
+                        except Exception as ex:
+                            send_telegram(f"⚠️ Lỗi xóa PnL: {ex}", reply_markup=get_main_keyboard(), target_chat_id=chat_id)
                     elif len(text) == 3 and text.upper() in VN_WATCHLIST:
                         handle_vn_stock_detail(text.upper(), chat_id=chat_id)
             time.sleep(1)
